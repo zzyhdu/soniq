@@ -2,16 +2,17 @@
 
 This document describes the current local backend workflow for Soniq.
 
-Soniq is currently in the Recording API skeleton milestone. The commands below intentionally run a small skeleton backend:
+Soniq is currently in the Temporal workflow skeleton milestone. The commands below intentionally run a small backend foundation:
 
 - the API exposes `GET /healthz`;
 - the API exposes in-memory recording metadata endpoints: `POST /recordings`, `GET /recordings/{id}`, and `GET /recordings/{id}/status`;
-- the worker validates configuration and exits cleanly;
-- Temporal, Postgres, object storage, ffmpeg, ASR, LLM providers, authentication, and the web UI are not implemented in this milestone.
+- `POST /recordings` invokes an injectable recording processor seam after successful creation; the default processor is a no-op and does not start a real Temporal workflow yet;
+- the worker starts a real Temporal SDK worker, registers the recording processing workflow and activity stubs, and polls the configured task queue;
+- Postgres, object storage, ffmpeg, ASR, LLM providers, authentication, and the web UI are not implemented in this milestone.
 
 ## Prerequisites
 
-- Go 1.23 or newer.
+- Go 1.24 or newer.
 - `make`.
 
 From the repository root, verify the backend toolchain:
@@ -109,6 +110,8 @@ Content-Type: application/json
 
 The recording endpoints currently store metadata in memory only. Records disappear when the API process exits or restarts. This skeleton does not upload audio, persist to Postgres, write objects to storage, or start Temporal workflows.
 
+After a recording is created successfully, the API calls an injectable `RecordingProcessor` seam. The default local processor is a no-op, so the HTTP response remains fast and no Temporal workflow is started by the API yet. A later milestone can replace the no-op with a Temporal client implementation that starts `RecordingProcessingWorkflow`.
+
 Start the API on a local test port:
 
 ```bash
@@ -171,31 +174,53 @@ interview
 
 `workflow_type` is the processing template selector, not a user tag. Future milestones may add custom templates or more specialized workflow types.
 
-## Run the worker skeleton
+## Run the Temporal worker skeleton
 
-Run:
+`make worker` starts a Temporal SDK worker and blocks while polling the configured task queue. It requires a reachable Temporal server at runtime.
+
+For local development, start Temporal first, then run:
 
 ```bash
 make worker
 ```
 
+Default runtime configuration:
+
+- `TEMPORAL_ADDRESS=localhost:7233`
+- `TEMPORAL_NAMESPACE=default`
+- `TEMPORAL_TASK_QUEUE=soniq-audio-pipeline`
+
 Expected behavior:
 
 - load environment configuration;
 - validate minimal startup configuration;
-- print a skeleton-ready message;
-- print Temporal address, namespace, and task queue;
-- exit successfully;
+- connect to Temporal;
+- register `RecordingProcessingWorkflow`;
+- register the recording processing activity stubs;
+- poll the configured task queue until interrupted;
 - do not print secrets such as API keys.
 
-Example output:
+Example startup output:
 
 ```txt
-worker skeleton ready
+starting temporal worker
 temporal_address=localhost:7233
 temporal_namespace=default
 temporal_task_queue=soniq-audio-pipeline
 ```
+
+If Temporal is not reachable, `make worker` fails during startup. Unit tests do not require a running Temporal server; worker registration is covered by an in-process registry spy.
+
+## Temporal workflow skeleton boundaries
+
+The current Temporal implementation is intentionally a skeleton:
+
+- The workflow is implemented with the real Temporal Go SDK and covered by the Temporal SDK testsuite.
+- Activity implementations are stubs that validate input and model recording status transitions only.
+- The API calls an injectable recording processor seam after `POST /recordings`; the default local processor is a no-op and does not start a production workflow.
+- Worker startup is the boundary where the code leaves in-process tests and requires a real Temporal server.
+
+The skeleton does not yet perform audio processing, storage writes, ASR, LLM summarization, Postgres persistence, provider webhooks, or production Temporal smoke testing. Those integrations should be added as separate milestones with explicit local service configuration.
 
 ## Configuration
 
@@ -232,14 +257,16 @@ The current backend foundation is intentionally small. It provides:
 - a standard-library HTTP router;
 - `GET /healthz`;
 - in-memory recording metadata endpoints;
-- API and worker command entrypoints;
+- API and Temporal worker command entrypoints;
+- a Temporal SDK recording processing workflow skeleton;
+- activity stubs for validation and recording status transitions;
 - root `Makefile` quality commands.
 
 It does not yet provide:
 
 - durable recording persistence;
 - real recording audio upload handling;
-- Temporal workflows or activities;
+- production Temporal smoke-test configuration;
 - Postgres schema or migrations;
 - MinIO/S3 storage integration;
 - ffmpeg audio processing;
