@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/mock"
+	"github.com/zzyhdu/soniq/backend/internal/activities"
 	"go.temporal.io/sdk/testsuite"
 )
 
@@ -17,9 +18,12 @@ func TestRecordingProcessingWorkflowCompletesSkeletonPipeline(t *testing.T) {
 		Language:     "en",
 	}
 
-	env.OnActivity(ValidateRecordingActivity, mock.Anything, input).Return(nil).Once()
-	env.OnActivity(MarkRecordingProcessingActivity, mock.Anything, input).Return(nil).Once()
-	env.OnActivity(CompleteRecordingProcessingActivity, mock.Anything, input).Return(nil).Once()
+	env.OnActivity(activities.ValidateRecordingActivity, mock.Anything, input).Return(nil).Once()
+	env.OnActivity(activities.MarkRecordingProcessingActivity, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.CompleteRecordingProcessingActivity, mock.Anything, input.RecordingID).Return(RecordingProcessingResult{
+		RecordingID: "rec_test",
+		Status:      "completed",
+	}, nil).Once()
 
 	env.ExecuteWorkflow(RecordingProcessingWorkflow, input)
 
