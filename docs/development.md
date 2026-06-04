@@ -2,9 +2,10 @@
 
 This document describes the current local backend workflow for Soniq.
 
-Soniq is still in the backend foundation milestone. The commands below intentionally run a small skeleton backend:
+Soniq is currently in the Recording API skeleton milestone. The commands below intentionally run a small skeleton backend:
 
-- the API exposes `GET /healthz` only;
+- the API exposes `GET /healthz`;
+- the API exposes in-memory recording metadata endpoints: `POST /recordings`, `GET /recordings/{id}`, and `GET /recordings/{id}/status`;
 - the worker validates configuration and exits cleanly;
 - Temporal, Postgres, object storage, ffmpeg, ASR, LLM providers, authentication, and the web UI are not implemented in this milestone.
 
@@ -104,6 +105,72 @@ Content-Type: application/json
 {"status":"ok","service":"soniq-api"}
 ```
 
+## Use the Recording API skeleton
+
+The recording endpoints currently store metadata in memory only. Records disappear when the API process exits or restarts. This skeleton does not upload audio, persist to Postgres, write objects to storage, or start Temporal workflows.
+
+Start the API on a local test port:
+
+```bash
+API_ADDRESS=:18080 make api
+```
+
+Create a recording metadata record from another terminal:
+
+```bash
+curl -i -X POST http://localhost:18080/recordings \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Weekly sync","workflow_type":"meeting","language":"en"}'
+```
+
+Expected response:
+
+```http
+HTTP/1.1 201 Created
+Content-Type: application/json
+```
+
+```json
+{
+  "id": "rec_...",
+  "title": "Weekly sync",
+  "status": "uploaded",
+  "workflow_type": "meeting",
+  "language": "en",
+  "created_at": "...",
+  "updated_at": "..."
+}
+```
+
+Save the returned `id`, then fetch the full recording:
+
+```bash
+curl -i http://localhost:18080/recordings/<id>
+```
+
+Fetch just the recording status:
+
+```bash
+curl -i http://localhost:18080/recordings/<id>/status
+```
+
+Expected status body:
+
+```json
+{"id":"rec_...","status":"uploaded"}
+```
+
+The initial supported `workflow_type` values are:
+
+```txt
+memo
+meeting
+lecture
+interview
+```
+
+`workflow_type` is the processing template selector, not a user tag. Future milestones may add custom templates or more specialized workflow types.
+
 ## Run the worker skeleton
 
 Run:
@@ -164,12 +231,14 @@ The current backend foundation is intentionally small. It provides:
 - config loading and validation;
 - a standard-library HTTP router;
 - `GET /healthz`;
+- in-memory recording metadata endpoints;
 - API and worker command entrypoints;
 - root `Makefile` quality commands.
 
 It does not yet provide:
 
-- recording upload APIs;
+- durable recording persistence;
+- real recording audio upload handling;
 - Temporal workflows or activities;
 - Postgres schema or migrations;
 - MinIO/S3 storage integration;
