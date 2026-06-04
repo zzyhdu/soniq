@@ -9,21 +9,39 @@ import (
 	"github.com/zzyhdu/soniq/backend/internal/recordings"
 )
 
+// RecordingProcessor is the enqueue seam invoked after a recording is created.
+type RecordingProcessor interface {
+	Enqueue(recording domain.Recording) error
+}
+
+type noopRecordingProcessor struct{}
+
+func (noopRecordingProcessor) Enqueue(domain.Recording) error { return nil }
+
 // NewRouter builds the HTTP handler for the Soniq API.
 func NewRouter() http.Handler {
-	return NewRouterWithStore(recordings.NewMemoryStore())
+	return NewRouterWithProcessor(recordings.NewMemoryStore(), noopRecordingProcessor{})
 }
 
 // NewRouterWithStore builds the HTTP handler with an injected recording store.
 func NewRouterWithStore(store *recordings.MemoryStore) http.Handler {
+	return NewRouterWithProcessor(store, noopRecordingProcessor{})
+}
+
+// NewRouterWithProcessor builds the HTTP handler with injected recording store and processor dependencies.
+func NewRouterWithProcessor(store *recordings.MemoryStore, processor RecordingProcessor) http.Handler {
+	if processor == nil {
+		processor = noopRecordingProcessor{}
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", healthzHandler)
-	mux.HandleFunc("/recordings", createRecordingHandler(store))
+	mux.HandleFunc("/recordings", createRecordingHandler(store, processor))
 	mux.HandleFunc("/recordings/", recordingByIDHandler(store))
 	return mux
 }
 
-func createRecordingHandler(store *recordings.MemoryStore) http.HandlerFunc {
+func createRecordingHandler(store *recordings.MemoryStore, processor RecordingProcessor) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.Header().Set("Allow", http.MethodPost)
@@ -50,7 +68,10 @@ func createRecordingHandler(store *recordings.MemoryStore) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-
+		if err := processor.Enqueue(recording); err != nil {
+			http.Error(w, "enqueue recording processor", http.StatusInternalServerError)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(recording)

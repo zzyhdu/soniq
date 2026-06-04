@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +12,18 @@ import (
 	"github.com/zzyhdu/soniq/backend/internal/domain"
 	"github.com/zzyhdu/soniq/backend/internal/recordings"
 )
+
+var errRecordingProcessorFailed = errors.New("recording processor failed")
+
+type recordingProcessorSpy struct {
+	enqueued []domain.Recording
+	err      error
+}
+
+func (s *recordingProcessorSpy) Enqueue(recording domain.Recording) error {
+	s.enqueued = append(s.enqueued, recording)
+	return s.err
+}
 
 func TestCreateRecordingReturnsCreatedRecording(t *testing.T) {
 	store := recordings.NewMemoryStore()
@@ -57,6 +70,71 @@ func TestCreateRecordingReturnsCreatedRecording(t *testing.T) {
 	}
 	if stored != body {
 		t.Fatalf("stored recording = %+v, want response body %+v", stored, body)
+	}
+}
+
+func TestCreateRecordingEnqueuesProcessing(t *testing.T) {
+	store := recordings.NewMemoryStore()
+	processor := &recordingProcessorSpy{}
+	router := NewRouterWithProcessor(store, processor)
+
+	requestBody := strings.NewReader(`{"title":"Weekly sync","workflow_type":"meeting","language":"en"}`)
+	request := httptest.NewRequest(http.MethodPost, "/recordings", requestBody)
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusCreated, response.Body.String())
+	}
+	if got, want := len(processor.enqueued), 1; got != want {
+		t.Fatalf("enqueued recordings = %d, want %d", got, want)
+	}
+	if !strings.HasPrefix(processor.enqueued[0].ID, "rec_") {
+		t.Fatalf("enqueued id = %q, want rec_ prefix", processor.enqueued[0].ID)
+	}
+	if processor.enqueued[0].WorkflowType != domain.WorkflowTypeMeeting {
+		t.Fatalf("enqueued workflow_type = %q, want meeting", processor.enqueued[0].WorkflowType)
+	}
+}
+
+func TestCreateRecordingDoesNotEnqueueInvalidRequest(t *testing.T) {
+	store := recordings.NewMemoryStore()
+	processor := &recordingProcessorSpy{}
+	router := NewRouterWithProcessor(store, processor)
+
+	request := httptest.NewRequest(http.MethodPost, "/recordings", strings.NewReader(`{"title":"Podcast","workflow_type":"podcast","language":"en"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status code = %d, want %d", response.Code, http.StatusBadRequest)
+	}
+	if got, want := len(processor.enqueued), 0; got != want {
+		t.Fatalf("enqueued recordings = %d, want %d", got, want)
+	}
+}
+
+func TestCreateRecordingReturnsServerErrorWhenEnqueueFails(t *testing.T) {
+	store := recordings.NewMemoryStore()
+	processor := &recordingProcessorSpy{err: errRecordingProcessorFailed}
+	router := NewRouterWithProcessor(store, processor)
+
+	requestBody := strings.NewReader(`{"title":"Weekly sync","workflow_type":"meeting","language":"en"}`)
+	request := httptest.NewRequest(http.MethodPost, "/recordings", requestBody)
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("status code = %d, want %d", response.Code, http.StatusInternalServerError)
+	}
+	if got, want := len(processor.enqueued), 1; got != want {
+		t.Fatalf("enqueued recordings = %d, want %d", got, want)
 	}
 }
 
