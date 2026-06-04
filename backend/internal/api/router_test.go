@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/zzyhdu/soniq/backend/internal/recordings"
 )
 
 func TestHealthzReturnsOKJSON(t *testing.T) {
@@ -35,6 +37,18 @@ func TestHealthzReturnsOKJSON(t *testing.T) {
 	}
 	if body.Service != "soniq-api" {
 		t.Fatalf("service = %q, want soniq-api", body.Service)
+	}
+}
+
+func TestNewRouterWithStorePreservesHealthzEndpoint(t *testing.T) {
+	router := NewRouterWithStore(recordings.NewMemoryStore())
+	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", response.Code, http.StatusOK)
 	}
 }
 
