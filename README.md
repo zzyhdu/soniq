@@ -132,6 +132,7 @@ optional ollama
 Start with:
 
 - [Architecture](docs/architecture.md)
+- [Local development](docs/development.md)
 - [Temporal workflows](docs/workflows.md)
 - [Provider abstraction](docs/providers.md)
 - [Domestic/global infrastructure](docs/infrastructure.md)
