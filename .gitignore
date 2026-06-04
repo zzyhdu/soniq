@@ -1,0 +1,26 @@
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+
+# env/secrets
+.env
+.env.*
+!.env.example
+
+# build/runtime
+bin/
+dist/
+build/
+coverage/
+.tmp/
+
+# dependencies
+node_modules/
+.venv/
+__pycache__/
+
+# local data
+.data/
+minio-data/
+postgres-data/
