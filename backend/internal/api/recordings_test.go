@@ -105,6 +105,57 @@ func TestGetRecordingReturnsNotFoundForUnknownRecording(t *testing.T) {
 	}
 }
 
+func TestGetRecordingStatusReturnsExistingRecordingStatus(t *testing.T) {
+	store := recordings.NewMemoryStore()
+	created, err := store.Create(recordings.CreateRecordingInput{
+		Title:        "Interview",
+		WorkflowType: domain.WorkflowTypeInterview,
+		Language:     "en",
+	})
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+	router := NewRouterWithStore(store)
+	request := httptest.NewRequest(http.MethodGet, "/recordings/"+created.ID+"/status", nil)
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusOK, response.Body.String())
+	}
+	contentType := response.Header().Get("Content-Type")
+	if !strings.HasPrefix(contentType, "application/json") {
+		t.Fatalf("Content-Type = %q, want application/json", contentType)
+	}
+
+	var body struct {
+		ID     string                 `json:"id"`
+		Status domain.RecordingStatus `json:"status"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body.ID != created.ID {
+		t.Fatalf("id = %q, want %q", body.ID, created.ID)
+	}
+	if body.Status != domain.RecordingStatusUploaded {
+		t.Fatalf("status = %q, want uploaded", body.Status)
+	}
+}
+
+func TestGetRecordingStatusReturnsNotFoundForUnknownRecording(t *testing.T) {
+	router := NewRouterWithStore(recordings.NewMemoryStore())
+	request := httptest.NewRequest(http.MethodGet, "/recordings/rec_missing/status", nil)
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status code = %d, want %d", response.Code, http.StatusNotFound)
+	}
+}
+
 func TestCreateRecordingRejectsInvalidJSON(t *testing.T) {
 	router := NewRouterWithStore(recordings.NewMemoryStore())
 	request := httptest.NewRequest(http.MethodPost, "/recordings", bytes.NewBufferString(`{"title":`))

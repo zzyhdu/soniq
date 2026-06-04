@@ -65,7 +65,8 @@ func recordingByIDHandler(store *recordings.MemoryStore) http.HandlerFunc {
 			return
 		}
 
-		id := strings.TrimPrefix(r.URL.Path, "/recordings/")
+		path := strings.TrimPrefix(r.URL.Path, "/recordings/")
+		id, wantsStatus := strings.CutSuffix(path, "/status")
 		if id == "" || strings.Contains(id, "/") {
 			http.NotFound(w, r)
 			return
@@ -79,6 +80,16 @@ func recordingByIDHandler(store *recordings.MemoryStore) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
+		if wantsStatus {
+			_ = json.NewEncoder(w).Encode(struct {
+				ID     string                 `json:"id"`
+				Status domain.RecordingStatus `json:"status"`
+			}{
+				ID:     recording.ID,
+				Status: recording.Status,
+			})
+			return
+		}
 		_ = json.NewEncoder(w).Encode(recording)
 	}
 }
