@@ -10,6 +10,7 @@ import (
 type Config struct {
 	AppEnv                                       string
 	PublicURL                                    string
+	APIAddress                                   string
 	TemporalAddress                              string
 	TemporalNamespace                            string
 	TemporalTaskQueue                            string
@@ -28,6 +29,7 @@ func LoadFromEnv() Config {
 	return Config{
 		AppEnv:                             envString("APP_ENV", "development"),
 		PublicURL:                          envString("APP_PUBLIC_URL", "http://localhost:8080"),
+		APIAddress:                         envString("API_ADDRESS", ":8080"),
 		TemporalAddress:                    envString("TEMPORAL_ADDRESS", "localhost:7233"),
 		TemporalNamespace:                  envString("TEMPORAL_NAMESPACE", "default"),
 		TemporalTaskQueue:                  envString("TEMPORAL_TASK_QUEUE", "soniq-audio-pipeline"),

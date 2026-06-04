@@ -11,6 +11,9 @@ func TestLoadFromEnvUsesDevelopmentDefaults(t *testing.T) {
 	if cfg.PublicURL != "http://localhost:8080" {
 		t.Fatalf("PublicURL = %q, want http://localhost:8080", cfg.PublicURL)
 	}
+	if cfg.APIAddress != ":8080" {
+		t.Fatalf("APIAddress = %q, want :8080", cfg.APIAddress)
+	}
 	if cfg.TemporalAddress != "localhost:7233" {
 		t.Fatalf("TemporalAddress = %q, want localhost:7233", cfg.TemporalAddress)
 	}
@@ -46,6 +49,7 @@ func TestLoadFromEnvUsesDevelopmentDefaults(t *testing.T) {
 func TestLoadFromEnvAppliesEnvironmentOverrides(t *testing.T) {
 	t.Setenv("APP_ENV", "test")
 	t.Setenv("APP_PUBLIC_URL", "http://127.0.0.1:9090")
+	t.Setenv("API_ADDRESS", ":9090")
 	t.Setenv("TEMPORAL_ADDRESS", "temporal:7233")
 	t.Setenv("TEMPORAL_NAMESPACE", "soniq")
 	t.Setenv("TEMPORAL_TASK_QUEUE", "custom-queue")
@@ -65,6 +69,9 @@ func TestLoadFromEnvAppliesEnvironmentOverrides(t *testing.T) {
 	}
 	if cfg.PublicURL != "http://127.0.0.1:9090" {
 		t.Fatalf("PublicURL = %q, want override", cfg.PublicURL)
+	}
+	if cfg.APIAddress != ":9090" {
+		t.Fatalf("APIAddress = %q, want :9090", cfg.APIAddress)
 	}
 	if cfg.TemporalAddress != "temporal:7233" {
 		t.Fatalf("TemporalAddress = %q, want override", cfg.TemporalAddress)
