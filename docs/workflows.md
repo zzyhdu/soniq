@@ -4,7 +4,7 @@ Soniq uses Temporal for durable audio processing workflows.
 
 ## Current implementation status
 
-The repository currently contains a Temporal workflow skeleton, not the full audio pipeline described below. The implemented boundary uses the real Temporal Go SDK and Temporal SDK testsuite, registers `RecordingProcessingWorkflow`, and provides activity stubs for validation and recording status transitions. It does not yet call ffmpeg, object storage, ASR providers, LLM providers, Postgres persistence, provider webhooks, or a production Temporal smoke test.
+The repository currently contains an API-to-Temporal workflow start skeleton, not the full audio pipeline described below. The implemented boundary uses the real Temporal Go SDK and Temporal SDK testsuite, wires successful `POST /recordings` requests through a Temporal-backed recording processor, starts `RecordingProcessingWorkflow` asynchronously with workflow ID `recording-processing-<recording_id>`, registers the workflow on the worker, and provides activity stubs for validation and recording status transitions. It does not yet call ffmpeg, object storage, ASR providers, LLM providers, Postgres persistence, provider webhooks, or a production Temporal smoke test.
 
 ## Primary workflow
 

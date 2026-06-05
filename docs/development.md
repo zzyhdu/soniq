@@ -6,7 +6,7 @@ Soniq is currently in the Temporal workflow skeleton milestone. The commands bel
 
 - the API exposes `GET /healthz`;
 - the API exposes in-memory recording metadata endpoints: `POST /recordings`, `GET /recordings/{id}`, and `GET /recordings/{id}/status`;
-- `POST /recordings` invokes an injectable recording processor seam after successful creation; the default processor is a no-op and does not start a real Temporal workflow yet;
+- `POST /recordings` invokes an injectable recording processor seam after successful creation; the production API command wires that seam to Temporal and starts `RecordingProcessingWorkflow` asynchronously;
 - the worker starts a real Temporal SDK worker, registers the recording processing workflow and activity stubs, and polls the configured task queue;
 - Postgres, object storage, ffmpeg, ASR, LLM providers, authentication, and the web UI are not implemented in this milestone.
 
@@ -71,17 +71,28 @@ make test
 
 ## Run the API skeleton
 
-Start the API server:
+`make api` now builds the HTTP router with a Temporal-backed recording processor. At startup it dials the configured Temporal server, so a reachable Temporal server is required even before serving requests.
+
+Start Temporal first, then start the API server:
 
 ```bash
 make api
 ```
+
+Default runtime configuration:
+
+- `API_ADDRESS=:8080`
+- `TEMPORAL_ADDRESS=localhost:7233`
+- `TEMPORAL_NAMESPACE=default`
+- `TEMPORAL_TASK_QUEUE=soniq-audio-pipeline`
 
 By default the API listens on `:8080`. If that port is already in use, override the address:
 
 ```bash
 API_ADDRESS=:18080 make api
 ```
+
+If Temporal is not reachable, `make api` fails during startup. Unit tests do not require a running Temporal server; command wiring is covered by an injected fake Temporal client.
 
 Verify the health endpoint in another terminal:
 
@@ -108,14 +119,20 @@ Content-Type: application/json
 
 ## Use the Recording API skeleton
 
-The recording endpoints currently store metadata in memory only. Records disappear when the API process exits or restarts. This skeleton does not upload audio, persist to Postgres, write objects to storage, or start Temporal workflows.
+The recording endpoints currently store metadata in memory only. Records disappear when the API process exits or restarts. This skeleton does not upload audio, persist to Postgres, write objects to storage, or perform real audio processing.
 
-After a recording is created successfully, the API calls an injectable `RecordingProcessor` seam. The default local processor is a no-op, so the HTTP response remains fast and no Temporal workflow is started by the API yet. A later milestone can replace the no-op with a Temporal client implementation that starts `RecordingProcessingWorkflow`.
+After a recording is created successfully, the API calls an injectable `RecordingProcessor` seam. In the production API command, that seam is wired to a Temporal-backed processor that starts `RecordingProcessingWorkflow` asynchronously with workflow ID `recording-processing-<recording_id>` on `TEMPORAL_TASK_QUEUE`. The HTTP response returns the newly created metadata record; it does not wait for workflow completion.
 
-Start the API on a local test port:
+Start the API on a local test port after Temporal is running:
 
 ```bash
 API_ADDRESS=:18080 make api
+```
+
+Start the worker in another terminal using the same task queue:
+
+```bash
+TEMPORAL_TASK_QUEUE=soniq-audio-pipeline make worker
 ```
 
 Create a recording metadata record from another terminal:
@@ -217,7 +234,7 @@ The current Temporal implementation is intentionally a skeleton:
 
 - The workflow is implemented with the real Temporal Go SDK and covered by the Temporal SDK testsuite.
 - Activity implementations are stubs that validate input and model recording status transitions only.
-- The API calls an injectable recording processor seam after `POST /recordings`; the default local processor is a no-op and does not start a production workflow.
+- The API calls an injectable recording processor seam after `POST /recordings`; the production API command wires that seam to a Temporal client and starts `RecordingProcessingWorkflow` asynchronously.
 - Worker startup is the boundary where the code leaves in-process tests and requires a real Temporal server.
 
 The skeleton does not yet perform audio processing, storage writes, ASR, LLM summarization, Postgres persistence, provider webhooks, or production Temporal smoke testing. Those integrations should be added as separate milestones with explicit local service configuration.
@@ -237,9 +254,9 @@ The current backend reads environment variables directly. Important local settin
 | `APP_ENV` | `development` | Runtime environment name. |
 | `APP_PUBLIC_URL` | `http://localhost:8080` | Public API URL used by clients and links. |
 | `API_ADDRESS` | `:8080` | Local HTTP listen address for `make api`. |
-| `TEMPORAL_ADDRESS` | `localhost:7233` | Future Temporal server address. |
-| `TEMPORAL_NAMESPACE` | `default` | Future Temporal namespace. |
-| `TEMPORAL_TASK_QUEUE` | `soniq-audio-pipeline` | Future worker task queue. |
+| `TEMPORAL_ADDRESS` | `localhost:7233` | Temporal server address used by `make api` and `make worker`. |
+| `TEMPORAL_NAMESPACE` | `default` | Temporal namespace used by `make api` and `make worker`. |
+| `TEMPORAL_TASK_QUEUE` | `soniq-audio-pipeline` | Task queue used when the API starts workflows and the worker polls work. |
 | `STORAGE_PROVIDER` | `s3_compatible` | Future storage provider selector. |
 | `TRANSCRIPTION_PROVIDER` | `faster_whisper` | Future transcription provider selector. |
 | `LLM_PROVIDER` | `openai_compatible` | Future LLM provider selector. |
@@ -258,6 +275,7 @@ The current backend foundation is intentionally small. It provides:
 - `GET /healthz`;
 - in-memory recording metadata endpoints;
 - API and Temporal worker command entrypoints;
+- a Temporal-backed recording processor that starts `RecordingProcessingWorkflow` after successful `POST /recordings` requests;
 - a Temporal SDK recording processing workflow skeleton;
 - activity stubs for validation and recording status transitions;
 - root `Makefile` quality commands.
