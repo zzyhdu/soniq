@@ -1,6 +1,24 @@
 # Roadmap
 
+## Current progress snapshot
+
+Soniq has moved from documentation-only architecture into an executable backend foundation.
+
+Completed foundation milestones:
+
+- Go backend skeleton with `GET /healthz`.
+- In-memory recording metadata API: `POST /recordings`, `GET /recordings/{id}`, `GET /recordings/{id}/status`.
+- Temporal workflow skeleton with activity stubs.
+- Temporal worker registration.
+- API-to-Temporal workflow start: successful `POST /recordings` starts `RecordingProcessingWorkflow` asynchronously.
+- Local Temporal development environment: Docker Compose services, Makefile targets, docs, and a manual smoke helper.
+- Verified local smoke path: API → Temporal → worker → workflow/activity stubs → completed workflow.
+
+The next focus is durable recording persistence.
+
 ## Phase 0 — Project skeleton and architecture docs
+
+Status: complete.
 
 - Create repository structure.
 - Document architecture, workflows, providers, infrastructure, security, and data model.
@@ -8,15 +26,78 @@
 
 ## Phase 1 — Minimal working pipeline
 
+Phase 1 is now split into small implementation milestones.
+
+### 1A — Backend and Recording API skeleton
+
+Status: complete.
+
 - Go API server.
-- Postgres schema and migrations.
+- In-memory recording metadata API.
+- Config loading and validation.
+- Root quality commands.
+
+### 1B — Temporal workflow skeleton and local runtime
+
+Status: complete.
+
+- Temporal worker and `RecordingProcessingWorkflow` skeleton.
+- Activity stubs for validation and status transitions.
+- API starts workflow after successful recording creation.
+- Local Temporal Compose runtime.
+- Manual smoke helper for API → Temporal → worker verification.
+
+### 1C — Postgres recording persistence
+
+Status: next.
+
+Goal: replace the production API's in-memory recording metadata store with durable Postgres-backed persistence while keeping unit tests hermetic.
+
+Planned scope:
+
+- Add a Soniq-owned local Postgres service separate from Temporal's internal database.
+- Add migrations for the `recordings` table.
+- Add Postgres DSN configuration and startup validation.
+- Add repository/store interface that preserves the current API handler shape.
+- Implement Postgres-backed recording create/get/status behavior.
+- Wire production `cmd/api` to use Postgres, while tests can continue to use in-memory/fake stores.
+- Keep workflow activities as stubs until the status persistence boundary is added explicitly.
+
+Recommended database boundary:
+
+- Temporal's Postgres is an infrastructure database owned by Temporal.
+- Soniq's Postgres is an application database owned by Soniq.
+- In local development they may run in the same Docker Compose project, but should be separate services/databases by default to avoid coupling application migrations to Temporal internals.
+
+### 1D — Persist workflow status transitions
+
+Status: planned after 1C.
+
+- Add activity dependencies for updating recording status durably.
+- Persist `processing` and `completed` status transitions.
+- Consider a `workflow_runs` table once workflow metadata is needed beyond recording status.
+
+### 1E — Audio upload and object storage
+
+Status: planned.
+
 - S3-compatible storage provider with MinIO local setup.
-- Temporal worker and `RecordingProcessingWorkflow`.
 - Audio upload session and recording creation API.
+- Store original audio artifact metadata.
+
+### 1F — First real processing activities
+
+Status: planned.
+
 - ffmpeg probe/normalize activities.
 - One transcription provider.
 - One LLM provider.
 - Persist transcript and summary.
+
+### 1G — Basic web UI
+
+Status: planned.
+
 - Basic web UI for upload/status/result.
 
 ## Phase 2 — Provider expansion
