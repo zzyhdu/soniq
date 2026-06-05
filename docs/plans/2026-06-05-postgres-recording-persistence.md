@@ -101,21 +101,21 @@ Prefer a separate service:
 soniq-postgresql:
   image: postgres:18.4-alpine
   environment:
-    POSTGRES_USER: soniq
-    POSTGRES_PASSWORD: soniq
+    POSTGRES_USER: soniq_user
+    POSTGRES_PASSWORD: soniq_password
     POSTGRES_DB: soniq
   ports:
     - "5432:5432"
   healthcheck:
-    test: ["CMD-SHELL", "pg_isready -U soniq"]
+    test: ["CMD-SHELL", "pg_isready -U soniq_user"]
     interval: 5s
     timeout: 5s
     retries: 10
   volumes:
-    - soniq-postgres-data:/var/lib/postgresql/data
+    - soniq-postgres-data:/var/lib/postgresql
 ```
 
-Use `POSTGRES_DSN=postgres://soniq:soniq@localhost:5432/soniq?sslmode=disable` for local development.
+Use `POSTGRES_DSN=postgres://soniq_user:soniq_password@localhost:5432/soniq?sslmode=disable` for local development.
 
 If port `5432` is already taken, use a project-specific host port such as `55432` and update `.env.example`/docs accordingly.
 
@@ -132,7 +132,7 @@ If services are running and the user approves live checks:
 
 ```bash
 make temporal-up
-docker compose -f compose.temporal.yml exec -T soniq-postgresql pg_isready -U soniq
+docker compose -f compose.temporal.yml exec -T soniq-postgresql pg_isready -U soniq_user
 ```
 
 **Suggested commit:**
@@ -207,7 +207,7 @@ chore: add recordings table migration
 **TDD steps:**
 
 1. Add config tests asserting:
-   - default `PostgresDSN` is `postgres://soniq:soniq@localhost:5432/soniq?sslmode=disable` or the chosen local DSN;
+   - default `PostgresDSN` is `postgres://soniq_user:***@localhost:5432/soniq?sslmode=disable` or the chosen local DSN;
    - env override works;
    - startup validation rejects empty `POSTGRES_DSN` once production API depends on it.
 2. Run targeted tests and watch RED.

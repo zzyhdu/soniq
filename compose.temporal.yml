@@ -1,4 +1,20 @@
 services:
+  soniq-postgresql:
+    image: postgres:18.4-alpine
+    environment:
+      POSTGRES_USER: soniq_user
+      POSTGRES_PASSWORD: soniq_password
+      POSTGRES_DB: soniq
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U soniq_user"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "5432:5432"
+    volumes:
+      - soniq-postgres-data:/var/lib/postgresql
+
   temporal-postgresql:
     image: postgres:16.9-alpine
     environment:
@@ -39,4 +55,5 @@ services:
       - "8233:8080"
 
 volumes:
+  soniq-postgres-data:
   temporal-postgres-data:
