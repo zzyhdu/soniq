@@ -14,6 +14,7 @@ Soniq is currently in the Temporal workflow skeleton milestone. The commands bel
 
 - Go 1.24 or newer.
 - `make`.
+- Optional for local Temporal smoke testing: Docker and Docker Compose.
 
 From the repository root, verify the backend toolchain:
 
@@ -73,7 +74,20 @@ make test
 
 `make api` now builds the HTTP router with a Temporal-backed recording processor. At startup it dials the configured Temporal server, so a reachable Temporal server is required even before serving requests.
 
-Start Temporal first, then start the API server:
+For local development, start Temporal first:
+
+```bash
+make temporal-up
+make temporal-ps
+```
+
+The local Temporal frontend listens on `localhost:7233`, and the Temporal Web UI is available at:
+
+```txt
+http://localhost:8233
+```
+
+Then start the API server:
 
 ```bash
 make api
@@ -123,16 +137,33 @@ The recording endpoints currently store metadata in memory only. Records disappe
 
 After a recording is created successfully, the API calls an injectable `RecordingProcessor` seam. In the production API command, that seam is wired to a Temporal-backed processor that starts `RecordingProcessingWorkflow` asynchronously with workflow ID `recording-processing-<recording_id>` on `TEMPORAL_TASK_QUEUE`. The HTTP response returns the newly created metadata record; it does not wait for workflow completion.
 
-Start the API on a local test port after Temporal is running:
+### Manual local Temporal smoke flow
+
+This is a manual local development smoke flow, not a CI requirement. It assumes Docker is available and uses the local Temporal stack from `compose.temporal.yml`.
+
+Start Temporal and confirm the services are running:
 
 ```bash
-API_ADDRESS=:18080 make api
+make temporal-up
+make temporal-ps
 ```
 
-Start the worker in another terminal using the same task queue:
+Open the Temporal Web UI:
+
+```txt
+http://localhost:8233
+```
+
+Start the worker in one terminal using the default task queue:
 
 ```bash
 TEMPORAL_TASK_QUEUE=soniq-audio-pipeline make worker
+```
+
+Start the API on a local test port in another terminal:
+
+```bash
+API_ADDRESS=:18080 make api
 ```
 
 Create a recording metadata record from another terminal:
@@ -162,7 +193,13 @@ Content-Type: application/json
 }
 ```
 
-Save the returned `id`, then fetch the full recording:
+Save the returned `id`, then inspect the matching workflow execution in the Temporal Web UI:
+
+```txt
+recording-processing-<recording_id>
+```
+
+Fetch the full recording:
 
 ```bash
 curl -i http://localhost:18080/recordings/<id>
@@ -190,6 +227,12 @@ interview
 ```
 
 `workflow_type` is the processing template selector, not a user tag. Future milestones may add custom templates or more specialized workflow types.
+
+When you finish the manual smoke flow, stop the local Temporal stack:
+
+```bash
+make temporal-down
+```
 
 ## Run the Temporal worker skeleton
 
