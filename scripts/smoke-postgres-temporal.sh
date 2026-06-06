@@ -76,6 +76,7 @@ start_worker() {
     cd "$ROOT_DIR"
     TEMPORAL_NAMESPACE="$TEMPORAL_NAMESPACE" \
     TEMPORAL_TASK_QUEUE="$TEMPORAL_TASK_QUEUE" \
+    POSTGRES_DSN="$POSTGRES_DSN" \
     make worker
   ) >"$WORKER_LOG" 2>&1 &
   WORKER_PID=$!
@@ -188,6 +189,18 @@ assert_recording_audio_metadata_in_db() {
   fi
 }
 
+assert_recording_status_in_db() {
+  local recording_id="$1"
+  local expected_status="$2"
+  local actual_status
+  actual_status="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
+    psql -U soniq_user -d soniq -Atc "SELECT status FROM recordings WHERE id = '$recording_id'")"
+  if [[ "$actual_status" != "$expected_status" ]]; then
+    log "unexpected DB recording status: $actual_status, want $expected_status"
+    return 1
+  fi
+}
+
 main() {
   cd "$ROOT_DIR"
 
@@ -264,6 +277,8 @@ main() {
     if grep -q 'Status.*COMPLETED' <<<"$describe_output"; then
       printf '%s\n' "$describe_output"
       log "Temporal workflow completed: $workflow_id"
+      assert_recording_status_in_db "$recording_id" completed
+      log "recording DB status reached completed: $recording_id"
       log "recording persisted across API restart: $recording_id"
       return 0
     fi
