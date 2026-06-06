@@ -22,5 +22,6 @@ __pycache__/
 
 # local data
 .data/
+var/
 minio-data/
 postgres-data/

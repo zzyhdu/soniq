@@ -7,7 +7,11 @@ API_URL="${API_URL:-http://localhost:8080}"
 API_ADDRESS="${API_ADDRESS:-:8080}"
 TEMPORAL_NAMESPACE="${TEMPORAL_NAMESPACE:-default}"
 TEMPORAL_TASK_QUEUE="${TEMPORAL_TASK_QUEUE:-soniq-audio-pipeline}"
-POSTGRES_DSN="${POSTGRES_DSN:-postgres://soniq_user:soniq_password@localhost:5432/soniq?sslmode=disable}"
+POSTGRES_USER="${POSTGRES_USER:-soniq_user}"
+POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-soniq_password}"
+POSTGRES_DSN="${POSTGRES_DSN:-postgres://$POSTGRES_USER:${POSTGRES_PASSWORD}@localhost:5432/soniq?sslmode=disable}"
+STORAGE_PROVIDER="${STORAGE_PROVIDER:-local}"
+LOCAL_STORAGE_PATH="${LOCAL_STORAGE_PATH:-$ROOT_DIR/var/uploads/smoke}"
 SMOKE_DOWN="${SMOKE_DOWN:-0}"
 
 API_PID=""
@@ -91,6 +95,8 @@ start_api() {
     POSTGRES_DSN="$POSTGRES_DSN" \
     TEMPORAL_NAMESPACE="$TEMPORAL_NAMESPACE" \
     TEMPORAL_TASK_QUEUE="$TEMPORAL_TASK_QUEUE" \
+    STORAGE_PROVIDER="$STORAGE_PROVIDER" \
+    LOCAL_STORAGE_PATH="$LOCAL_STORAGE_PATH" \
     make api
   ) >>"$API_LOG" 2>&1 &
   API_PID=$!
@@ -110,6 +116,78 @@ extract_recording_id() {
   python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])'
 }
 
+extract_json_field() {
+  local field="$1"
+  python3 -c 'import json,sys; print(json.load(sys.stdin)[sys.argv[1]])' "$field"
+}
+
+assert_json_field_equals() {
+  local json="$1"
+  local field="$2"
+  local expected="$3"
+  local actual
+  actual="$(printf '%s\n' "$json" | extract_json_field "$field")"
+  if [[ "$actual" != "$expected" ]]; then
+    log "expected JSON field $field=$expected, got $actual"
+    return 1
+  fi
+}
+
+apply_recording_migrations() {
+  local table_exists audio_columns_exist
+  table_exists="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
+    psql -U soniq_user -d soniq -Atc "SELECT to_regclass('public.recordings') IS NOT NULL")"
+  if [[ "$table_exists" != "t" ]]; then
+    log "applying recordings migration 0001"
+    docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
+      psql -U soniq_user -d soniq -v ON_ERROR_STOP=1 \
+      -f - < backend/migrations/0001_create_recordings.up.sql
+  else
+    log "recordings table already exists; skipping migration 0001"
+  fi
+
+  audio_columns_exist="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
+    psql -U soniq_user -d soniq -Atc "SELECT count(*) = 3 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'recordings' AND column_name IN ('audio_object_key', 'audio_content_type', 'audio_size_bytes')")"
+  if [[ "$audio_columns_exist" != "t" ]]; then
+    log "applying recordings migration 0002"
+    docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
+      psql -U soniq_user -d soniq -v ON_ERROR_STOP=1 \
+      -f - < backend/migrations/0002_add_recording_audio_metadata.up.sql
+  else
+    log "recording audio metadata columns already exist; skipping migration 0002"
+  fi
+}
+
+assert_uploaded_object() {
+  local object_key="$1"
+  local expected_contents="$2"
+  local object_path="$LOCAL_STORAGE_PATH/$object_key"
+  if [[ ! -f "$object_path" ]]; then
+    log "uploaded object does not exist: $object_path"
+    return 1
+  fi
+  local actual_contents
+  actual_contents="$(cat "$object_path")"
+  if [[ "$actual_contents" != "$expected_contents" ]]; then
+    log "uploaded object contents mismatch"
+    return 1
+  fi
+}
+
+assert_recording_audio_metadata_in_db() {
+  local recording_id="$1"
+  local expected_object_key="$2"
+  local expected_content_type="$3"
+  local expected_size_bytes="$4"
+  local row
+  row="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
+    psql -U soniq_user -d soniq -AtF $'\t' -c "SELECT audio_object_key, audio_content_type, audio_size_bytes FROM recordings WHERE id = '$recording_id'")"
+  if [[ "$row" != "$expected_object_key"$'\t'"$expected_content_type"$'\t'"$expected_size_bytes" ]]; then
+    log "unexpected DB audio metadata row: $row"
+    return 1
+  fi
+}
+
 main() {
   cd "$ROOT_DIR"
 
@@ -127,40 +205,52 @@ main() {
   wait_for_command "Temporal frontend" 60 \
     docker compose -f "$COMPOSE_FILE" exec -T temporal temporal --address temporal:7233 operator namespace list
 
-  local table_exists
-  table_exists="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
-    psql -U soniq_user -d soniq -Atc "SELECT to_regclass('public.recordings') IS NOT NULL")"
-  if [[ "$table_exists" != "t" ]]; then
-    log "applying recordings migration"
-    docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
-      psql -U soniq_user -d soniq -v ON_ERROR_STOP=1 \
-      -f - < backend/migrations/0001_create_recordings.up.sql
-  else
-    log "recordings table already exists; skipping migration apply"
-  fi
+  apply_recording_migrations
+
+  rm -rf "$LOCAL_STORAGE_PATH"
+  mkdir -p "$LOCAL_STORAGE_PATH"
 
   start_worker
   start_api
 
-  log "creating recording via POST /recordings"
-  local response recording_id workflow_id
-  response="$(curl -fsS -X POST "$API_URL/recordings" \
-    -H 'Content-Type: application/json' \
-    -d '{"title":"Weekly sync","workflow_type":"meeting","language":"en"}')"
+  log "uploading recording audio via POST /recordings/upload"
+  local response recording_id workflow_id audio_object_key audio_contents audio_size audio_file
+  audio_contents="soniq-smoke-audio-bytes"
+  audio_size="${#audio_contents}"
+  audio_file="$LOG_DIR/weekly.wav"
+  printf '%s' "$audio_contents" >"$audio_file"
+  response="$(curl -fsS -X POST "$API_URL/recordings/upload" \
+    -F 'title=Weekly sync' \
+    -F 'workflow_type=meeting' \
+    -F 'language=en' \
+    -F "audio=@$audio_file;filename=weekly.wav;type=audio/wav")"
   printf '%s\n' "$response"
   recording_id="$(printf '%s\n' "$response" | extract_recording_id)"
+  audio_object_key="$(printf '%s\n' "$response" | extract_json_field audio_object_key)"
   workflow_id="recording-processing-$recording_id"
   log "expected Temporal workflow ID: $workflow_id"
 
+  assert_json_field_equals "$response" audio_content_type audio/wav
+  assert_json_field_equals "$response" audio_size_bytes "$audio_size"
+  assert_uploaded_object "$audio_object_key" "$audio_contents"
+  assert_recording_audio_metadata_in_db "$recording_id" "$audio_object_key" audio/wav "$audio_size"
+
   log "verifying GET /recordings/$recording_id before API restart"
-  curl -fsS "$API_URL/recordings/$recording_id" >/dev/null
+  response="$(curl -fsS "$API_URL/recordings/$recording_id")"
+  assert_json_field_equals "$response" audio_object_key "$audio_object_key"
+  assert_json_field_equals "$response" audio_content_type audio/wav
+  assert_json_field_equals "$response" audio_size_bytes "$audio_size"
 
   log "restarting only API to verify Postgres persistence"
   stop_api
   start_api
 
   log "verifying GET /recordings/$recording_id after API restart"
-  curl -fsS "$API_URL/recordings/$recording_id" >/dev/null
+  response="$(curl -fsS "$API_URL/recordings/$recording_id")"
+  assert_json_field_equals "$response" audio_object_key "$audio_object_key"
+  assert_json_field_equals "$response" audio_content_type audio/wav
+  assert_json_field_equals "$response" audio_size_bytes "$audio_size"
+  assert_uploaded_object "$audio_object_key" "$audio_contents"
   curl -fsS "$API_URL/recordings/$recording_id/status" >/dev/null
 
   log "waiting for Temporal workflow completion"
