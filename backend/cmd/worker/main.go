@@ -4,9 +4,12 @@ import (
 	"context"
 	"log"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/zzyhdu/soniq/backend/internal/activities"
 	"github.com/zzyhdu/soniq/backend/internal/config"
+	"github.com/zzyhdu/soniq/backend/internal/recordings"
 	"github.com/zzyhdu/soniq/backend/internal/workflows"
+	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	temporalworker "go.temporal.io/sdk/worker"
 )
@@ -37,8 +40,14 @@ func run(ctx context.Context, cfg config.Config) error {
 	}
 	defer temporalClient.Close()
 
+	recordingStore, err := openPostgresRecordingStore(ctx, cfg.PostgresDSN)
+	if err != nil {
+		return err
+	}
+	defer recordingStore.Close()
+
 	worker := temporalworker.New(temporalClient, cfg.TemporalTaskQueue, temporalworker.Options{})
-	registerRecordingProcessing(worker)
+	registerRecordingProcessing(worker, recordingStore)
 
 	return worker.Run(temporalworker.InterruptCh())
 }
@@ -46,11 +55,48 @@ func run(ctx context.Context, cfg config.Config) error {
 type recordingProcessingRegistry interface {
 	RegisterWorkflow(interface{})
 	RegisterActivity(interface{})
+	RegisterActivityWithOptions(interface{}, activity.RegisterOptions)
 }
 
-func registerRecordingProcessing(registry recordingProcessingRegistry) {
+func registerRecordingProcessing(registry recordingProcessingRegistry, store activities.RecordingStore) {
+	activitySet := activities.NewRecordingProcessingActivities(store)
+
 	registry.RegisterWorkflow(workflows.RecordingProcessingWorkflow)
-	registry.RegisterActivity(activities.ValidateRecordingActivity)
-	registry.RegisterActivity(activities.MarkRecordingProcessingActivity)
-	registry.RegisterActivity(activities.CompleteRecordingProcessingActivity)
+	registry.RegisterActivityWithOptions(activitySet.ValidateRecording, activity.RegisterOptions{Name: "ValidateRecordingActivity"})
+	registry.RegisterActivityWithOptions(activitySet.MarkRecordingProcessing, activity.RegisterOptions{Name: "MarkRecordingProcessingActivity"})
+	registry.RegisterActivityWithOptions(activitySet.CompleteRecordingProcessing, activity.RegisterOptions{Name: "CompleteRecordingProcessingActivity"})
+	registry.RegisterActivityWithOptions(activitySet.FailRecordingProcessing, activity.RegisterOptions{Name: "FailRecordingProcessingActivity"})
+}
+
+type recordingStoreClient interface {
+	activities.RecordingStore
+	Close()
+}
+
+func openPostgresRecordingStore(ctx context.Context, dsn string) (recordingStoreClient, error) {
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		return nil, err
+	}
+	return &postgresRecordingStoreClient{
+		PostgresStore: recordings.NewPostgresStore(postgresExecutor{pool: pool}),
+		pool:          pool,
+	}, nil
+}
+
+type postgresExecutor struct {
+	pool *pgxpool.Pool
+}
+
+func (e postgresExecutor) QueryRow(ctx context.Context, query string, args ...any) interface{ Scan(dest ...any) error } {
+	return e.pool.QueryRow(ctx, query, args...)
+}
+
+type postgresRecordingStoreClient struct {
+	*recordings.PostgresStore
+	pool *pgxpool.Pool
+}
+
+func (s *postgresRecordingStoreClient) Close() {
+	s.pool.Close()
 }

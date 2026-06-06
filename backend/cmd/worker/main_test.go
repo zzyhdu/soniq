@@ -4,15 +4,16 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/zzyhdu/soniq/backend/internal/activities"
+	"github.com/zzyhdu/soniq/backend/internal/recordings"
 	"github.com/zzyhdu/soniq/backend/internal/workflows"
 	"go.temporal.io/sdk/activity"
 )
 
 func TestRegisterRecordingProcessingRegistersWorkflowAndActivities(t *testing.T) {
 	worker := &recordingWorkerSpy{}
+	store := recordings.NewMemoryStore()
 
-	registerRecordingProcessing(worker)
+	registerRecordingProcessing(worker, store)
 
 	if got, want := len(worker.workflows), 1; got != want {
 		t.Fatalf("registered workflows = %d, want %d", got, want)
@@ -21,17 +22,18 @@ func TestRegisterRecordingProcessingRegistersWorkflowAndActivities(t *testing.T)
 		t.Fatalf("registered workflow = %T, want RecordingProcessingWorkflow", worker.workflows[0])
 	}
 
-	wantActivities := []interface{}{
-		activities.ValidateRecordingActivity,
-		activities.MarkRecordingProcessingActivity,
-		activities.CompleteRecordingProcessingActivity,
+	wantActivityNames := []string{
+		"ValidateRecordingActivity",
+		"MarkRecordingProcessingActivity",
+		"CompleteRecordingProcessingActivity",
+		"FailRecordingProcessingActivity",
 	}
-	if got, want := len(worker.activities), len(wantActivities); got != want {
+	if got, want := len(worker.activities), len(wantActivityNames); got != want {
 		t.Fatalf("registered activities = %d, want %d", got, want)
 	}
-	for i, wantActivity := range wantActivities {
-		if !sameFunction(worker.activities[i], wantActivity) {
-			t.Fatalf("activity %d = %T, want %T", i, worker.activities[i], wantActivity)
+	for i, wantName := range wantActivityNames {
+		if got := worker.activities[i].options.Name; got != wantName {
+			t.Fatalf("activity %d name = %q, want %q", i, got, wantName)
 		}
 	}
 }
@@ -40,19 +42,24 @@ func sameFunction(a, b interface{}) bool {
 	return reflect.ValueOf(a).Pointer() == reflect.ValueOf(b).Pointer()
 }
 
+type registeredActivity struct {
+	activity interface{}
+	options  activity.RegisterOptions
+}
+
 type recordingWorkerSpy struct {
 	workflows  []interface{}
-	activities []interface{}
+	activities []registeredActivity
 }
 
 func (s *recordingWorkerSpy) RegisterWorkflow(workflow interface{}) {
 	s.workflows = append(s.workflows, workflow)
 }
 
-func (s *recordingWorkerSpy) RegisterActivity(activity interface{}) {
-	s.activities = append(s.activities, activity)
+func (s *recordingWorkerSpy) RegisterActivity(activityFn interface{}) {
+	s.RegisterActivityWithOptions(activityFn, activity.RegisterOptions{})
 }
 
-func (s *recordingWorkerSpy) RegisterActivityWithOptions(activity interface{}, options activity.RegisterOptions) {
-	s.RegisterActivity(activity)
+func (s *recordingWorkerSpy) RegisterActivityWithOptions(activityFn interface{}, options activity.RegisterOptions) {
+	s.activities = append(s.activities, registeredActivity{activity: activityFn, options: options})
 }
