@@ -36,6 +36,10 @@ func (s *recordingStoreSpy) UpdateStatus(input recordings.UpdateRecordingStatusI
 	return recording, nil
 }
 
+func (s *recordingStoreSpy) UpsertAudioProbe(input recordings.UpsertAudioProbeInput) (recordings.RecordingAudioProbe, error) {
+	return recordings.RecordingAudioProbe{RecordingID: input.RecordingID}, nil
+}
+
 func TestValidateRecordingActivityAcceptsValidInput(t *testing.T) {
 	input := RecordingProcessingInput{
 		RecordingID:  "rec_test",
