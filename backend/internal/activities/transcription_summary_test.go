@@ -58,10 +58,6 @@ func (s *transcriptionSummaryStoreSpy) GetTranscript(recordingID string) (record
 	return s.transcript, true
 }
 
-func (s *transcriptionSummaryStoreSpy) ListTranscriptSegments(recordingID string) []recordings.RecordingTranscriptSegment {
-	return nil
-}
-
 func (s *transcriptionSummaryStoreSpy) UpsertSummary(input recordings.UpsertSummaryInput) (recordings.RecordingSummary, error) {
 	s.summaries = append(s.summaries, input)
 	return recordings.RecordingSummary{

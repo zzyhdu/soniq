@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/zzyhdu/soniq/backend/internal/activities"
+	"github.com/zzyhdu/soniq/backend/internal/domain"
 	"github.com/zzyhdu/soniq/backend/internal/recordings"
 	"github.com/zzyhdu/soniq/backend/internal/workflows"
 	"go.temporal.io/sdk/activity"
@@ -13,7 +14,7 @@ import (
 
 func TestRegisterRecordingProcessingRegistersWorkflowAndActivities(t *testing.T) {
 	worker := &recordingWorkerSpy{}
-	store := recordings.NewMemoryStore()
+	store := &workerRecordingStoreSpy{}
 
 	registerRecordingProcessing(worker, store, localPathResolverTestStub{}, audioProbeRunnerTestStub{})
 
@@ -77,4 +78,18 @@ func (s *recordingWorkerSpy) RegisterActivity(activityFn interface{}) {
 
 func (s *recordingWorkerSpy) RegisterActivityWithOptions(activityFn interface{}, options activity.RegisterOptions) {
 	s.activities = append(s.activities, registeredActivity{activity: activityFn, options: options})
+}
+
+type workerRecordingStoreSpy struct{}
+
+func (s *workerRecordingStoreSpy) Get(id string) (domain.Recording, bool) {
+	return domain.Recording{ID: id}, true
+}
+
+func (s *workerRecordingStoreSpy) UpdateStatus(input recordings.UpdateRecordingStatusInput) (domain.Recording, error) {
+	return domain.Recording{ID: input.ID, Status: input.Status}, nil
+}
+
+func (s *workerRecordingStoreSpy) UpsertAudioProbe(input recordings.UpsertAudioProbeInput) (recordings.RecordingAudioProbe, error) {
+	return recordings.RecordingAudioProbe{RecordingID: input.RecordingID}, nil
 }

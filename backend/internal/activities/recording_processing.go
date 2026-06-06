@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -35,11 +36,29 @@ const (
 	FailRecordingProcessingActivityName     = "FailRecordingProcessingActivity"
 )
 
-// RecordingStore is the persistence seam used by recording processing activities.
+// RecordingStore is the persistence seam used by validation, status, and audio probe activities.
 type RecordingStore interface {
 	Get(id string) (domain.Recording, bool)
 	UpdateStatus(input recordings.UpdateRecordingStatusInput) (domain.Recording, error)
 	UpsertAudioProbe(input recordings.UpsertAudioProbeInput) (recordings.RecordingAudioProbe, error)
+}
+
+// TranscriptStore is the transcript persistence seam used by transcription and summarization activities.
+type TranscriptStore interface {
+	UpsertTranscript(input recordings.UpsertTranscriptInput) (recordings.RecordingTranscript, error)
+	GetTranscript(recordingID string) (recordings.RecordingTranscript, bool)
+}
+
+// SummaryStore is the summary persistence seam used by summarization activities.
+type SummaryStore interface {
+	UpsertSummary(input recordings.UpsertSummaryInput) (recordings.RecordingSummary, error)
+}
+
+// PipelineStore is the complete persistence seam used by the transcription/summarization pipeline.
+type PipelineStore interface {
+	RecordingStore
+	TranscriptStore
+	SummaryStore
 }
 
 // LocalObjectPathResolver resolves stored object keys to local filesystem paths.
@@ -64,6 +83,64 @@ type AudioProbeResult struct {
 	ProbedAt        time.Time
 }
 
+// TranscriptionProvider converts a local audio file into transcript text and segments.
+type TranscriptionProvider interface {
+	Transcribe(ctx context.Context, request TranscriptionRequest) (TranscriptionResult, error)
+}
+
+// TranscriptionRequest contains local audio metadata for transcription.
+type TranscriptionRequest struct {
+	RecordingID string
+	AudioPath   string
+	Language    string
+}
+
+// TranscriptionResult contains provider-neutral transcription output.
+type TranscriptionResult struct {
+	Provider      string
+	Model         string
+	Language      string
+	Text          string
+	RawResultJSON []byte
+	TranscribedAt time.Time
+	Segments      []TranscriptionSegmentResult
+}
+
+// TranscriptionSegmentResult contains one provider-neutral transcript segment.
+type TranscriptionSegmentResult struct {
+	SegmentIndex int
+	StartMS      int
+	EndMS        int
+	SpeakerLabel string
+	Text         string
+	Confidence   float64
+}
+
+// SummaryProvider converts transcript text and recording metadata into a summary.
+type SummaryProvider interface {
+	Summarize(ctx context.Context, request SummaryRequest) (SummaryResult, error)
+}
+
+// SummaryRequest contains provider-neutral summarization input.
+type SummaryRequest struct {
+	RecordingID    string
+	Title          string
+	WorkflowType   domain.WorkflowType
+	Language       string
+	TranscriptText string
+}
+
+// SummaryResult contains provider-neutral summary output.
+type SummaryResult struct {
+	Provider        string
+	Model           string
+	Title           string
+	Overview        string
+	ContentMarkdown string
+	RawResultJSON   []byte
+	SummarizedAt    time.Time
+}
+
 // FFProbeRunner runs the ffprobe binary.
 type FFProbeRunner struct {
 	Binary string
@@ -71,9 +148,13 @@ type FFProbeRunner struct {
 
 // RecordingProcessingActivities contains store-backed Temporal activity methods.
 type RecordingProcessingActivities struct {
-	store        RecordingStore
-	pathResolver LocalObjectPathResolver
-	probeRunner  AudioProbeRunner
+	store                 RecordingStore
+	transcriptStore       TranscriptStore
+	summaryStore          SummaryStore
+	pathResolver          LocalObjectPathResolver
+	probeRunner           AudioProbeRunner
+	transcriptionProvider TranscriptionProvider
+	summaryProvider       SummaryProvider
 }
 
 // NewRecordingProcessingActivities creates store-backed recording processing activities.
@@ -84,6 +165,19 @@ func NewRecordingProcessingActivities(store RecordingStore) *RecordingProcessing
 // NewRecordingProcessingActivitiesWithAudioProbe creates recording processing activities with audio probe dependencies.
 func NewRecordingProcessingActivitiesWithAudioProbe(store RecordingStore, resolver LocalObjectPathResolver, runner AudioProbeRunner) *RecordingProcessingActivities {
 	return &RecordingProcessingActivities{store: store, pathResolver: resolver, probeRunner: runner}
+}
+
+// NewRecordingProcessingActivitiesWithPipeline creates recording processing activities with all local pipeline dependencies.
+func NewRecordingProcessingActivitiesWithPipeline(store PipelineStore, resolver LocalObjectPathResolver, runner AudioProbeRunner, transcriptionProvider TranscriptionProvider, summaryProvider SummaryProvider) *RecordingProcessingActivities {
+	return &RecordingProcessingActivities{
+		store:                 store,
+		transcriptStore:       store,
+		summaryStore:          store,
+		pathResolver:          resolver,
+		probeRunner:           runner,
+		transcriptionProvider: transcriptionProvider,
+		summaryProvider:       summaryProvider,
+	}
 }
 
 // ValidateRecording validates processing input and confirms the recording exists.
@@ -173,6 +267,174 @@ func (a *RecordingProcessingActivities) ProbeRecordingAudio(ctx context.Context,
 		return fmt.Errorf("persist recording audio probe: %w", err)
 	}
 	return nil
+}
+
+// TranscribeRecordingAudio transcribes the original uploaded audio and persists transcript output.
+func (a *RecordingProcessingActivities) TranscribeRecordingAudio(ctx context.Context, recordingID string) error {
+	if recordingID == "" {
+		return errors.New("recording id is required")
+	}
+	if a == nil || a.store == nil {
+		return errors.New("recording store is required")
+	}
+	if a.transcriptStore == nil {
+		return errors.New("transcript store is required")
+	}
+	if a.pathResolver == nil {
+		return errors.New("audio object path resolver is required")
+	}
+	if a.transcriptionProvider == nil {
+		return errors.New("transcription provider is required")
+	}
+	recording, ok := a.store.Get(recordingID)
+	if !ok {
+		return fmt.Errorf("recording not found: %s", recordingID)
+	}
+	if strings.TrimSpace(recording.AudioObjectKey) == "" {
+		return fmt.Errorf("recording audio object key is required: %s", recordingID)
+	}
+	path, err := a.pathResolver.LocalPathForObject(recording.AudioObjectKey)
+	if err != nil {
+		return fmt.Errorf("resolve recording audio object path: %w", err)
+	}
+	result, err := a.transcriptionProvider.Transcribe(ctx, TranscriptionRequest{
+		RecordingID: recordingID,
+		AudioPath:   path,
+		Language:    recording.Language,
+	})
+	if err != nil {
+		return fmt.Errorf("transcribe recording audio: %w", err)
+	}
+	segments := make([]recordings.UpsertTranscriptSegmentInput, 0, len(result.Segments))
+	for _, segment := range result.Segments {
+		segments = append(segments, recordings.UpsertTranscriptSegmentInput{
+			SegmentIndex: segment.SegmentIndex,
+			StartMS:      segment.StartMS,
+			EndMS:        segment.EndMS,
+			SpeakerLabel: segment.SpeakerLabel,
+			Text:         segment.Text,
+			Confidence:   segment.Confidence,
+		})
+	}
+	_, err = a.transcriptStore.UpsertTranscript(recordings.UpsertTranscriptInput{
+		RecordingID:   recordingID,
+		Provider:      result.Provider,
+		Model:         result.Model,
+		Language:      result.Language,
+		Text:          result.Text,
+		RawResultJSON: append([]byte(nil), result.RawResultJSON...),
+		TranscribedAt: result.TranscribedAt,
+		Segments:      segments,
+	})
+	if err != nil {
+		return fmt.Errorf("persist recording transcript: %w", err)
+	}
+	return nil
+}
+
+// SummarizeRecording summarizes the latest transcript and persists summary output.
+func (a *RecordingProcessingActivities) SummarizeRecording(ctx context.Context, recordingID string) error {
+	if recordingID == "" {
+		return errors.New("recording id is required")
+	}
+	if a == nil || a.store == nil {
+		return errors.New("recording store is required")
+	}
+	if a.transcriptStore == nil {
+		return errors.New("transcript store is required")
+	}
+	if a.summaryStore == nil {
+		return errors.New("summary store is required")
+	}
+	if a.summaryProvider == nil {
+		return errors.New("summary provider is required")
+	}
+	recording, ok := a.store.Get(recordingID)
+	if !ok {
+		return fmt.Errorf("recording not found: %s", recordingID)
+	}
+	transcript, ok := a.transcriptStore.GetTranscript(recordingID)
+	if !ok {
+		return fmt.Errorf("recording transcript not found: %s", recordingID)
+	}
+	result, err := a.summaryProvider.Summarize(ctx, SummaryRequest{
+		RecordingID:    recordingID,
+		Title:          recording.Title,
+		WorkflowType:   recording.WorkflowType,
+		Language:       recording.Language,
+		TranscriptText: transcript.Text,
+	})
+	if err != nil {
+		return fmt.Errorf("summarize recording: %w", err)
+	}
+	_, err = a.summaryStore.UpsertSummary(recordings.UpsertSummaryInput{
+		RecordingID:     recordingID,
+		Provider:        result.Provider,
+		Model:           result.Model,
+		Type:            recording.WorkflowType,
+		Title:           result.Title,
+		Overview:        result.Overview,
+		ContentMarkdown: result.ContentMarkdown,
+		RawResultJSON:   append([]byte(nil), result.RawResultJSON...),
+		SummarizedAt:    result.SummarizedAt,
+	})
+	if err != nil {
+		return fmt.Errorf("persist recording summary: %w", err)
+	}
+	return nil
+}
+
+// FakeTranscriptionProvider is a deterministic local transcription provider for tests and smoke runs.
+type FakeTranscriptionProvider struct{}
+
+func (p FakeTranscriptionProvider) Transcribe(ctx context.Context, request TranscriptionRequest) (TranscriptionResult, error) {
+	base := filepath.Base(request.AudioPath)
+	text := fmt.Sprintf("Fake transcript for %s from %s", request.RecordingID, base)
+	raw, _ := json.Marshal(map[string]string{"text": text})
+	return TranscriptionResult{
+		Provider:      "fake_transcription",
+		Model:         "fake-transcription-v1",
+		Language:      request.Language,
+		Text:          text,
+		RawResultJSON: raw,
+		TranscribedAt: time.Now().UTC(),
+		Segments: []TranscriptionSegmentResult{{
+			SegmentIndex: 0,
+			StartMS:      0,
+			EndMS:        1000,
+			SpeakerLabel: "speaker_1",
+			Text:         text,
+			Confidence:   1,
+		}},
+	}, nil
+}
+
+// FakeSummaryProvider is a deterministic local summarization provider for tests and smoke runs.
+type FakeSummaryProvider struct{}
+
+func (p FakeSummaryProvider) Summarize(ctx context.Context, request SummaryRequest) (SummaryResult, error) {
+	overview := strings.TrimSpace(request.TranscriptText)
+	if len(overview) > 120 {
+		overview = overview[:120]
+	}
+	if overview == "" {
+		overview = "No transcript text available."
+	}
+	title := strings.TrimSpace(request.Title)
+	if title == "" {
+		title = request.RecordingID
+	}
+	markdown := fmt.Sprintf("# %s\n\n%s", title, overview)
+	raw, _ := json.Marshal(map[string]string{"overview": overview})
+	return SummaryResult{
+		Provider:        "fake_llm",
+		Model:           "fake-summary-v1",
+		Title:           title,
+		Overview:        overview,
+		ContentMarkdown: markdown,
+		RawResultJSON:   raw,
+		SummarizedAt:    time.Now().UTC(),
+	}, nil
 }
 
 func (r FFProbeRunner) Probe(ctx context.Context, path string) (AudioProbeResult, error) {
