@@ -16,6 +16,7 @@ type Config struct {
 	TemporalNamespace                            string
 	TemporalTaskQueue                            string
 	StorageProvider                              string
+	LocalStoragePath                             string
 	TranscriptionProvider                        string
 	LLMProvider                                  string
 	LLMBaseURL                                   string
@@ -35,7 +36,8 @@ func LoadFromEnv() Config {
 		TemporalAddress:                    envString("TEMPORAL_ADDRESS", "localhost:7233"),
 		TemporalNamespace:                  envString("TEMPORAL_NAMESPACE", "default"),
 		TemporalTaskQueue:                  envString("TEMPORAL_TASK_QUEUE", "soniq-audio-pipeline"),
-		StorageProvider:                    envString("STORAGE_PROVIDER", "s3_compatible"),
+		StorageProvider:                    envString("STORAGE_PROVIDER", "local"),
+		LocalStoragePath:                   envString("LOCAL_STORAGE_PATH", "var/uploads"),
 		TranscriptionProvider:              envString("TRANSCRIPTION_PROVIDER", "faster_whisper"),
 		LLMProvider:                        envString("LLM_PROVIDER", "openai_compatible"),
 		LLMBaseURL:                         envString("LLM_BASE_URL", "https://api.openai.com/v1"),
@@ -56,6 +58,9 @@ func (c Config) ValidateForStartup() error {
 	}
 	if strings.TrimSpace(c.StorageProvider) == "" {
 		return fmt.Errorf("STORAGE_PROVIDER is required")
+	}
+	if strings.TrimSpace(c.LocalStoragePath) == "" {
+		return fmt.Errorf("LOCAL_STORAGE_PATH is required")
 	}
 	if strings.TrimSpace(c.TranscriptionProvider) == "" {
 		return fmt.Errorf("TRANSCRIPTION_PROVIDER is required")

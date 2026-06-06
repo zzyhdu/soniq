@@ -26,8 +26,11 @@ func TestLoadFromEnvUsesDevelopmentDefaults(t *testing.T) {
 	if cfg.TemporalTaskQueue != "soniq-audio-pipeline" {
 		t.Fatalf("TemporalTaskQueue = %q, want soniq-audio-pipeline", cfg.TemporalTaskQueue)
 	}
-	if cfg.StorageProvider != "s3_compatible" {
-		t.Fatalf("StorageProvider = %q, want s3_compatible", cfg.StorageProvider)
+	if cfg.StorageProvider != "local" {
+		t.Fatalf("StorageProvider = %q, want local", cfg.StorageProvider)
+	}
+	if cfg.LocalStoragePath != "var/uploads" {
+		t.Fatalf("LocalStoragePath = %q, want var/uploads", cfg.LocalStoragePath)
 	}
 	if cfg.TranscriptionProvider != "faster_whisper" {
 		t.Fatalf("TranscriptionProvider = %q, want faster_whisper", cfg.TranscriptionProvider)
@@ -58,6 +61,7 @@ func TestLoadFromEnvAppliesEnvironmentOverrides(t *testing.T) {
 	t.Setenv("TEMPORAL_NAMESPACE", "soniq")
 	t.Setenv("TEMPORAL_TASK_QUEUE", "custom-queue")
 	t.Setenv("STORAGE_PROVIDER", "local_fs")
+	t.Setenv("LOCAL_STORAGE_PATH", "/tmp/soniq-uploads")
 	t.Setenv("TRANSCRIPTION_PROVIDER", "openai_compatible_transcription")
 	t.Setenv("LLM_PROVIDER", "ollama")
 	t.Setenv("LLM_BASE_URL", "http://localhost:11434/v1")
@@ -91,6 +95,9 @@ func TestLoadFromEnvAppliesEnvironmentOverrides(t *testing.T) {
 	}
 	if cfg.StorageProvider != "local_fs" {
 		t.Fatalf("StorageProvider = %q, want local_fs", cfg.StorageProvider)
+	}
+	if cfg.LocalStoragePath != "/tmp/soniq-uploads" {
+		t.Fatalf("LocalStoragePath = %q, want override", cfg.LocalStoragePath)
 	}
 	if cfg.TranscriptionProvider != "openai_compatible_transcription" {
 		t.Fatalf("TranscriptionProvider = %q, want override", cfg.TranscriptionProvider)
@@ -130,6 +137,15 @@ func TestValidateForStartupRejectsEmptyPostgresDSN(t *testing.T) {
 
 	if err := cfg.ValidateForStartup(); err == nil {
 		t.Fatal("ValidateForStartup() error = nil, want error for empty PostgresDSN")
+	}
+}
+
+func TestValidateForStartupRejectsEmptyLocalStoragePath(t *testing.T) {
+	cfg := LoadFromEnv()
+	cfg.LocalStoragePath = ""
+
+	if err := cfg.ValidateForStartup(); err == nil {
+		t.Fatal("ValidateForStartup() error = nil, want error for empty LocalStoragePath")
 	}
 }
 
