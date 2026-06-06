@@ -9,6 +9,12 @@ import (
 	"github.com/zzyhdu/soniq/backend/internal/recordings"
 )
 
+// RecordingStore is the persistence seam required by the recording HTTP handlers.
+type RecordingStore interface {
+	Create(recordings.CreateRecordingInput) (domain.Recording, error)
+	Get(id string) (domain.Recording, bool)
+}
+
 // RecordingProcessor is the enqueue seam invoked after a recording is created.
 type RecordingProcessor interface {
 	Enqueue(recording domain.Recording) error
@@ -24,12 +30,12 @@ func NewRouter() http.Handler {
 }
 
 // NewRouterWithStore builds the HTTP handler with an injected recording store.
-func NewRouterWithStore(store *recordings.MemoryStore) http.Handler {
+func NewRouterWithStore(store RecordingStore) http.Handler {
 	return NewRouterWithProcessor(store, noopRecordingProcessor{})
 }
 
 // NewRouterWithProcessor builds the HTTP handler with injected recording store and processor dependencies.
-func NewRouterWithProcessor(store *recordings.MemoryStore, processor RecordingProcessor) http.Handler {
+func NewRouterWithProcessor(store RecordingStore, processor RecordingProcessor) http.Handler {
 	if processor == nil {
 		processor = noopRecordingProcessor{}
 	}
@@ -41,7 +47,7 @@ func NewRouterWithProcessor(store *recordings.MemoryStore, processor RecordingPr
 	return mux
 }
 
-func createRecordingHandler(store *recordings.MemoryStore, processor RecordingProcessor) http.HandlerFunc {
+func createRecordingHandler(store RecordingStore, processor RecordingProcessor) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.Header().Set("Allow", http.MethodPost)
@@ -78,7 +84,7 @@ func createRecordingHandler(store *recordings.MemoryStore, processor RecordingPr
 	}
 }
 
-func recordingByIDHandler(store *recordings.MemoryStore) http.HandlerFunc {
+func recordingByIDHandler(store RecordingStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.Header().Set("Allow", http.MethodGet)

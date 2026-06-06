@@ -20,9 +20,78 @@ type recordingProcessorSpy struct {
 	err      error
 }
 
+type fakeRecordingStore struct {
+	created []recordings.CreateRecordingInput
+	stored  map[string]domain.Recording
+}
+
+func newFakeRecordingStore() *fakeRecordingStore {
+	return &fakeRecordingStore{stored: make(map[string]domain.Recording)}
+}
+
+func (s *fakeRecordingStore) Create(input recordings.CreateRecordingInput) (domain.Recording, error) {
+	s.created = append(s.created, input)
+	recording := domain.Recording{
+		ID:           "rec_fake",
+		Title:        input.Title,
+		Status:       domain.RecordingStatusUploaded,
+		WorkflowType: input.WorkflowType,
+		Language:     input.Language,
+	}
+	s.stored[recording.ID] = recording
+	return recording, nil
+}
+
+func (s *fakeRecordingStore) Get(id string) (domain.Recording, bool) {
+	recording, ok := s.stored[id]
+	return recording, ok
+}
+
+func (s *fakeRecordingStore) put(recording domain.Recording) {
+	s.stored[recording.ID] = recording
+}
+
 func (s *recordingProcessorSpy) Enqueue(recording domain.Recording) error {
 	s.enqueued = append(s.enqueued, recording)
 	return s.err
+}
+
+func TestNewRouterWithStoreAcceptsRecordingStoreInterface(t *testing.T) {
+	store := newFakeRecordingStore()
+	router := NewRouterWithStore(store)
+
+	request := httptest.NewRequest(http.MethodPost, "/recordings", strings.NewReader(`{"title":"Weekly sync","workflow_type":"meeting","language":"en"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusCreated, response.Body.String())
+	}
+	if got, want := len(store.created), 1; got != want {
+		t.Fatalf("store created calls = %d, want %d", got, want)
+	}
+}
+
+func TestGetRecordingUsesRecordingStoreInterface(t *testing.T) {
+	store := newFakeRecordingStore()
+	store.put(domain.Recording{
+		ID:           "rec_fake",
+		Title:        "Stored recording",
+		Status:       domain.RecordingStatusUploaded,
+		WorkflowType: domain.WorkflowTypeMemo,
+		Language:     "en",
+	})
+	router := NewRouterWithStore(store)
+	request := httptest.NewRequest(http.MethodGet, "/recordings/rec_fake", nil)
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusOK, response.Body.String())
+	}
 }
 
 func TestCreateRecordingReturnsCreatedRecording(t *testing.T) {
