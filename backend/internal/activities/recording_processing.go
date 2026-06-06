@@ -372,13 +372,16 @@ func (a *RecordingProcessingActivities) NormalizeRecordingAudio(ctx context.Cont
 	return nil
 }
 
-// TranscribeRecordingAudio transcribes the original uploaded audio and persists transcript output.
+// TranscribeRecordingAudio transcribes normalized recording audio and persists transcript output.
 func (a *RecordingProcessingActivities) TranscribeRecordingAudio(ctx context.Context, recordingID string) error {
 	if recordingID == "" {
 		return errors.New("recording id is required")
 	}
 	if a == nil || a.store == nil {
 		return errors.New("recording store is required")
+	}
+	if a.normalizedAudioStore == nil {
+		return errors.New("normalized audio store is required")
 	}
 	if a.transcriptStore == nil {
 		return errors.New("transcript store is required")
@@ -393,12 +396,16 @@ func (a *RecordingProcessingActivities) TranscribeRecordingAudio(ctx context.Con
 	if !ok {
 		return fmt.Errorf("recording not found: %s", recordingID)
 	}
-	if strings.TrimSpace(recording.AudioObjectKey) == "" {
-		return fmt.Errorf("recording audio object key is required: %s", recordingID)
+	normalizedAudio, ok := a.normalizedAudioStore.GetNormalizedAudio(recordingID)
+	if !ok {
+		return fmt.Errorf("recording normalized audio not found: %s", recordingID)
 	}
-	path, err := a.pathResolver.LocalPathForObject(recording.AudioObjectKey)
+	if strings.TrimSpace(normalizedAudio.ObjectKey) == "" {
+		return fmt.Errorf("recording normalized audio object key is required: %s", recordingID)
+	}
+	path, err := a.pathResolver.LocalPathForObject(normalizedAudio.ObjectKey)
 	if err != nil {
-		return fmt.Errorf("resolve recording audio object path: %w", err)
+		return fmt.Errorf("resolve normalized audio object path: %w", err)
 	}
 	result, err := a.transcriptionProvider.Transcribe(ctx, TranscriptionRequest{
 		RecordingID: recordingID,

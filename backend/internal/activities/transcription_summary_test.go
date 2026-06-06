@@ -11,10 +11,11 @@ import (
 )
 
 type transcriptionSummaryStoreSpy struct {
-	recordings  map[string]domain.Recording
-	transcript  recordings.RecordingTranscript
-	transcripts []recordings.UpsertTranscriptInput
-	summaries   []recordings.UpsertSummaryInput
+	recordings      map[string]domain.Recording
+	normalizedAudio recordings.RecordingNormalizedAudio
+	transcript      recordings.RecordingTranscript
+	transcripts     []recordings.UpsertTranscriptInput
+	summaries       []recordings.UpsertSummaryInput
 }
 
 func (s *transcriptionSummaryStoreSpy) Get(id string) (domain.Recording, bool) {
@@ -36,6 +37,18 @@ func (s *transcriptionSummaryStoreSpy) UpdateStatus(input recordings.UpdateRecor
 
 func (s *transcriptionSummaryStoreSpy) UpsertAudioProbe(input recordings.UpsertAudioProbeInput) (recordings.RecordingAudioProbe, error) {
 	return recordings.RecordingAudioProbe{RecordingID: input.RecordingID}, nil
+}
+
+func (s *transcriptionSummaryStoreSpy) UpsertNormalizedAudio(input recordings.UpsertNormalizedAudioInput) (recordings.RecordingNormalizedAudio, error) {
+	s.normalizedAudio = recordings.RecordingNormalizedAudio{RecordingID: input.RecordingID, ObjectKey: input.ObjectKey}
+	return s.normalizedAudio, nil
+}
+
+func (s *transcriptionSummaryStoreSpy) GetNormalizedAudio(recordingID string) (recordings.RecordingNormalizedAudio, bool) {
+	if s.normalizedAudio.RecordingID == "" || s.normalizedAudio.RecordingID != recordingID {
+		return recordings.RecordingNormalizedAudio{}, false
+	}
+	return s.normalizedAudio, true
 }
 
 func (s *transcriptionSummaryStoreSpy) UpsertTranscript(input recordings.UpsertTranscriptInput) (recordings.RecordingTranscript, error) {
@@ -102,15 +115,18 @@ func (p *summaryProviderSpy) Summarize(ctx context.Context, request SummaryReque
 }
 
 func TestRecordingProcessingActivitiesTranscribeRecordingAudioPersistsTranscript(t *testing.T) {
-	store := &transcriptionSummaryStoreSpy{recordings: map[string]domain.Recording{
-		"rec_transcribe": {
-			ID:             "rec_transcribe",
-			WorkflowType:   domain.WorkflowTypeMeeting,
-			Language:       "en",
-			AudioObjectKey: "recordings/rec_transcribe/original.wav",
+	store := &transcriptionSummaryStoreSpy{
+		recordings: map[string]domain.Recording{
+			"rec_transcribe": {
+				ID:             "rec_transcribe",
+				WorkflowType:   domain.WorkflowTypeMeeting,
+				Language:       "en",
+				AudioObjectKey: "recordings/rec_transcribe/original.wav",
+			},
 		},
-	}}
-	resolver := &localPathResolverSpy{path: "/tmp/soniq/recordings/rec_transcribe/original.wav"}
+		normalizedAudio: recordings.RecordingNormalizedAudio{RecordingID: "rec_transcribe", ObjectKey: "recordings/rec_transcribe/normalized.wav"},
+	}
+	resolver := &localPathResolverSpy{path: "/tmp/soniq/recordings/rec_transcribe/normalized.wav"}
 	transcribedAt := time.Date(2026, 6, 6, 4, 5, 6, 0, time.UTC)
 	provider := &transcriptionProviderSpy{result: TranscriptionResult{
 		Provider:      "fake_transcription",
@@ -123,20 +139,20 @@ func TestRecordingProcessingActivitiesTranscribeRecordingAudioPersistsTranscript
 			{SegmentIndex: 0, StartMS: 0, EndMS: 1200, SpeakerLabel: "speaker_1", Text: "hello from rec_transcribe", Confidence: 0.99},
 		},
 	}}
-	activities := NewRecordingProcessingActivitiesWithPipeline(store, resolver, &audioProbeRunnerSpy{}, provider, &summaryProviderSpy{})
+	activities := NewRecordingProcessingActivitiesWithNormalizedAudio(store, resolver, &audioProbeRunnerSpy{}, &audioNormalizeRunnerSpy{}, provider, &summaryProviderSpy{})
 
 	if err := activities.TranscribeRecordingAudio(context.Background(), "rec_transcribe"); err != nil {
 		t.Fatalf("TranscribeRecordingAudio returned error: %v", err)
 	}
 
-	if len(resolver.paths) != 1 || resolver.paths[0] != "recordings/rec_transcribe/original.wav" {
-		t.Fatalf("resolved paths = %+v, want original object key", resolver.paths)
+	if len(resolver.paths) != 1 || resolver.paths[0] != "recordings/rec_transcribe/normalized.wav" {
+		t.Fatalf("resolved paths = %+v, want normalized object key", resolver.paths)
 	}
 	if len(provider.requests) != 1 {
 		t.Fatalf("provider requests = %d, want 1", len(provider.requests))
 	}
 	request := provider.requests[0]
-	if request.RecordingID != "rec_transcribe" || request.AudioPath != "/tmp/soniq/recordings/rec_transcribe/original.wav" || request.Language != "en" {
+	if request.RecordingID != "rec_transcribe" || request.AudioPath != "/tmp/soniq/recordings/rec_transcribe/normalized.wav" || request.Language != "en" {
 		t.Fatalf("provider request = %+v, want recording id/local path/language", request)
 	}
 	if len(store.transcripts) != 1 {
@@ -171,12 +187,33 @@ func TestRecordingProcessingActivitiesTranscribeRecordingAudioRequiresDependenci
 	}
 }
 
-func TestRecordingProcessingActivitiesTranscribeRecordingAudioReturnsProviderErrorWithoutPersisting(t *testing.T) {
+func TestRecordingProcessingActivitiesTranscribeRecordingAudioRequiresNormalizedAudio(t *testing.T) {
 	store := &transcriptionSummaryStoreSpy{recordings: map[string]domain.Recording{
 		"rec_transcribe": {ID: "rec_transcribe", Language: "en", AudioObjectKey: "recordings/rec_transcribe/original.wav"},
 	}}
+	provider := &transcriptionProviderSpy{}
+	activities := NewRecordingProcessingActivitiesWithNormalizedAudio(store, &localPathResolverSpy{path: "/tmp/soniq/recordings/rec_transcribe/normalized.wav"}, &audioProbeRunnerSpy{}, &audioNormalizeRunnerSpy{}, provider, &summaryProviderSpy{})
+
+	if err := activities.TranscribeRecordingAudio(context.Background(), "rec_transcribe"); err == nil {
+		t.Fatal("TranscribeRecordingAudio returned nil error, want missing normalized audio error")
+	}
+	if len(provider.requests) != 0 {
+		t.Fatalf("provider requests = %d, want 0 when normalized audio is missing", len(provider.requests))
+	}
+	if len(store.transcripts) != 0 {
+		t.Fatalf("stored transcripts = %d, want 0 when normalized audio is missing", len(store.transcripts))
+	}
+}
+
+func TestRecordingProcessingActivitiesTranscribeRecordingAudioReturnsProviderErrorWithoutPersisting(t *testing.T) {
+	store := &transcriptionSummaryStoreSpy{
+		recordings: map[string]domain.Recording{
+			"rec_transcribe": {ID: "rec_transcribe", Language: "en", AudioObjectKey: "recordings/rec_transcribe/original.wav"},
+		},
+		normalizedAudio: recordings.RecordingNormalizedAudio{RecordingID: "rec_transcribe", ObjectKey: "recordings/rec_transcribe/normalized.wav"},
+	}
 	providerErr := errors.New("transcription failed")
-	activities := NewRecordingProcessingActivitiesWithPipeline(store, &localPathResolverSpy{path: "/tmp/audio.wav"}, &audioProbeRunnerSpy{}, &transcriptionProviderSpy{err: providerErr}, &summaryProviderSpy{})
+	activities := NewRecordingProcessingActivitiesWithNormalizedAudio(store, &localPathResolverSpy{path: "/tmp/audio.wav"}, &audioProbeRunnerSpy{}, &audioNormalizeRunnerSpy{}, &transcriptionProviderSpy{err: providerErr}, &summaryProviderSpy{})
 
 	if err := activities.TranscribeRecordingAudio(context.Background(), "rec_transcribe"); !errors.Is(err, providerErr) {
 		t.Fatalf("TranscribeRecordingAudio error = %v, want provider error", err)
