@@ -2,19 +2,20 @@
 
 This document describes the current local backend workflow for Soniq.
 
-Soniq is currently in the Temporal workflow skeleton milestone. The commands below intentionally run a small backend foundation:
+Soniq is currently in the Postgres-backed recording persistence milestone. The commands below intentionally run a small backend foundation:
 
 - the API exposes `GET /healthz`;
-- the API exposes in-memory recording metadata endpoints: `POST /recordings`, `GET /recordings/{id}`, and `GET /recordings/{id}/status`;
+- the API exposes recording metadata endpoints: `POST /recordings`, `GET /recordings/{id}`, and `GET /recordings/{id}/status`;
+- the production API command uses Soniq Postgres for recording metadata persistence;
 - `POST /recordings` invokes an injectable recording processor seam after successful creation; the production API command wires that seam to Temporal and starts `RecordingProcessingWorkflow` asynchronously;
 - the worker starts a real Temporal SDK worker, registers the recording processing workflow and activity stubs, and polls the configured task queue;
-- Postgres, object storage, ffmpeg, ASR, LLM providers, authentication, and the web UI are not implemented in this milestone.
+- object storage, ffmpeg, ASR, LLM providers, authentication, and the web UI are not implemented in this milestone.
 
 ## Prerequisites
 
-- Go 1.24 or newer.
+- Go 1.26 or newer. The backend module pins `toolchain go1.26.4`, which was the latest stable Go toolchain checked for this milestone.
 - `make`.
-- Optional for local Temporal smoke testing: Docker and Docker Compose.
+- Optional for local Temporal/Postgres smoke testing: Docker and Docker Compose.
 
 From the repository root, verify the backend toolchain:
 
@@ -72,9 +73,9 @@ make test
 
 ## Run the API skeleton
 
-`make api` now builds the HTTP router with a Temporal-backed recording processor. At startup it dials the configured Temporal server, so a reachable Temporal server is required even before serving requests.
+`make api` now builds the HTTP router with a Postgres-backed recording store and a Temporal-backed recording processor. At startup it opens Soniq Postgres and dials the configured Temporal server, so both services must be reachable before serving requests.
 
-For local development, start Temporal first:
+For local development, start the local services first:
 
 ```bash
 make temporal-up
@@ -96,6 +97,7 @@ make api
 Default runtime configuration:
 
 - `API_ADDRESS=:8080`
+- `POSTGRES_DSN=postgres://soniq_user:***@localhost:5432/soniq?sslmode=disable`
 - `TEMPORAL_ADDRESS=localhost:7233`
 - `TEMPORAL_NAMESPACE=default`
 - `TEMPORAL_TASK_QUEUE=soniq-audio-pipeline`
@@ -106,7 +108,7 @@ By default the API listens on `:8080`. If that port is already in use, override 
 API_ADDRESS=:18080 make api
 ```
 
-If Temporal is not reachable, `make api` fails during startup. Unit tests do not require a running Temporal server; command wiring is covered by an injected fake Temporal client.
+If Postgres or Temporal is not reachable, `make api` fails during startup. Unit tests do not require running Postgres or Temporal services; command wiring is covered by injected fakes.
 
 Verify the health endpoint in another terminal:
 
@@ -133,15 +135,15 @@ Content-Type: application/json
 
 ## Use the Recording API skeleton
 
-The recording endpoints currently store metadata in memory only. Records disappear when the API process exits or restarts. This skeleton does not upload audio, persist to Postgres, write objects to storage, or perform real audio processing.
+The recording endpoints now persist metadata in Soniq Postgres in the production API path. Records survive API process restarts as long as the local Postgres volume remains intact. This skeleton does not upload audio, write objects to storage, or perform real audio processing.
 
-After a recording is created successfully, the API calls an injectable `RecordingProcessor` seam. In the production API command, that seam is wired to a Temporal-backed processor that starts `RecordingProcessingWorkflow` asynchronously with workflow ID `recording-processing-<recording_id>` on `TEMPORAL_TASK_QUEUE`. The HTTP response returns the newly created metadata record; it does not wait for workflow completion.
+After a recording is created successfully in Postgres, the API calls an injectable `RecordingProcessor` seam. In the production API command, that seam is wired to a Temporal-backed processor that starts `RecordingProcessingWorkflow` asynchronously with workflow ID `recording-processing-<recording_id>` on `TEMPORAL_TASK_QUEUE`. The HTTP response returns the newly created metadata record; it does not wait for workflow completion.
 
 ### Manual local Temporal smoke flow
 
 This is a manual local development smoke flow, not a CI requirement. It assumes Docker is available and uses the local Temporal stack from `compose.temporal.yml`.
 
-Start Temporal and confirm the services are running:
+Start Temporal and Soniq Postgres and confirm the services are running:
 
 ```bash
 make temporal-up
@@ -205,6 +207,8 @@ Fetch the full recording:
 curl -i http://localhost:18080/recordings/<id>
 ```
 
+Because the production API path now uses Postgres, this lookup should still work after restarting only the API process, provided the local Postgres service and volume are still running.
+
 Fetch just the recording status:
 
 ```bash
@@ -233,6 +237,34 @@ When you finish the manual smoke flow, stop the local Temporal stack:
 ```bash
 make temporal-down
 ```
+
+## Apply recording migrations locally
+
+The local Soniq Postgres service is separate from Temporal's internal Postgres service. Apply Soniq application migrations to the `soniq` database only.
+
+Start the local services:
+
+```bash
+make temporal-up
+```
+
+Apply the current recording migration:
+
+```bash
+docker compose -f compose.temporal.yml exec -T soniq-postgresql \
+  psql -U soniq_user -d soniq -v ON_ERROR_STOP=1 \
+  -f - < backend/migrations/0001_create_recordings.up.sql
+```
+
+For local reset/testing, the matching down migration is:
+
+```bash
+docker compose -f compose.temporal.yml exec -T soniq-postgresql \
+  psql -U soniq_user -d soniq -v ON_ERROR_STOP=1 \
+  -f - < backend/migrations/0001_create_recordings.down.sql
+```
+
+Do not apply Soniq migrations to `temporal-postgresql`; Temporal owns that database and its schema.
 
 ## Run the Temporal worker skeleton
 
@@ -297,6 +329,7 @@ The current backend reads environment variables directly. Important local settin
 | `APP_ENV` | `development` | Runtime environment name. |
 | `APP_PUBLIC_URL` | `http://localhost:8080` | Public API URL used by clients and links. |
 | `API_ADDRESS` | `:8080` | Local HTTP listen address for `make api`. |
+| `POSTGRES_DSN` | `postgres://soniq_user:***@localhost:5432/soniq?sslmode=disable` | Soniq application database used by `make api` for recording metadata persistence. |
 | `TEMPORAL_ADDRESS` | `localhost:7233` | Temporal server address used by `make api` and `make worker`. |
 | `TEMPORAL_NAMESPACE` | `default` | Temporal namespace used by `make api` and `make worker`. |
 | `TEMPORAL_TASK_QUEUE` | `soniq-audio-pipeline` | Task queue used when the API starts workflows and the worker polls work. |
@@ -316,7 +349,8 @@ The current backend foundation is intentionally small. It provides:
 - config loading and validation;
 - a standard-library HTTP router;
 - `GET /healthz`;
-- in-memory recording metadata endpoints;
+- Postgres-backed recording metadata endpoints;
+- SQL migrations for the `recordings` table;
 - API and Temporal worker command entrypoints;
 - a Temporal-backed recording processor that starts `RecordingProcessingWorkflow` after successful `POST /recordings` requests;
 - a Temporal SDK recording processing workflow skeleton;
@@ -325,10 +359,9 @@ The current backend foundation is intentionally small. It provides:
 
 It does not yet provide:
 
-- durable recording persistence;
+- durable recording persistence is currently limited to recording metadata;
 - real recording audio upload handling;
 - production Temporal smoke-test configuration;
-- Postgres schema or migrations;
 - MinIO/S3 storage integration;
 - ffmpeg audio processing;
 - ASR or LLM provider calls;

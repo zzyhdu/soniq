@@ -28,7 +28,8 @@ Typical stack:
 Typical stack:
 
 - Docker Compose or Kubernetes.
-- Temporal + Postgres.
+- Temporal plus its own internal Postgres database.
+- Soniq application Postgres for business data.
 - MinIO.
 - OpenAI-compatible LLM endpoint or Ollama.
 - faster-whisper worker.
@@ -51,7 +52,7 @@ server:
   region_profile: self_hosted
 
 database:
-  url: postgres://soniq:soniq@postgres:5432/soniq?sslmode=disable
+  url: postgres://soniq_user:***@soniq-postgresql:5432/soniq?sslmode=disable
 
 temporal:
   address: temporal:7233
@@ -81,6 +82,15 @@ privacy:
   delete_original_audio_after_transcription: false
   allow_external_model_providers: true
 ```
+
+## Local database ownership
+
+Local development uses two separate Postgres ownership boundaries:
+
+- `temporal-postgresql` is Temporal-owned infrastructure state. Temporal manages its schema and migrations.
+- `soniq-postgresql` is Soniq-owned application data. Soniq migrations create and update business tables such as `recordings`.
+
+Do not apply Soniq migrations to Temporal's database, and do not place Soniq business tables in Temporal's schema. This keeps local development closer to production setups where Temporal Cloud or managed Temporal may not expose an internal database at all.
 
 ## Portability rules
 
