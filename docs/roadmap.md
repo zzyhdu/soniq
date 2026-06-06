@@ -61,7 +61,7 @@ Completed scope:
 - Add Postgres DSN configuration and startup validation.
 - Add repository/store interface that preserves the current API handler shape.
 - Implement Postgres-backed recording create/get/status behavior.
-- Wire production `cmd/api` to use Postgres, while tests can continue to use in-memory/fake stores.
+- Wire production `cmd/api` to use Postgres, while tests use focused fakes instead of a general in-memory recording store.
 
 Recommended database boundary:
 
