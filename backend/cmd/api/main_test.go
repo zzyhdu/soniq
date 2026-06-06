@@ -11,14 +11,18 @@ import (
 
 	"github.com/zzyhdu/soniq/backend/internal/config"
 	"github.com/zzyhdu/soniq/backend/internal/domain"
+	"github.com/zzyhdu/soniq/backend/internal/recordings"
 	"github.com/zzyhdu/soniq/backend/internal/workflows"
 	"go.temporal.io/sdk/client"
 )
 
 func TestBuildHandlerInjectsTemporalRecordingProcessor(t *testing.T) {
 	temporalClient := &temporalClientSpy{}
+	store := newBuildHandlerRecordingStoreSpy()
+	storeFactory := &recordingStoreFactorySpy{store: store}
 	cfg := config.Config{
 		APIAddress:        ":0",
+		PostgresDSN:       "postgres://custom_user:***@db:5432/custom?sslmode=disable",
 		TemporalAddress:   "temporal.example:7233",
 		TemporalNamespace: "default",
 		TemporalTaskQueue: "soniq-audio-pipeline",
@@ -32,11 +36,17 @@ func TestBuildHandlerInjectsTemporalRecordingProcessor(t *testing.T) {
 			t.Fatalf("TemporalNamespace = %q, want default", cfg.TemporalNamespace)
 		}
 		return temporalClient, nil
-	})
+	}, storeFactory.Open)
 	if err != nil {
 		t.Fatalf("buildHandler returned error: %v", err)
 	}
 	defer cleanup()
+	if got, want := len(storeFactory.calls), 1; got != want {
+		t.Fatalf("recording store factory calls = %d, want %d", got, want)
+	}
+	if storeFactory.calls[0] != cfg.PostgresDSN {
+		t.Fatalf("recording store factory DSN = %q, want %q", storeFactory.calls[0], cfg.PostgresDSN)
+	}
 
 	request := httptest.NewRequest(http.MethodPost, "/recordings", strings.NewReader(`{"title":"Weekly sync","workflow_type":"meeting","language":"en"}`))
 	request.Header.Set("Content-Type", "application/json")
@@ -81,10 +91,12 @@ func TestBuildHandlerInjectsTemporalRecordingProcessor(t *testing.T) {
 
 func TestBuildHandlerCleanupClosesTemporalClient(t *testing.T) {
 	temporalClient := &temporalClientSpy{}
+	store := newBuildHandlerRecordingStoreSpy()
+	storeFactory := &recordingStoreFactorySpy{store: store}
 
-	_, cleanup, err := buildHandler(context.Background(), config.Config{TemporalTaskQueue: "soniq-audio-pipeline"}, func(context.Context, config.Config) (temporalWorkflowClient, error) {
+	_, cleanup, err := buildHandler(context.Background(), config.Config{TemporalTaskQueue: "soniq-audio-pipeline", PostgresDSN: "postgres://custom_user:***@db:5432/custom?sslmode=disable"}, func(context.Context, config.Config) (temporalWorkflowClient, error) {
 		return temporalClient, nil
-	})
+	}, storeFactory.Open)
 	if err != nil {
 		t.Fatalf("buildHandler returned error: %v", err)
 	}
@@ -94,10 +106,44 @@ func TestBuildHandlerCleanupClosesTemporalClient(t *testing.T) {
 	if !temporalClient.closed {
 		t.Fatal("temporal client closed = false, want true")
 	}
+	if !store.closed {
+		t.Fatal("recording store closed = false, want true")
+	}
 }
 
 func sameFunction(a, b interface{}) bool {
 	return reflect.ValueOf(a).Pointer() == reflect.ValueOf(b).Pointer()
+}
+
+type recordingStoreFactorySpy struct {
+	store *buildHandlerRecordingStoreSpy
+	calls []string
+}
+
+func (s *recordingStoreFactorySpy) Open(ctx context.Context, dsn string) (recordingStoreClient, error) {
+	s.calls = append(s.calls, dsn)
+	return s.store, nil
+}
+
+type buildHandlerRecordingStoreSpy struct {
+	store  *recordings.MemoryStore
+	closed bool
+}
+
+func newBuildHandlerRecordingStoreSpy() *buildHandlerRecordingStoreSpy {
+	return &buildHandlerRecordingStoreSpy{store: recordings.NewMemoryStore()}
+}
+
+func (s *buildHandlerRecordingStoreSpy) Create(input recordings.CreateRecordingInput) (domain.Recording, error) {
+	return s.store.Create(input)
+}
+
+func (s *buildHandlerRecordingStoreSpy) Get(id string) (domain.Recording, bool) {
+	return s.store.Get(id)
+}
+
+func (s *buildHandlerRecordingStoreSpy) Close() {
+	s.closed = true
 }
 
 type temporalClientSpy struct {
