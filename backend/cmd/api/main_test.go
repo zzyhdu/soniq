@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -221,20 +223,37 @@ func (s *recordingStoreFactorySpy) Open(ctx context.Context, dsn string) (record
 }
 
 type buildHandlerRecordingStoreSpy struct {
-	store  *recordings.MemoryStore
+	stored map[string]domain.Recording
+	nextID int
 	closed bool
 }
 
 func newBuildHandlerRecordingStoreSpy() *buildHandlerRecordingStoreSpy {
-	return &buildHandlerRecordingStoreSpy{store: recordings.NewMemoryStore()}
+	return &buildHandlerRecordingStoreSpy{stored: make(map[string]domain.Recording)}
 }
 
 func (s *buildHandlerRecordingStoreSpy) Create(input recordings.CreateRecordingInput) (domain.Recording, error) {
-	return s.store.Create(input)
+	if !domain.IsValidWorkflowType(string(input.WorkflowType)) {
+		return domain.Recording{}, errors.New("invalid workflow type")
+	}
+	s.nextID++
+	recording := domain.Recording{
+		ID:               fmt.Sprintf("rec_build_%d", s.nextID),
+		Title:            input.Title,
+		Status:           domain.RecordingStatusUploaded,
+		WorkflowType:     input.WorkflowType,
+		Language:         input.Language,
+		AudioObjectKey:   input.AudioObjectKey,
+		AudioContentType: input.AudioContentType,
+		AudioSizeBytes:   input.AudioSizeBytes,
+	}
+	s.stored[recording.ID] = recording
+	return recording, nil
 }
 
 func (s *buildHandlerRecordingStoreSpy) Get(id string) (domain.Recording, bool) {
-	return s.store.Get(id)
+	recording, ok := s.stored[id]
+	return recording, ok
 }
 
 func (s *buildHandlerRecordingStoreSpy) Close() {

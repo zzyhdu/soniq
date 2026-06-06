@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,8 @@ import (
 )
 
 const maxUploadRequestBytes = 100 << 20 // 100 MiB
+
+var errRecordingStoreNotConfigured = errors.New("recording store is not configured")
 
 // RecordingStore is the persistence seam required by the recording HTTP handlers.
 type RecordingStore interface {
@@ -27,11 +30,21 @@ type RecordingProcessor interface {
 
 type noopRecordingProcessor struct{}
 
+type unconfiguredRecordingStore struct{}
+
 func (noopRecordingProcessor) Enqueue(domain.Recording) error { return nil }
+
+func (unconfiguredRecordingStore) Create(recordings.CreateRecordingInput) (domain.Recording, error) {
+	return domain.Recording{}, errRecordingStoreNotConfigured
+}
+
+func (unconfiguredRecordingStore) Get(string) (domain.Recording, bool) {
+	return domain.Recording{}, false
+}
 
 // NewRouter builds the HTTP handler for the Soniq API.
 func NewRouter() http.Handler {
-	return NewRouterWithProcessor(recordings.NewMemoryStore(), noopRecordingProcessor{})
+	return NewRouterWithProcessor(unconfiguredRecordingStore{}, noopRecordingProcessor{})
 }
 
 // NewRouterWithStore builds the HTTP handler with an injected recording store.

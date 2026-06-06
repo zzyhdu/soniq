@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -29,6 +30,7 @@ type recordingProcessorSpy struct {
 type fakeRecordingStore struct {
 	created []recordings.CreateRecordingInput
 	stored  map[string]domain.Recording
+	nextID  int
 }
 
 type objectStoreSpy struct {
@@ -47,9 +49,13 @@ func newFakeRecordingStore() *fakeRecordingStore {
 }
 
 func (s *fakeRecordingStore) Create(input recordings.CreateRecordingInput) (domain.Recording, error) {
+	if !domain.IsValidWorkflowType(string(input.WorkflowType)) {
+		return domain.Recording{}, errors.New("invalid workflow type")
+	}
 	s.created = append(s.created, input)
+	s.nextID++
 	recording := domain.Recording{
-		ID:               "rec_fake",
+		ID:               fmt.Sprintf("rec_fake_%d", s.nextID),
 		Title:            input.Title,
 		Status:           domain.RecordingStatusUploaded,
 		WorkflowType:     input.WorkflowType,
@@ -131,7 +137,7 @@ func TestGetRecordingUsesRecordingStoreInterface(t *testing.T) {
 }
 
 func TestCreateRecordingReturnsCreatedRecording(t *testing.T) {
-	store := recordings.NewMemoryStore()
+	store := newFakeRecordingStore()
 	router := NewRouterWithStore(store)
 
 	requestBody := strings.NewReader(`{"title":"Weekly sync","workflow_type":"meeting","language":"en"}`)
@@ -179,7 +185,7 @@ func TestCreateRecordingReturnsCreatedRecording(t *testing.T) {
 }
 
 func TestCreateRecordingEnqueuesProcessing(t *testing.T) {
-	store := recordings.NewMemoryStore()
+	store := newFakeRecordingStore()
 	processor := &recordingProcessorSpy{}
 	router := NewRouterWithProcessor(store, processor)
 
@@ -205,7 +211,7 @@ func TestCreateRecordingEnqueuesProcessing(t *testing.T) {
 }
 
 func TestCreateRecordingDoesNotEnqueueInvalidRequest(t *testing.T) {
-	store := recordings.NewMemoryStore()
+	store := newFakeRecordingStore()
 	processor := &recordingProcessorSpy{}
 	router := NewRouterWithProcessor(store, processor)
 
@@ -224,7 +230,7 @@ func TestCreateRecordingDoesNotEnqueueInvalidRequest(t *testing.T) {
 }
 
 func TestCreateRecordingReturnsServerErrorWhenEnqueueFails(t *testing.T) {
-	store := recordings.NewMemoryStore()
+	store := newFakeRecordingStore()
 	processor := &recordingProcessorSpy{err: errRecordingProcessorFailed}
 	router := NewRouterWithProcessor(store, processor)
 
@@ -380,7 +386,7 @@ func newMultipartUploadRequest(t *testing.T, target string, fields map[string]st
 }
 
 func TestGetRecordingReturnsExistingRecording(t *testing.T) {
-	store := recordings.NewMemoryStore()
+	store := newFakeRecordingStore()
 	created, err := store.Create(recordings.CreateRecordingInput{
 		Title:        "Lecture 1",
 		WorkflowType: domain.WorkflowTypeLecture,
@@ -413,7 +419,7 @@ func TestGetRecordingReturnsExistingRecording(t *testing.T) {
 }
 
 func TestGetRecordingReturnsNotFoundForUnknownRecording(t *testing.T) {
-	router := NewRouterWithStore(recordings.NewMemoryStore())
+	router := NewRouterWithStore(newFakeRecordingStore())
 	request := httptest.NewRequest(http.MethodGet, "/recordings/rec_missing", nil)
 	response := httptest.NewRecorder()
 
@@ -425,7 +431,7 @@ func TestGetRecordingReturnsNotFoundForUnknownRecording(t *testing.T) {
 }
 
 func TestGetRecordingStatusReturnsExistingRecordingStatus(t *testing.T) {
-	store := recordings.NewMemoryStore()
+	store := newFakeRecordingStore()
 	created, err := store.Create(recordings.CreateRecordingInput{
 		Title:        "Interview",
 		WorkflowType: domain.WorkflowTypeInterview,
@@ -464,7 +470,7 @@ func TestGetRecordingStatusReturnsExistingRecordingStatus(t *testing.T) {
 }
 
 func TestGetRecordingStatusReturnsNotFoundForUnknownRecording(t *testing.T) {
-	router := NewRouterWithStore(recordings.NewMemoryStore())
+	router := NewRouterWithStore(newFakeRecordingStore())
 	request := httptest.NewRequest(http.MethodGet, "/recordings/rec_missing/status", nil)
 	response := httptest.NewRecorder()
 
@@ -476,7 +482,7 @@ func TestGetRecordingStatusReturnsNotFoundForUnknownRecording(t *testing.T) {
 }
 
 func TestCreateRecordingRejectsInvalidJSON(t *testing.T) {
-	router := NewRouterWithStore(recordings.NewMemoryStore())
+	router := NewRouterWithStore(newFakeRecordingStore())
 	request := httptest.NewRequest(http.MethodPost, "/recordings", bytes.NewBufferString(`{"title":`))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
@@ -489,7 +495,7 @@ func TestCreateRecordingRejectsInvalidJSON(t *testing.T) {
 }
 
 func TestCreateRecordingRejectsInvalidWorkflowType(t *testing.T) {
-	router := NewRouterWithStore(recordings.NewMemoryStore())
+	router := NewRouterWithStore(newFakeRecordingStore())
 	request := httptest.NewRequest(http.MethodPost, "/recordings", strings.NewReader(`{"title":"Podcast","workflow_type":"podcast","language":"en"}`))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
@@ -502,7 +508,7 @@ func TestCreateRecordingRejectsInvalidWorkflowType(t *testing.T) {
 }
 
 func TestCreateRecordingRejectsNonPOST(t *testing.T) {
-	router := NewRouterWithStore(recordings.NewMemoryStore())
+	router := NewRouterWithStore(newFakeRecordingStore())
 	request := httptest.NewRequest(http.MethodGet, "/recordings", nil)
 	response := httptest.NewRecorder()
 

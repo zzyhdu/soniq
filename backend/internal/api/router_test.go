@@ -6,8 +6,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/zzyhdu/soniq/backend/internal/recordings"
 )
 
 func TestHealthzReturnsOKJSON(t *testing.T) {
@@ -41,7 +39,7 @@ func TestHealthzReturnsOKJSON(t *testing.T) {
 }
 
 func TestNewRouterWithStorePreservesHealthzEndpoint(t *testing.T) {
-	router := NewRouterWithStore(recordings.NewMemoryStore())
+	router := NewRouterWithStore(newFakeRecordingStore())
 	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	response := httptest.NewRecorder()
 
