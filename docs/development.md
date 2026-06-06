@@ -9,7 +9,7 @@ Soniq is currently in the local audio-upload and Postgres-backed recording persi
 - the production API command uses Soniq Postgres for recording metadata persistence;
 - `POST /recordings` creates metadata-only recordings; `POST /recordings/upload` accepts multipart audio, writes the original audio through an object-store seam, persists audio metadata, and then invokes the same injectable recording processor seam;
 - the production API command wires the recording processor seam to Temporal and starts `RecordingProcessingWorkflow` asynchronously;
-- the worker starts a real Temporal SDK worker, registers the recording processing workflow and activity stubs, and polls the configured task queue;
+- the worker starts a real Temporal SDK worker, registers the recording processing workflow and Soniq Postgres-backed recording status activities, and polls the configured task queue;
 - local filesystem object storage is implemented for development; S3-compatible storage, ffmpeg, ASR, LLM providers, authentication, and the web UI are not implemented in this milestone.
 
 ## Prerequisites
@@ -162,7 +162,7 @@ Content-Type: application/json
 
 The recording endpoints now persist metadata in Soniq Postgres in the production API path. Records survive API process restarts as long as the local Postgres volume remains intact. Audio-backed recordings also write the original uploaded file under `LOCAL_STORAGE_PATH` through the local object-store provider.
 
-After a recording is created successfully in Postgres, the API calls an injectable `RecordingProcessor` seam. In the production API command, that seam is wired to a Temporal-backed processor that starts `RecordingProcessingWorkflow` asynchronously with workflow ID `recording-processing-<recording_id>` on `TEMPORAL_TASK_QUEUE`. The HTTP response returns the newly created metadata record; it does not wait for workflow completion.
+After a recording is created successfully in Postgres, the API calls an injectable `RecordingProcessor` seam. In the production API command, that seam is wired to a Temporal-backed processor that starts `RecordingProcessingWorkflow` asynchronously with workflow ID `recording-processing-<recording_id>` on `TEMPORAL_TASK_QUEUE`. The HTTP response returns the newly created metadata record; it does not wait for workflow completion. The worker consumes that workflow from the same task queue, uses Soniq Postgres-backed activities, and updates the recording status from `uploaded` to `processing` and then to `completed`. If the completion activity fails, the workflow schedules a best-effort `failed` status update before returning the original error.
 
 ### Upload an audio-backed recording
 
@@ -306,10 +306,28 @@ Fetch just the recording status:
 curl -i http://localhost:18080/recordings/<id>/status
 ```
 
-Expected status body:
+Expected status body before the worker has completed the workflow:
 
 ```json
 {"id":"rec_...","status":"uploaded"}
+```
+
+After the worker has processed the workflow successfully, the same endpoint should return:
+
+```json
+{"id":"rec_...","status":"completed"}
+```
+
+The current workflow status path is:
+
+```txt
+uploaded -> processing -> completed
+```
+
+If completion fails, the workflow attempts a best-effort transition to:
+
+```txt
+failed
 ```
 
 The initial supported `workflow_type` values are:
@@ -386,8 +404,9 @@ Expected behavior:
 - load environment configuration;
 - validate minimal startup configuration;
 - connect to Temporal;
+- connect to Soniq application Postgres with `POSTGRES_DSN`;
 - register `RecordingProcessingWorkflow`;
-- register the recording processing activity stubs;
+- register store-backed recording processing activities under the stable Temporal activity names used by the workflow;
 - poll the configured task queue until interrupted;
 - do not print secrets such as API keys.
 
@@ -402,16 +421,17 @@ temporal_task_queue=soniq-audio-pipeline
 
 If Temporal is not reachable, `make worker` fails during startup. Unit tests do not require a running Temporal server; worker registration is covered by an in-process registry spy.
 
-## Temporal workflow skeleton boundaries
+## Temporal workflow boundaries
 
-The current Temporal implementation is intentionally a skeleton:
+The current Temporal implementation is intentionally narrow but no longer stateless:
 
 - The workflow is implemented with the real Temporal Go SDK and covered by the Temporal SDK testsuite.
-- Activity implementations are stubs that validate input and model recording status transitions only.
-- The API calls an injectable recording processor seam after `POST /recordings`; the production API command wires that seam to a Temporal client and starts `RecordingProcessingWorkflow` asynchronously.
-- Worker startup is the boundary where the code leaves in-process tests and requires a real Temporal server.
+- Workflow code stays deterministic and delegates Soniq Postgres writes to activities.
+- Worker-registered activities validate that the recording exists, persist `processing`, persist `completed`, and can persist `failed` on the completion-failure path.
+- The API calls an injectable recording processor seam after `POST /recordings` and `POST /recordings/upload`; the production API command wires that seam to a Temporal client and starts `RecordingProcessingWorkflow` asynchronously.
+- Worker startup is the boundary where the code leaves in-process tests and requires a real Temporal server plus Soniq application Postgres.
 
-The skeleton does not yet perform audio processing, storage writes, ASR, LLM summarization, Postgres persistence, provider webhooks, or production Temporal smoke testing. Those integrations should be added as separate milestones with explicit local service configuration.
+The workflow does not yet perform audio processing, ASR, LLM summarization, provider webhooks, or S3-compatible object storage. Those integrations should be added as separate milestones with explicit local service configuration.
 
 ## Configuration
 
@@ -455,7 +475,7 @@ The current backend foundation provides:
 - API and Temporal worker command entrypoints;
 - a Temporal-backed recording processor that starts `RecordingProcessingWorkflow` after successful recording creation or upload requests;
 - a Temporal SDK recording processing workflow skeleton;
-- activity stubs for validation and recording status transitions;
+- Soniq Postgres-backed activities for recording validation and durable status transitions;
 - root `Makefile` quality and smoke commands.
 
 It does not yet provide:

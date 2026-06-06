@@ -7,14 +7,15 @@ Soniq has moved from documentation-only architecture into an executable backend 
 Completed foundation milestones:
 
 - Go backend skeleton with `GET /healthz`.
-- In-memory recording metadata API: `POST /recordings`, `GET /recordings/{id}`, `GET /recordings/{id}/status`.
-- Temporal workflow skeleton with activity stubs.
-- Temporal worker registration.
-- API-to-Temporal workflow start: successful `POST /recordings` starts `RecordingProcessingWorkflow` asynchronously.
-- Local Temporal development environment: Docker Compose services, Makefile targets, docs, and a manual smoke helper.
-- Verified local smoke path: API → Temporal → worker → workflow/activity stubs → completed workflow.
+- Postgres-backed recording API: `POST /recordings`, `POST /recordings/upload`, `GET /recordings/{id}`, `GET /recordings/{id}/status`.
+- Local filesystem object storage for uploaded recording audio.
+- Temporal workflow skeleton with Postgres-backed recording status activities.
+- Temporal worker registration with Soniq Postgres-backed activities.
+- API-to-Temporal workflow start: successful recording creation/upload starts `RecordingProcessingWorkflow` asynchronously.
+- Local Temporal development environment: Docker Compose services, Makefile targets, docs, and a full smoke helper.
+- Verified local smoke path: API → local object store → Soniq Postgres → Temporal → worker → `recordings.status=completed`.
 
-The next focus is durable recording persistence.
+The next focus is replacing skeleton processing with real audio/AI activities.
 
 ## Phase 0 — Project skeleton and architecture docs
 
@@ -49,11 +50,11 @@ Status: complete.
 
 ### 1C — Postgres recording persistence
 
-Status: next.
+Status: complete.
 
 Goal: replace the production API's in-memory recording metadata store with durable Postgres-backed persistence while keeping unit tests hermetic.
 
-Planned scope:
+Completed scope:
 
 - Add a Soniq-owned local Postgres service separate from Temporal's internal database.
 - Add migrations for the `recordings` table.
@@ -61,7 +62,6 @@ Planned scope:
 - Add repository/store interface that preserves the current API handler shape.
 - Implement Postgres-backed recording create/get/status behavior.
 - Wire production `cmd/api` to use Postgres, while tests can continue to use in-memory/fake stores.
-- Keep workflow activities as stubs until the status persistence boundary is added explicitly.
 
 Recommended database boundary:
 
@@ -71,10 +71,12 @@ Recommended database boundary:
 
 ### 1D — Persist workflow status transitions
 
-Status: planned after 1C.
+Status: complete.
 
 - Add activity dependencies for updating recording status durably.
-- Persist `processing` and `completed` status transitions.
+- Persist `processing`, `completed`, and best-effort `failed` status transitions.
+- Wire the worker to Soniq Postgres-backed activities under the workflow's stable Temporal activity names.
+- Verify the full smoke path reaches both Temporal `COMPLETED` and `recordings.status=completed`.
 - Consider a `workflow_runs` table once workflow metadata is needed beyond recording status.
 
 ### 1E — Audio upload and object storage
