@@ -238,3 +238,74 @@ func TestPostgresStoreCreateRejectsInvalidWorkflowTypeBeforeInsert(t *testing.T)
 		t.Fatalf("query calls = %d, want %d", got, want)
 	}
 }
+
+func TestPostgresStoreUpdateStatusUpdatesAndReturnsRecording(t *testing.T) {
+	createdAt := time.Date(2026, 6, 6, 1, 2, 3, 0, time.UTC)
+	updatedAt := createdAt.Add(time.Minute)
+	db := newPostgresExecutorSpy(postgresRow(
+		"rec_pg",
+		"Weekly sync",
+		domain.RecordingStatusProcessing,
+		domain.WorkflowTypeMeeting,
+		"en",
+		"recordings/rec_pg/original.wav",
+		"audio/wav",
+		int64(12345),
+		createdAt,
+		updatedAt,
+	))
+	store := NewPostgresStore(db)
+
+	recording, err := store.UpdateStatus(UpdateRecordingStatusInput{
+		ID:     "rec_pg",
+		Status: domain.RecordingStatusProcessing,
+	})
+	if err != nil {
+		t.Fatalf("UpdateStatus returned error: %v", err)
+	}
+
+	if recording.ID != "rec_pg" {
+		t.Fatalf("recording.ID = %q, want rec_pg", recording.ID)
+	}
+	if recording.Status != domain.RecordingStatusProcessing {
+		t.Fatalf("recording.Status = %q, want processing", recording.Status)
+	}
+	if recording.AudioObjectKey != "recordings/rec_pg/original.wav" || recording.AudioContentType != "audio/wav" || recording.AudioSizeBytes != 12345 {
+		t.Fatalf("audio metadata = %+v, want preserved audio metadata", recording)
+	}
+	if recording.UpdatedAt != updatedAt {
+		t.Fatalf("UpdatedAt = %s, want %s", recording.UpdatedAt, updatedAt)
+	}
+	if got, want := len(db.calls), 1; got != want {
+		t.Fatalf("query calls = %d, want %d", got, want)
+	}
+	query := strings.ToLower(db.calls[0].query)
+	if !strings.Contains(query, "update recordings") || !strings.Contains(query, "set status") || !strings.Contains(query, "returning") {
+		t.Fatalf("query = %q, want update recordings set status returning", db.calls[0].query)
+	}
+	if got, want := len(db.calls[0].args), 3; got != want {
+		t.Fatalf("update args = %d, want %d", got, want)
+	}
+	if got, want := db.calls[0].args[0], "rec_pg"; got != want {
+		t.Fatalf("id arg = %q, want %q", got, want)
+	}
+	if got, want := db.calls[0].args[1], domain.RecordingStatusProcessing; got != want {
+		t.Fatalf("status arg = %q, want %q", got, want)
+	}
+	if _, ok := db.calls[0].args[2].(time.Time); !ok {
+		t.Fatalf("updated_at arg = %#v, want time.Time", db.calls[0].args[2])
+	}
+}
+
+func TestPostgresStoreUpdateStatusReturnsErrorForMissingRecording(t *testing.T) {
+	db := newPostgresExecutorSpy(postgresErrorRow(sql.ErrNoRows))
+	store := NewPostgresStore(db)
+
+	_, err := store.UpdateStatus(UpdateRecordingStatusInput{
+		ID:     "rec_missing",
+		Status: domain.RecordingStatusProcessing,
+	})
+	if err == nil {
+		t.Fatal("UpdateStatus returned nil error, want missing recording error")
+	}
+}

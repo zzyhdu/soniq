@@ -98,6 +98,36 @@ WHERE id = $1`,
 	return recording, true
 }
 
+// UpdateStatus persists a recording status transition and returns the updated row.
+func (s *PostgresStore) UpdateStatus(input UpdateRecordingStatusInput) (domain.Recording, error) {
+	if err := validateStatusUpdateInput(input); err != nil {
+		return domain.Recording{}, err
+	}
+	if s == nil || s.db == nil {
+		return domain.Recording{}, fmt.Errorf("postgres recording store requires database executor")
+	}
+
+	updatedAt := time.Now().UTC()
+	var recording domain.Recording
+	row := s.db.QueryRow(
+		context.Background(),
+		`UPDATE recordings
+SET status = $2, updated_at = $3
+WHERE id = $1
+RETURNING id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, created_at, updated_at`,
+		input.ID,
+		input.Status,
+		updatedAt,
+	)
+	if err := scanRecording(row, &recording); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.Recording{}, fmt.Errorf("recording not found: %s", input.ID)
+		}
+		return domain.Recording{}, fmt.Errorf("update recording status: %w", err)
+	}
+	return recording, nil
+}
+
 func scanRecording(row PostgresRow, recording *domain.Recording) error {
 	return row.Scan(
 		&recording.ID,

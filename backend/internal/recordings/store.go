@@ -20,6 +20,12 @@ type CreateRecordingInput struct {
 	AudioSizeBytes   int64
 }
 
+// UpdateRecordingStatusInput contains the state transition to persist for a recording.
+type UpdateRecordingStatusInput struct {
+	ID     string
+	Status domain.RecordingStatus
+}
+
 // MemoryStore is a thread-safe in-memory recording store for local skeleton workflows.
 type MemoryStore struct {
 	mu         sync.RWMutex
@@ -67,6 +73,38 @@ func (s *MemoryStore) Get(id string) (domain.Recording, bool) {
 
 	recording, ok := s.recordings[id]
 	return recording, ok
+}
+
+// UpdateStatus updates a recording's processing status while preserving existing metadata.
+func (s *MemoryStore) UpdateStatus(input UpdateRecordingStatusInput) (domain.Recording, error) {
+	if err := validateStatusUpdateInput(input); err != nil {
+		return domain.Recording{}, err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	recording, ok := s.recordings[input.ID]
+	if !ok {
+		return domain.Recording{}, fmt.Errorf("recording not found: %s", input.ID)
+	}
+	recording.Status = input.Status
+	recording.UpdatedAt = time.Now().UTC()
+	s.recordings[input.ID] = recording
+
+	return recording, nil
+}
+
+func validateStatusUpdateInput(input UpdateRecordingStatusInput) error {
+	if input.ID == "" {
+		return fmt.Errorf("recording id is required")
+	}
+	switch input.Status {
+	case domain.RecordingStatusProcessing, domain.RecordingStatusCompleted, domain.RecordingStatusFailed:
+		return nil
+	default:
+		return fmt.Errorf("unsupported recording status update: %s", input.Status)
+	}
 }
 
 func newRecordingID() string {

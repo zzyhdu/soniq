@@ -121,3 +121,60 @@ func TestMemoryStoreCreateRejectsInvalidWorkflowType(t *testing.T) {
 		t.Fatal("Create returned nil error, want invalid workflow type error")
 	}
 }
+
+func TestMemoryStoreUpdateStatusPreservesMetadataAndAdvancesUpdatedAt(t *testing.T) {
+	store := NewMemoryStore()
+
+	created, err := store.Create(CreateRecordingInput{
+		Title:            "Weekly sync",
+		WorkflowType:     domain.WorkflowTypeMeeting,
+		Language:         "en",
+		AudioObjectKey:   "recordings/rec_123/original.wav",
+		AudioContentType: "audio/wav",
+		AudioSizeBytes:   12345,
+	})
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+
+	updated, err := store.UpdateStatus(UpdateRecordingStatusInput{
+		ID:     created.ID,
+		Status: domain.RecordingStatusProcessing,
+	})
+	if err != nil {
+		t.Fatalf("UpdateStatus returned error: %v", err)
+	}
+
+	if updated.Status != domain.RecordingStatusProcessing {
+		t.Fatalf("Status = %q, want processing", updated.Status)
+	}
+	if !updated.UpdatedAt.After(created.UpdatedAt) {
+		t.Fatalf("UpdatedAt = %s, want after %s", updated.UpdatedAt, created.UpdatedAt)
+	}
+	if updated.Title != created.Title || updated.WorkflowType != created.WorkflowType || updated.Language != created.Language {
+		t.Fatalf("updated recording core metadata = %+v, want preserved from %+v", updated, created)
+	}
+	if updated.AudioObjectKey != created.AudioObjectKey || updated.AudioContentType != created.AudioContentType || updated.AudioSizeBytes != created.AudioSizeBytes {
+		t.Fatalf("updated audio metadata = %+v, want preserved from %+v", updated, created)
+	}
+
+	stored, ok := store.Get(created.ID)
+	if !ok {
+		t.Fatalf("Get(%q) ok = false, want true", created.ID)
+	}
+	if stored != updated {
+		t.Fatalf("stored recording = %+v, want updated %+v", stored, updated)
+	}
+}
+
+func TestMemoryStoreUpdateStatusReturnsErrorForMissingRecording(t *testing.T) {
+	store := NewMemoryStore()
+
+	_, err := store.UpdateStatus(UpdateRecordingStatusInput{
+		ID:     "rec_missing",
+		Status: domain.RecordingStatusProcessing,
+	})
+	if err == nil {
+		t.Fatal("UpdateStatus returned nil error, want missing recording error")
+	}
+}
