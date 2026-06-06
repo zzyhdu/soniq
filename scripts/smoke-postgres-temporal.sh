@@ -9,7 +9,7 @@ TEMPORAL_NAMESPACE="${TEMPORAL_NAMESPACE:-default}"
 TEMPORAL_TASK_QUEUE="${TEMPORAL_TASK_QUEUE:-soniq-audio-pipeline}"
 POSTGRES_USER="${POSTGRES_USER:-soniq_user}"
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-soniq_password}"
-POSTGRES_DSN="${POSTGRES_DSN:-postgres://$POSTGRES_USER:${POSTGRES_PASSWORD}@localhost:5432/soniq?sslmode=disable}"
+POSTGRES_DSN="${POSTGRES_DSN:-postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@localhost:5432/soniq?sslmode=disable}"
 STORAGE_PROVIDER="${STORAGE_PROVIDER:-local}"
 LOCAL_STORAGE_PATH="${LOCAL_STORAGE_PATH:-$ROOT_DIR/var/uploads/smoke}"
 SMOKE_DOWN="${SMOKE_DOWN:-0}"
@@ -137,7 +137,7 @@ assert_json_field_equals() {
 }
 
 apply_recording_migrations() {
-  local table_exists audio_columns_exist
+  local table_exists audio_columns_exist audio_probe_table_exists transcript_table_exists summary_table_exists
   table_exists="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
     psql -U soniq_user -d soniq -Atc "SELECT to_regclass('public.recordings') IS NOT NULL")"
   if [[ "$table_exists" != "t" ]]; then
@@ -169,6 +169,19 @@ apply_recording_migrations() {
       -f - < backend/migrations/0003_create_recording_audio_probes.up.sql
   else
     log "recording audio probes table already exists; skipping migration 0003"
+  fi
+
+  transcript_table_exists="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
+    psql -U soniq_user -d soniq -Atc "SELECT to_regclass('public.recording_transcripts') IS NOT NULL AND to_regclass('public.recording_transcript_segments') IS NOT NULL")"
+  summary_table_exists="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
+    psql -U soniq_user -d soniq -Atc "SELECT to_regclass('public.recording_summaries') IS NOT NULL")"
+  if [[ "$transcript_table_exists" != "t" || "$summary_table_exists" != "t" ]]; then
+    log "applying recordings migration 0004"
+    docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
+      psql -U soniq_user -d soniq -v ON_ERROR_STOP=1 \
+      -f - < backend/migrations/0004_create_recording_transcripts_and_summaries.up.sql
+  else
+    log "recording transcript and summary tables already exist; skipping migration 0004"
   fi
 }
 
@@ -227,6 +240,43 @@ assert_recording_audio_probe_in_db() {
   IFS=$'\t' read -r format_name codec_name sample_rate channels has_duration raw_json_type <<<"$row"
   if [[ -z "$format_name" || -z "$codec_name" || "$sample_rate" -le 0 || "$channels" -le 0 || "$has_duration" != "t" || "$raw_json_type" != "object" ]]; then
     log "unexpected DB audio probe row: $row"
+    return 1
+  fi
+}
+
+assert_recording_transcript_summary_in_db() {
+  local recording_id="$1"
+  local transcript_row segment_count summary_row
+  transcript_row="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
+    psql -U soniq_user -d soniq -AtF $'\t' -c "SELECT provider, model, language, (length(text) > 0), jsonb_typeof(raw_result_json) FROM recording_transcripts WHERE recording_id = '$recording_id'")"
+  if [[ -z "$transcript_row" ]]; then
+    log "recording transcript row missing for $recording_id"
+    return 1
+  fi
+
+  IFS=$'\t' read -r transcript_provider transcript_model transcript_language transcript_has_text transcript_raw_json_type <<<"$transcript_row"
+  if [[ -z "$transcript_provider" || -z "$transcript_model" || "$transcript_language" != "en" || "$transcript_has_text" != "t" || "$transcript_raw_json_type" != "object" ]]; then
+    log "unexpected DB transcript row: $transcript_row"
+    return 1
+  fi
+
+  segment_count="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
+    psql -U soniq_user -d soniq -Atc "SELECT count(*) FROM recording_transcript_segments WHERE recording_id = '$recording_id'")"
+  if [[ "$segment_count" -lt 1 ]]; then
+    log "recording transcript segments missing for $recording_id"
+    return 1
+  fi
+
+  summary_row="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
+    psql -U soniq_user -d soniq -AtF $'\t' -c "SELECT provider, model, type, (length(overview) > 0 OR length(content_markdown) > 0), jsonb_typeof(raw_result_json) FROM recording_summaries WHERE recording_id = '$recording_id'")"
+  if [[ -z "$summary_row" ]]; then
+    log "recording summary row missing for $recording_id"
+    return 1
+  fi
+
+  IFS=$'\t' read -r summary_provider summary_model summary_type summary_has_content summary_raw_json_type <<<"$summary_row"
+  if [[ -z "$summary_provider" || -z "$summary_model" || "$summary_type" != "meeting" || "$summary_has_content" != "t" || "$summary_raw_json_type" != "object" ]]; then
+    log "unexpected DB summary row: $summary_row"
     return 1
   fi
 }
@@ -314,6 +364,8 @@ main() {
       log "recording DB status reached completed: $recording_id"
       assert_recording_audio_probe_in_db "$recording_id"
       log "recording audio probe metadata persisted: $recording_id"
+      assert_recording_transcript_summary_in_db "$recording_id"
+      log "recording transcript and summary persisted: $recording_id"
       log "recording persisted across API restart: $recording_id"
       return 0
     fi
