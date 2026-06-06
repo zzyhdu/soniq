@@ -74,6 +74,15 @@ func CompleteRecordingProcessingActivity(ctx context.Context, recordingID string
 	}, nil
 }
 
+// FailRecordingProcessingActivity is the current stateless compatibility activity.
+// Store-backed status persistence lives in RecordingProcessingActivities.FailRecordingProcessing.
+func FailRecordingProcessingActivity(ctx context.Context, recordingID string) error {
+	if recordingID == "" {
+		return errors.New("recording id is required")
+	}
+	return nil
+}
+
 // ValidateRecording validates processing input and confirms the recording exists.
 func (a *RecordingProcessingActivities) ValidateRecording(ctx context.Context, input RecordingProcessingInput) error {
 	if err := ValidateRecordingActivity(ctx, input); err != nil {

@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/zzyhdu/soniq/backend/internal/activities"
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -17,6 +18,9 @@ type RecordingProcessingResult = activities.RecordingProcessingResult
 func RecordingProcessingWorkflow(ctx workflow.Context, input RecordingProcessingInput) (RecordingProcessingResult, error) {
 	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		StartToCloseTimeout: time.Minute,
+		RetryPolicy: &temporal.RetryPolicy{
+			MaximumAttempts: 1,
+		},
 	})
 
 	if err := workflow.ExecuteActivity(ctx, activities.ValidateRecordingActivity, input).Get(ctx, nil); err != nil {
@@ -28,6 +32,7 @@ func RecordingProcessingWorkflow(ctx workflow.Context, input RecordingProcessing
 
 	var result RecordingProcessingResult
 	if err := workflow.ExecuteActivity(ctx, activities.CompleteRecordingProcessingActivity, input.RecordingID).Get(ctx, &result); err != nil {
+		_ = workflow.ExecuteActivity(ctx, activities.FailRecordingProcessingActivity, input.RecordingID).Get(ctx, nil)
 		return RecordingProcessingResult{}, err
 	}
 

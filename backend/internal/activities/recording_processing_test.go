@@ -104,6 +104,18 @@ func TestCompleteRecordingProcessingActivityRejectsMissingRecordingID(t *testing
 	}
 }
 
+func TestFailRecordingProcessingActivityAcceptsRecordingID(t *testing.T) {
+	if err := FailRecordingProcessingActivity(context.Background(), "rec_test"); err != nil {
+		t.Fatalf("FailRecordingProcessingActivity() error = %v, want nil", err)
+	}
+}
+
+func TestFailRecordingProcessingActivityRejectsMissingRecordingID(t *testing.T) {
+	if err := FailRecordingProcessingActivity(context.Background(), ""); err == nil {
+		t.Fatalf("FailRecordingProcessingActivity() error = nil, want error")
+	}
+}
+
 func TestRecordingProcessingActivitiesValidateRecordingRequiresExistingRecording(t *testing.T) {
 	activities := NewRecordingProcessingActivities(&recordingStoreSpy{})
 
