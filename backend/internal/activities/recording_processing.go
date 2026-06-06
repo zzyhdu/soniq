@@ -22,7 +22,7 @@ type RecordingProcessingInput struct {
 	Language     string
 }
 
-// RecordingProcessingResult is the skeleton result returned after processing completes.
+// RecordingProcessingResult is the result returned after processing completes.
 type RecordingProcessingResult struct {
 	RecordingID string
 	Status      domain.RecordingStatus
@@ -32,6 +32,10 @@ const (
 	ValidateRecordingActivityName           = "ValidateRecordingActivity"
 	MarkRecordingProcessingActivityName     = "MarkRecordingProcessingActivity"
 	ProbeRecordingAudioActivityName         = "ProbeRecordingAudioActivity"
+	MarkRecordingTranscribingActivityName   = "MarkRecordingTranscribingActivity"
+	TranscribeRecordingAudioActivityName    = "TranscribeRecordingAudioActivity"
+	MarkRecordingSummarizingActivityName    = "MarkRecordingSummarizingActivity"
+	SummarizeRecordingActivityName          = "SummarizeRecordingActivity"
 	CompleteRecordingProcessingActivityName = "CompleteRecordingProcessingActivity"
 	FailRecordingProcessingActivityName     = "FailRecordingProcessingActivity"
 )
@@ -200,6 +204,18 @@ func (a *RecordingProcessingActivities) ValidateRecording(ctx context.Context, i
 // MarkRecordingProcessing persists the processing status transition.
 func (a *RecordingProcessingActivities) MarkRecordingProcessing(ctx context.Context, recordingID string) error {
 	_, err := a.updateStatus(recordingID, domain.RecordingStatusProcessing)
+	return err
+}
+
+// MarkRecordingTranscribing persists the transcribing status transition.
+func (a *RecordingProcessingActivities) MarkRecordingTranscribing(ctx context.Context, recordingID string) error {
+	_, err := a.updateStatus(recordingID, domain.RecordingStatusTranscribing)
+	return err
+}
+
+// MarkRecordingSummarizing persists the summarizing status transition.
+func (a *RecordingProcessingActivities) MarkRecordingSummarizing(ctx context.Context, recordingID string) error {
+	_, err := a.updateStatus(recordingID, domain.RecordingStatusSummarizing)
 	return err
 }
 

@@ -110,6 +110,38 @@ func TestRecordingProcessingActivitiesMarkRecordingProcessingUpdatesStatus(t *te
 	}
 }
 
+func TestRecordingProcessingActivitiesMarkRecordingTranscribingUpdatesStatus(t *testing.T) {
+	store := &recordingStoreSpy{recordings: map[string]domain.Recording{
+		"rec_test": {ID: "rec_test", Status: domain.RecordingStatusProcessing},
+	}}
+	activities := NewRecordingProcessingActivities(store)
+
+	if err := activities.MarkRecordingTranscribing(context.Background(), "rec_test"); err != nil {
+		t.Fatalf("MarkRecordingTranscribing() error = %v, want nil", err)
+	}
+
+	want := recordings.UpdateRecordingStatusInput{ID: "rec_test", Status: domain.RecordingStatusTranscribing}
+	if len(store.updates) != 1 || store.updates[0] != want {
+		t.Fatalf("updates = %+v, want [%+v]", store.updates, want)
+	}
+}
+
+func TestRecordingProcessingActivitiesMarkRecordingSummarizingUpdatesStatus(t *testing.T) {
+	store := &recordingStoreSpy{recordings: map[string]domain.Recording{
+		"rec_test": {ID: "rec_test", Status: domain.RecordingStatusTranscribing},
+	}}
+	activities := NewRecordingProcessingActivities(store)
+
+	if err := activities.MarkRecordingSummarizing(context.Background(), "rec_test"); err != nil {
+		t.Fatalf("MarkRecordingSummarizing() error = %v, want nil", err)
+	}
+
+	want := recordings.UpdateRecordingStatusInput{ID: "rec_test", Status: domain.RecordingStatusSummarizing}
+	if len(store.updates) != 1 || store.updates[0] != want {
+		t.Fatalf("updates = %+v, want [%+v]", store.updates, want)
+	}
+}
+
 func TestRecordingProcessingActivitiesCompleteRecordingProcessingUpdatesStatusAndReturnsResult(t *testing.T) {
 	store := &recordingStoreSpy{recordings: map[string]domain.Recording{
 		"rec_test": {ID: "rec_test", Status: domain.RecordingStatusProcessing},

@@ -12,7 +12,7 @@ import (
 	"go.temporal.io/sdk/testsuite"
 )
 
-func TestRecordingProcessingWorkflowCompletesSkeletonPipeline(t *testing.T) {
+func TestRecordingProcessingWorkflowCompletesTranscriptionSummaryPipeline(t *testing.T) {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
 	registerRecordingProcessingActivityNames(env)
@@ -26,6 +26,10 @@ func TestRecordingProcessingWorkflowCompletesSkeletonPipeline(t *testing.T) {
 	env.OnActivity(activities.ValidateRecordingActivityName, mock.Anything, input).Return(nil).Once()
 	env.OnActivity(activities.MarkRecordingProcessingActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
 	env.OnActivity(activities.ProbeRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.MarkRecordingTranscribingActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.TranscribeRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.MarkRecordingSummarizingActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.SummarizeRecordingActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
 	env.OnActivity(activities.CompleteRecordingProcessingActivityName, mock.Anything, input.RecordingID).Return(RecordingProcessingResult{
 		RecordingID: "rec_test",
 		Status:      "completed",
@@ -119,10 +123,84 @@ func TestRecordingProcessingWorkflowMarksFailedWhenProbeFails(t *testing.T) {
 	env.AssertExpectations(t)
 }
 
+func TestRecordingProcessingWorkflowMarksFailedWhenTranscriptionFails(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	registerRecordingProcessingActivityNames(env)
+
+	input := RecordingProcessingInput{
+		RecordingID:  "rec_test",
+		WorkflowType: "meeting",
+		Language:     "en",
+	}
+	transcriptionErr := errors.New("transcription failed")
+
+	env.OnActivity(activities.ValidateRecordingActivityName, mock.Anything, input).Return(nil).Once()
+	env.OnActivity(activities.MarkRecordingProcessingActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.ProbeRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.MarkRecordingTranscribingActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.TranscribeRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(transcriptionErr).Once()
+	env.OnActivity(activities.FailRecordingProcessingActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
+
+	env.ExecuteWorkflow(RecordingProcessingWorkflow, input)
+
+	if !env.IsWorkflowCompleted() {
+		t.Fatalf("workflow did not complete")
+	}
+	err := env.GetWorkflowError()
+	if err == nil {
+		t.Fatalf("workflow error = nil, want transcription error")
+	}
+	if !strings.Contains(err.Error(), "transcription failed") {
+		t.Fatalf("workflow error = %v, want original transcription error", err)
+	}
+	env.AssertExpectations(t)
+}
+
+func TestRecordingProcessingWorkflowMarksFailedWhenSummarizationFails(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	registerRecordingProcessingActivityNames(env)
+
+	input := RecordingProcessingInput{
+		RecordingID:  "rec_test",
+		WorkflowType: "meeting",
+		Language:     "en",
+	}
+	summarizationErr := errors.New("summarization failed")
+
+	env.OnActivity(activities.ValidateRecordingActivityName, mock.Anything, input).Return(nil).Once()
+	env.OnActivity(activities.MarkRecordingProcessingActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.ProbeRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.MarkRecordingTranscribingActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.TranscribeRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.MarkRecordingSummarizingActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.SummarizeRecordingActivityName, mock.Anything, input.RecordingID).Return(summarizationErr).Once()
+	env.OnActivity(activities.FailRecordingProcessingActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
+
+	env.ExecuteWorkflow(RecordingProcessingWorkflow, input)
+
+	if !env.IsWorkflowCompleted() {
+		t.Fatalf("workflow did not complete")
+	}
+	err := env.GetWorkflowError()
+	if err == nil {
+		t.Fatalf("workflow error = nil, want summarization error")
+	}
+	if !strings.Contains(err.Error(), "summarization failed") {
+		t.Fatalf("workflow error = %v, want original summarization error", err)
+	}
+	env.AssertExpectations(t)
+}
+
 func registerRecordingProcessingActivityNames(env *testsuite.TestWorkflowEnvironment) {
 	env.RegisterActivityWithOptions(func(context.Context, activities.RecordingProcessingInput) error { return nil }, activity.RegisterOptions{Name: activities.ValidateRecordingActivityName})
 	env.RegisterActivityWithOptions(func(context.Context, string) error { return nil }, activity.RegisterOptions{Name: activities.MarkRecordingProcessingActivityName})
 	env.RegisterActivityWithOptions(func(context.Context, string) error { return nil }, activity.RegisterOptions{Name: activities.ProbeRecordingAudioActivityName})
+	env.RegisterActivityWithOptions(func(context.Context, string) error { return nil }, activity.RegisterOptions{Name: activities.MarkRecordingTranscribingActivityName})
+	env.RegisterActivityWithOptions(func(context.Context, string) error { return nil }, activity.RegisterOptions{Name: activities.TranscribeRecordingAudioActivityName})
+	env.RegisterActivityWithOptions(func(context.Context, string) error { return nil }, activity.RegisterOptions{Name: activities.MarkRecordingSummarizingActivityName})
+	env.RegisterActivityWithOptions(func(context.Context, string) error { return nil }, activity.RegisterOptions{Name: activities.SummarizeRecordingActivityName})
 	env.RegisterActivityWithOptions(func(context.Context, string) (RecordingProcessingResult, error) {
 		return RecordingProcessingResult{}, nil
 	}, activity.RegisterOptions{Name: activities.CompleteRecordingProcessingActivityName})
