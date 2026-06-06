@@ -11,6 +11,7 @@ type Config struct {
 	AppEnv                                       string
 	PublicURL                                    string
 	APIAddress                                   string
+	PostgresDSN                                  string
 	TemporalAddress                              string
 	TemporalNamespace                            string
 	TemporalTaskQueue                            string
@@ -30,6 +31,7 @@ func LoadFromEnv() Config {
 		AppEnv:                             envString("APP_ENV", "development"),
 		PublicURL:                          envString("APP_PUBLIC_URL", "http://localhost:8080"),
 		APIAddress:                         envString("API_ADDRESS", ":8080"),
+		PostgresDSN:                        envString("POSTGRES_DSN", "postgres://soniq_user:soniq_password@localhost:5432/soniq?sslmode=disable"),
 		TemporalAddress:                    envString("TEMPORAL_ADDRESS", "localhost:7233"),
 		TemporalNamespace:                  envString("TEMPORAL_NAMESPACE", "default"),
 		TemporalTaskQueue:                  envString("TEMPORAL_TASK_QUEUE", "soniq-audio-pipeline"),
@@ -46,6 +48,9 @@ func LoadFromEnv() Config {
 
 // ValidateForStartup checks the minimal invariants required before starting a process.
 func (c Config) ValidateForStartup() error {
+	if strings.TrimSpace(c.PostgresDSN) == "" {
+		return fmt.Errorf("POSTGRES_DSN is required")
+	}
 	if strings.TrimSpace(c.TemporalTaskQueue) == "" {
 		return fmt.Errorf("TEMPORAL_TASK_QUEUE is required")
 	}

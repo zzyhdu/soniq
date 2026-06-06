@@ -14,6 +14,9 @@ func TestLoadFromEnvUsesDevelopmentDefaults(t *testing.T) {
 	if cfg.APIAddress != ":8080" {
 		t.Fatalf("APIAddress = %q, want :8080", cfg.APIAddress)
 	}
+	if cfg.PostgresDSN != "postgres://soniq_user:soniq_password@localhost:5432/soniq?sslmode=disable" {
+		t.Fatalf("PostgresDSN = %q, want local development DSN", cfg.PostgresDSN)
+	}
 	if cfg.TemporalAddress != "localhost:7233" {
 		t.Fatalf("TemporalAddress = %q, want localhost:7233", cfg.TemporalAddress)
 	}
@@ -50,6 +53,7 @@ func TestLoadFromEnvAppliesEnvironmentOverrides(t *testing.T) {
 	t.Setenv("APP_ENV", "test")
 	t.Setenv("APP_PUBLIC_URL", "http://127.0.0.1:9090")
 	t.Setenv("API_ADDRESS", ":9090")
+	t.Setenv("POSTGRES_DSN", "postgres://custom_user:custom_password@db:5432/custom?sslmode=disable")
 	t.Setenv("TEMPORAL_ADDRESS", "temporal:7233")
 	t.Setenv("TEMPORAL_NAMESPACE", "soniq")
 	t.Setenv("TEMPORAL_TASK_QUEUE", "custom-queue")
@@ -72,6 +76,9 @@ func TestLoadFromEnvAppliesEnvironmentOverrides(t *testing.T) {
 	}
 	if cfg.APIAddress != ":9090" {
 		t.Fatalf("APIAddress = %q, want :9090", cfg.APIAddress)
+	}
+	if cfg.PostgresDSN != "postgres://custom_user:custom_password@db:5432/custom?sslmode=disable" {
+		t.Fatalf("PostgresDSN = %q, want override", cfg.PostgresDSN)
 	}
 	if cfg.TemporalAddress != "temporal:7233" {
 		t.Fatalf("TemporalAddress = %q, want override", cfg.TemporalAddress)
@@ -114,6 +121,15 @@ func TestValidateForStartupRejectsRequiredEmptyValues(t *testing.T) {
 
 	if err := cfg.ValidateForStartup(); err == nil {
 		t.Fatal("ValidateForStartup() error = nil, want error for empty TemporalTaskQueue")
+	}
+}
+
+func TestValidateForStartupRejectsEmptyPostgresDSN(t *testing.T) {
+	cfg := LoadFromEnv()
+	cfg.PostgresDSN = ""
+
+	if err := cfg.ValidateForStartup(); err == nil {
+		t.Fatal("ValidateForStartup() error = nil, want error for empty PostgresDSN")
 	}
 }
 
