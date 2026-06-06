@@ -53,6 +53,36 @@ type UpsertAudioProbeInput struct {
 	ProbedAt        time.Time
 }
 
+// RecordingNormalizedAudio contains metadata for a recording's normalized audio artifact.
+type RecordingNormalizedAudio struct {
+	RecordingID     string
+	ObjectKey       string
+	ContentType     string
+	SizeBytes       int64
+	FormatName      string
+	CodecName       string
+	SampleRate      int
+	Channels        int
+	DurationSeconds float64
+	NormalizedAt    time.Time
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
+// UpsertNormalizedAudioInput contains normalized audio metadata to persist for a recording.
+type UpsertNormalizedAudioInput struct {
+	RecordingID     string
+	ObjectKey       string
+	ContentType     string
+	SizeBytes       int64
+	FormatName      string
+	CodecName       string
+	SampleRate      int
+	Channels        int
+	DurationSeconds float64
+	NormalizedAt    time.Time
+}
+
 // RecordingTranscript contains the latest transcript for a recording.
 type RecordingTranscript struct {
 	RecordingID   string
@@ -153,6 +183,37 @@ func validateAudioProbeInput(input UpsertAudioProbeInput) error {
 	}
 	if input.ProbedAt.IsZero() {
 		return fmt.Errorf("audio probe timestamp is required")
+	}
+	return nil
+}
+
+func validateNormalizedAudioInput(input UpsertNormalizedAudioInput) error {
+	if input.RecordingID == "" {
+		return fmt.Errorf("recording id is required")
+	}
+	if input.ObjectKey == "" {
+		return fmt.Errorf("normalized audio object key is required")
+	}
+	if input.ContentType == "" {
+		return fmt.Errorf("normalized audio content type is required")
+	}
+	if input.SizeBytes <= 0 {
+		return fmt.Errorf("normalized audio size must be positive")
+	}
+	if input.FormatName == "" {
+		return fmt.Errorf("normalized audio format name is required")
+	}
+	if input.CodecName == "" {
+		return fmt.Errorf("normalized audio codec name is required")
+	}
+	if input.SampleRate <= 0 {
+		return fmt.Errorf("normalized audio sample rate must be positive")
+	}
+	if input.Channels <= 0 {
+		return fmt.Errorf("normalized audio channels must be positive")
+	}
+	if input.NormalizedAt.IsZero() {
+		return fmt.Errorf("normalized audio timestamp is required")
 	}
 	return nil
 }

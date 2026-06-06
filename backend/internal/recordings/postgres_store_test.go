@@ -639,3 +639,148 @@ func TestPostgresStoreGetSummaryReturnsFalseForMissingRecording(t *testing.T) {
 		t.Fatal("GetSummary(rec_missing) ok = true, want false")
 	}
 }
+
+func TestPostgresStoreUpsertNormalizedAudioInsertsOrUpdatesMetadata(t *testing.T) {
+	normalizedAt := time.Date(2026, 6, 6, 4, 5, 6, 0, time.UTC)
+	createdAt := normalizedAt
+	updatedAt := normalizedAt.Add(time.Second)
+	db := newPostgresExecutorSpy(postgresRow(
+		"rec_normalized",
+		"recordings/20260606T150747.170276465Z/normalized.wav",
+		"audio/wav",
+		int64(32044),
+		"wav",
+		"pcm_s16le",
+		16000,
+		1,
+		1.25,
+		normalizedAt,
+		createdAt,
+		updatedAt,
+	))
+	store := NewPostgresStore(db)
+
+	normalized, err := store.UpsertNormalizedAudio(UpsertNormalizedAudioInput{
+		RecordingID:     "rec_normalized",
+		ObjectKey:       "recordings/20260606T150747.170276465Z/normalized.wav",
+		ContentType:     "audio/wav",
+		SizeBytes:       32044,
+		FormatName:      "wav",
+		CodecName:       "pcm_s16le",
+		SampleRate:      16000,
+		Channels:        1,
+		DurationSeconds: 1.25,
+		NormalizedAt:    normalizedAt,
+	})
+	if err != nil {
+		t.Fatalf("UpsertNormalizedAudio returned error: %v", err)
+	}
+	if normalized.RecordingID != "rec_normalized" || normalized.ObjectKey != "recordings/20260606T150747.170276465Z/normalized.wav" {
+		t.Fatalf("normalized audio = %+v, want persisted object metadata", normalized)
+	}
+	if normalized.ContentType != "audio/wav" || normalized.SizeBytes != 32044 {
+		t.Fatalf("normalized content metadata = %+v, want audio/wav size", normalized)
+	}
+	if normalized.FormatName != "wav" || normalized.CodecName != "pcm_s16le" || normalized.SampleRate != 16000 || normalized.Channels != 1 {
+		t.Fatalf("normalized target metadata = %+v, want wav pcm_s16le 16k mono", normalized)
+	}
+	if normalized.DurationSeconds != 1.25 || !normalized.NormalizedAt.Equal(normalizedAt) {
+		t.Fatalf("normalized timing metadata = %+v, want duration and normalized_at", normalized)
+	}
+	if !normalized.CreatedAt.Equal(createdAt) || !normalized.UpdatedAt.Equal(updatedAt) {
+		t.Fatalf("timestamps = %s/%s, want %s/%s", normalized.CreatedAt, normalized.UpdatedAt, createdAt, updatedAt)
+	}
+	if got, want := len(db.calls), 1; got != want {
+		t.Fatalf("query calls = %d, want %d", got, want)
+	}
+	query := strings.ToLower(db.calls[0].query)
+	if !strings.Contains(query, "insert into recording_normalized_audios") || !strings.Contains(query, "on conflict") || !strings.Contains(query, "returning") {
+		t.Fatalf("query = %q, want insert into recording_normalized_audios on conflict returning", db.calls[0].query)
+	}
+	if got, want := len(db.calls[0].args), 12; got != want {
+		t.Fatalf("normalized audio upsert args = %d, want %d", got, want)
+	}
+	if got, want := db.calls[0].args[0], "rec_normalized"; got != want {
+		t.Fatalf("recording_id arg = %q, want %q", got, want)
+	}
+	if got, want := db.calls[0].args[1], "recordings/20260606T150747.170276465Z/normalized.wav"; got != want {
+		t.Fatalf("object_key arg = %q, want %q", got, want)
+	}
+}
+
+func TestPostgresStoreUpsertNormalizedAudioRejectsInvalidInputBeforeQuery(t *testing.T) {
+	tests := []struct {
+		name  string
+		input UpsertNormalizedAudioInput
+	}{
+		{name: "missing recording id", input: UpsertNormalizedAudioInput{ObjectKey: "recordings/rec/normalized.wav", ContentType: "audio/wav", SizeBytes: 1, FormatName: "wav", CodecName: "pcm_s16le", SampleRate: 16000, Channels: 1, NormalizedAt: time.Now()}},
+		{name: "missing object key", input: UpsertNormalizedAudioInput{RecordingID: "rec", ContentType: "audio/wav", SizeBytes: 1, FormatName: "wav", CodecName: "pcm_s16le", SampleRate: 16000, Channels: 1, NormalizedAt: time.Now()}},
+		{name: "missing content type", input: UpsertNormalizedAudioInput{RecordingID: "rec", ObjectKey: "recordings/rec/normalized.wav", SizeBytes: 1, FormatName: "wav", CodecName: "pcm_s16le", SampleRate: 16000, Channels: 1, NormalizedAt: time.Now()}},
+		{name: "non-positive size", input: UpsertNormalizedAudioInput{RecordingID: "rec", ObjectKey: "recordings/rec/normalized.wav", ContentType: "audio/wav", FormatName: "wav", CodecName: "pcm_s16le", SampleRate: 16000, Channels: 1, NormalizedAt: time.Now()}},
+		{name: "missing normalized timestamp", input: UpsertNormalizedAudioInput{RecordingID: "rec", ObjectKey: "recordings/rec/normalized.wav", ContentType: "audio/wav", SizeBytes: 1, FormatName: "wav", CodecName: "pcm_s16le", SampleRate: 16000, Channels: 1}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := newPostgresExecutorSpy()
+			store := NewPostgresStore(db)
+			_, err := store.UpsertNormalizedAudio(tt.input)
+			if err == nil {
+				t.Fatal("UpsertNormalizedAudio returned nil error, want validation error")
+			}
+			if got, want := len(db.calls), 0; got != want {
+				t.Fatalf("query calls = %d, want %d", got, want)
+			}
+		})
+	}
+}
+
+func TestPostgresStoreGetNormalizedAudioReturnsExistingMetadata(t *testing.T) {
+	normalizedAt := time.Date(2026, 6, 6, 4, 5, 6, 0, time.UTC)
+	createdAt := normalizedAt
+	updatedAt := normalizedAt.Add(time.Second)
+	db := newPostgresExecutorSpy(postgresRow(
+		"rec_normalized",
+		"recordings/20260606T150747.170276465Z/normalized.wav",
+		"audio/wav",
+		int64(32044),
+		"wav",
+		"pcm_s16le",
+		16000,
+		1,
+		1.25,
+		normalizedAt,
+		createdAt,
+		updatedAt,
+	))
+	store := NewPostgresStore(db)
+
+	normalized, ok := store.GetNormalizedAudio("rec_normalized")
+	if !ok {
+		t.Fatal("GetNormalizedAudio(rec_normalized) ok = false, want true")
+	}
+	if normalized.RecordingID != "rec_normalized" || normalized.ObjectKey == "" || normalized.ContentType != "audio/wav" {
+		t.Fatalf("normalized audio = %+v, want persisted normalized metadata", normalized)
+	}
+	if normalized.SampleRate != 16000 || normalized.Channels != 1 || normalized.CodecName != "pcm_s16le" {
+		t.Fatalf("normalized target metadata = %+v, want wav pcm_s16le 16k mono", normalized)
+	}
+	if got, want := len(db.calls), 1; got != want {
+		t.Fatalf("query calls = %d, want %d", got, want)
+	}
+	query := strings.ToLower(db.calls[0].query)
+	if !strings.Contains(query, "select") || !strings.Contains(query, "from recording_normalized_audios") {
+		t.Fatalf("query = %q, want select from recording_normalized_audios", db.calls[0].query)
+	}
+	if got, want := db.calls[0].args[0], "rec_normalized"; got != want {
+		t.Fatalf("recording_id arg = %q, want %q", got, want)
+	}
+}
+
+func TestPostgresStoreGetNormalizedAudioReturnsFalseForMissingRecording(t *testing.T) {
+	db := newPostgresExecutorSpy(postgresErrorRow(sql.ErrNoRows))
+	store := NewPostgresStore(db)
+	_, ok := store.GetNormalizedAudio("rec_missing")
+	if ok {
+		t.Fatal("GetNormalizedAudio(rec_missing) ok = true, want false")
+	}
+}

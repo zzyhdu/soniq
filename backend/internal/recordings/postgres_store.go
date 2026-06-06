@@ -129,6 +129,74 @@ RETURNING id, title, status, workflow_type, language, audio_object_key, audio_co
 	return recording, nil
 }
 
+// UpsertNormalizedAudio stores or replaces normalized audio metadata for a recording.
+func (s *PostgresStore) UpsertNormalizedAudio(input UpsertNormalizedAudioInput) (RecordingNormalizedAudio, error) {
+	if err := validateNormalizedAudioInput(input); err != nil {
+		return RecordingNormalizedAudio{}, err
+	}
+	if s == nil || s.db == nil {
+		return RecordingNormalizedAudio{}, fmt.Errorf("postgres recording store requires database executor")
+	}
+
+	now := time.Now().UTC()
+	var normalized RecordingNormalizedAudio
+	row := s.db.QueryRow(
+		context.Background(),
+		`INSERT INTO recording_normalized_audios (recording_id, object_key, content_type, size_bytes, format_name, codec_name, sample_rate, channels, duration_seconds, normalized_at, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+ON CONFLICT (recording_id) DO UPDATE
+SET object_key = EXCLUDED.object_key,
+    content_type = EXCLUDED.content_type,
+    size_bytes = EXCLUDED.size_bytes,
+    format_name = EXCLUDED.format_name,
+    codec_name = EXCLUDED.codec_name,
+    sample_rate = EXCLUDED.sample_rate,
+    channels = EXCLUDED.channels,
+    duration_seconds = EXCLUDED.duration_seconds,
+    normalized_at = EXCLUDED.normalized_at,
+    updated_at = EXCLUDED.updated_at
+RETURNING recording_id, object_key, content_type, size_bytes, format_name, codec_name, sample_rate, channels, duration_seconds, normalized_at, created_at, updated_at`,
+		input.RecordingID,
+		input.ObjectKey,
+		input.ContentType,
+		input.SizeBytes,
+		input.FormatName,
+		input.CodecName,
+		input.SampleRate,
+		input.Channels,
+		input.DurationSeconds,
+		input.NormalizedAt,
+		now,
+		now,
+	)
+	if err := scanNormalizedAudio(row, &normalized); err != nil {
+		return RecordingNormalizedAudio{}, fmt.Errorf("upsert recording normalized audio: %w", err)
+	}
+	return normalized, nil
+}
+
+// GetNormalizedAudio returns normalized audio metadata by recording id.
+func (s *PostgresStore) GetNormalizedAudio(recordingID string) (RecordingNormalizedAudio, bool) {
+	if s == nil || s.db == nil {
+		return RecordingNormalizedAudio{}, false
+	}
+	var normalized RecordingNormalizedAudio
+	row := s.db.QueryRow(
+		context.Background(),
+		`SELECT recording_id, object_key, content_type, size_bytes, format_name, codec_name, sample_rate, channels, duration_seconds, normalized_at, created_at, updated_at
+FROM recording_normalized_audios
+WHERE recording_id = $1`,
+		recordingID,
+	)
+	if err := scanNormalizedAudio(row, &normalized); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return RecordingNormalizedAudio{}, false
+		}
+		return RecordingNormalizedAudio{}, false
+	}
+	return normalized, true
+}
+
 // UpsertTranscript stores or replaces the latest transcript and its segments for a recording.
 func (s *PostgresStore) UpsertTranscript(input UpsertTranscriptInput) (RecordingTranscript, error) {
 	if err := validateTranscriptInput(input); err != nil {
@@ -305,6 +373,23 @@ WHERE recording_id = $1`,
 		return RecordingSummary{}, false
 	}
 	return summary, true
+}
+
+func scanNormalizedAudio(row PostgresRow, normalized *RecordingNormalizedAudio) error {
+	return row.Scan(
+		&normalized.RecordingID,
+		&normalized.ObjectKey,
+		&normalized.ContentType,
+		&normalized.SizeBytes,
+		&normalized.FormatName,
+		&normalized.CodecName,
+		&normalized.SampleRate,
+		&normalized.Channels,
+		&normalized.DurationSeconds,
+		&normalized.NormalizedAt,
+		&normalized.CreatedAt,
+		&normalized.UpdatedAt,
+	)
 }
 
 func scanTranscript(row PostgresRow, transcript *RecordingTranscript) error {
