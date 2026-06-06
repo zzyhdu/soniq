@@ -9,13 +9,13 @@ Completed foundation milestones:
 - Go backend skeleton with `GET /healthz`.
 - Postgres-backed recording API: `POST /recordings`, `POST /recordings/upload`, `GET /recordings/{id}`, `GET /recordings/{id}/status`.
 - Local filesystem object storage for uploaded recording audio.
-- Temporal workflow skeleton with Postgres-backed recording status and audio-probe activities.
+- Temporal workflow with Postgres-backed recording status, audio-probe, fake transcription, and fake summarization activities.
 - Temporal worker registration with Soniq Postgres-backed activities.
 - API-to-Temporal workflow start: successful recording creation/upload starts `RecordingProcessingWorkflow` asynchronously.
 - Local Temporal development environment: Docker Compose services, Makefile targets, docs, and a full smoke helper.
-- Verified local smoke path: API → local object store → Soniq Postgres → Temporal → worker → `ffprobe` → `recording_audio_probes` → `recordings.status=completed`.
+- Verified local smoke path: API → local object store → Soniq Postgres → Temporal → worker → `ffprobe` → `recording_audio_probes` → fake transcription → `recording_transcripts`/segments → fake summary → `recording_summaries` → `recordings.status=completed`.
 
-The next focus is continuing from original-audio probing into normalization and provider-backed transcription/summarization.
+The next focus is documentation cleanup for the completed fake-provider 1F boundary, then normalization and real provider-backed transcription/summarization in later milestones.
 
 ## Phase 0 — Project skeleton and architecture docs
 
@@ -95,12 +95,21 @@ Remaining future scope:
 
 ### 1F — First transcription and summarization activities
 
-Status: planned.
+Status: complete for provider-neutral fake-provider foundation.
 
-- audio normalization/format policy.
-- One transcription provider.
-- One LLM provider.
-- Persist transcript and summary.
+Completed scope:
+
+- `recording_transcripts`, `recording_transcript_segments`, and `recording_summaries` persistence.
+- Workflow status transitions through `processing`, `transcribing`, `summarizing`, and `completed`.
+- Deterministic local fake transcription and summary providers wired into worker registration.
+- Full local smoke verifies probe metadata, transcript rows, segment rows, summary rows, Temporal `COMPLETED`, and `recordings.status=completed`.
+
+Remaining future scope:
+
+- Audio normalization/format policy.
+- Real ASR provider integration.
+- Real LLM provider integration.
+- Provider configuration, credentials, retries, and webhook/polling support.
 
 ### 1G — Basic web UI
 

@@ -146,3 +146,16 @@ retain_summaries_days
 allow_external_model_providers
 updated_at
 ```
+
+
+## Current implemented persistence boundary
+
+The current application Postgres schema is intentionally smaller than the long-term model above. Implemented tables are:
+
+- `recordings` for recording metadata, upload metadata, status, and timestamps.
+- `recording_audio_probes` for original-audio `ffprobe` metadata and raw probe JSON.
+- `recording_transcripts` for the latest provider-neutral transcript per recording.
+- `recording_transcript_segments` for ordered transcript segments.
+- `recording_summaries` for the latest provider-neutral summary per recording.
+
+`Artifact`, workspace/user tenancy tables, workflow run history, and retention policy tables are still future scope. Temporal's internal database remains separate from Soniq application Postgres.

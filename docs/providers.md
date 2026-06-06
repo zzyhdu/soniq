@@ -14,9 +14,12 @@ type StorageProvider interface {
 }
 ```
 
-Initial implementations:
+Current implementation:
 
-- `local_fs`
+- `local` filesystem provider for development.
+
+Planned implementations:
+
 - `s3_compatible`
 
 Later implementations:
@@ -41,7 +44,11 @@ Provider categories:
 - Synchronous: OpenAI, Groq Whisper, local faster-whisper.
 - Asynchronous: AssemblyAI, Deepgram batch, Aliyun ASR, Tencent ASR, Volcengine ASR, iFlytek long audio.
 
-Initial target providers:
+Current implementation:
+
+- `fake_transcription`, a deterministic local provider used to verify workflow/activity/persistence wiring without credentials.
+
+Initial real target providers:
 
 - `faster_whisper` via local HTTP worker.
 - `openai_compatible_transcription` where available.
@@ -56,7 +63,11 @@ type LLMProvider interface {
 }
 ```
 
-Initial implementations:
+Current implementation:
+
+- `fake_llm`, a deterministic local summary provider used to verify workflow/activity/persistence wiring without credentials.
+
+Initial real implementations:
 
 - `openai_compatible`
 - `ollama`
