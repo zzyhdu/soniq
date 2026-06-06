@@ -77,6 +77,8 @@ start_worker() {
     TEMPORAL_NAMESPACE="$TEMPORAL_NAMESPACE" \
     TEMPORAL_TASK_QUEUE="$TEMPORAL_TASK_QUEUE" \
     POSTGRES_DSN="$POSTGRES_DSN" \
+    STORAGE_PROVIDER="$STORAGE_PROVIDER" \
+    LOCAL_STORAGE_PATH="$LOCAL_STORAGE_PATH" \
     make worker
   ) >"$WORKER_LOG" 2>&1 &
   WORKER_PID=$!
@@ -157,20 +159,31 @@ apply_recording_migrations() {
   else
     log "recording audio metadata columns already exist; skipping migration 0002"
   fi
+
+  audio_probe_table_exists="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
+    psql -U soniq_user -d soniq -Atc "SELECT to_regclass('public.recording_audio_probes') IS NOT NULL")"
+  if [[ "$audio_probe_table_exists" != "t" ]]; then
+    log "applying recordings migration 0003"
+    docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
+      psql -U soniq_user -d soniq -v ON_ERROR_STOP=1 \
+      -f - < backend/migrations/0003_create_recording_audio_probes.up.sql
+  else
+    log "recording audio probes table already exists; skipping migration 0003"
+  fi
 }
 
 assert_uploaded_object() {
   local object_key="$1"
-  local expected_contents="$2"
+  local expected_size_bytes="$2"
   local object_path="$LOCAL_STORAGE_PATH/$object_key"
   if [[ ! -f "$object_path" ]]; then
     log "uploaded object does not exist: $object_path"
     return 1
   fi
-  local actual_contents
-  actual_contents="$(cat "$object_path")"
-  if [[ "$actual_contents" != "$expected_contents" ]]; then
-    log "uploaded object contents mismatch"
+  local actual_size_bytes
+  actual_size_bytes="$(wc -c <"$object_path" | tr -d ' ')"
+  if [[ "$actual_size_bytes" != "$expected_size_bytes" ]]; then
+    log "uploaded object size mismatch: $actual_size_bytes, want $expected_size_bytes"
     return 1
   fi
 }
@@ -201,11 +214,32 @@ assert_recording_status_in_db() {
   fi
 }
 
+assert_recording_audio_probe_in_db() {
+  local recording_id="$1"
+  local row
+  row="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
+    psql -U soniq_user -d soniq -AtF $'\t' -c "SELECT format_name, codec_name, sample_rate, channels, (duration_seconds > 0), jsonb_typeof(raw_probe_json) FROM recording_audio_probes WHERE recording_id = '$recording_id'")"
+  if [[ -z "$row" ]]; then
+    log "recording audio probe row missing for $recording_id"
+    return 1
+  fi
+
+  IFS=$'\t' read -r format_name codec_name sample_rate channels has_duration raw_json_type <<<"$row"
+  if [[ -z "$format_name" || -z "$codec_name" || "$sample_rate" -le 0 || "$channels" -le 0 || "$has_duration" != "t" || "$raw_json_type" != "object" ]]; then
+    log "unexpected DB audio probe row: $row"
+    return 1
+  fi
+}
+
 main() {
   cd "$ROOT_DIR"
 
   if curl -fsS "$API_URL/healthz" >/dev/null 2>&1; then
     log "API already responds at $API_URL; stop it before running this smoke script so the script can verify restart behavior safely"
+    exit 1
+  fi
+  if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+    log "ffmpeg and ffprobe are required for audio probe smoke verification"
     exit 1
   fi
 
@@ -227,11 +261,10 @@ main() {
   start_api
 
   log "uploading recording audio via POST /recordings/upload"
-  local response recording_id workflow_id audio_object_key audio_contents audio_size audio_file
-  audio_contents="soniq-smoke-audio-bytes"
-  audio_size="${#audio_contents}"
+  local response recording_id workflow_id audio_object_key audio_size audio_file
   audio_file="$LOG_DIR/weekly.wav"
-  printf '%s' "$audio_contents" >"$audio_file"
+  ffmpeg -hide_banner -loglevel error -f lavfi -i sine=frequency=1000:duration=1 -ac 1 -ar 16000 -c:a pcm_s16le "$audio_file"
+  audio_size="$(wc -c <"$audio_file" | tr -d ' ')"
   response="$(curl -fsS -X POST "$API_URL/recordings/upload" \
     -F 'title=Weekly sync' \
     -F 'workflow_type=meeting' \
@@ -245,7 +278,7 @@ main() {
 
   assert_json_field_equals "$response" audio_content_type audio/wav
   assert_json_field_equals "$response" audio_size_bytes "$audio_size"
-  assert_uploaded_object "$audio_object_key" "$audio_contents"
+  assert_uploaded_object "$audio_object_key" "$audio_size"
   assert_recording_audio_metadata_in_db "$recording_id" "$audio_object_key" audio/wav "$audio_size"
 
   log "verifying GET /recordings/$recording_id before API restart"
@@ -263,7 +296,7 @@ main() {
   assert_json_field_equals "$response" audio_object_key "$audio_object_key"
   assert_json_field_equals "$response" audio_content_type audio/wav
   assert_json_field_equals "$response" audio_size_bytes "$audio_size"
-  assert_uploaded_object "$audio_object_key" "$audio_contents"
+  assert_uploaded_object "$audio_object_key" "$audio_size"
   curl -fsS "$API_URL/recordings/$recording_id/status" >/dev/null
 
   log "waiting for Temporal workflow completion"
@@ -279,6 +312,8 @@ main() {
       log "Temporal workflow completed: $workflow_id"
       assert_recording_status_in_db "$recording_id" completed
       log "recording DB status reached completed: $recording_id"
+      assert_recording_audio_probe_in_db "$recording_id"
+      log "recording audio probe metadata persisted: $recording_id"
       log "recording persisted across API restart: $recording_id"
       return 0
     fi
