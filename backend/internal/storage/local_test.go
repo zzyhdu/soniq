@@ -104,6 +104,57 @@ func TestLocalStorePutObjectPropagatesReadErrors(t *testing.T) {
 	}
 }
 
+func TestLocalStoreLocalPathForObjectResolvesValidKeyUnderRoot(t *testing.T) {
+	root := t.TempDir()
+	store := NewLocalStore(root)
+
+	path, err := store.LocalPathForObject("recordings/rec_123/original.wav")
+	if err != nil {
+		t.Fatalf("LocalPathForObject returned error: %v", err)
+	}
+
+	want := filepath.Join(root, "recordings", "rec_123", "original.wav")
+	if path != want {
+		t.Fatalf("LocalPathForObject path = %q, want %q", path, want)
+	}
+}
+
+func TestLocalStoreLocalPathForObjectNormalizesBackslashes(t *testing.T) {
+	root := t.TempDir()
+	store := NewLocalStore(root)
+
+	path, err := store.LocalPathForObject(`recordings\rec_123\original.wav`)
+	if err != nil {
+		t.Fatalf("LocalPathForObject returned error: %v", err)
+	}
+
+	want := filepath.Join(root, "recordings", "rec_123", "original.wav")
+	if path != want {
+		t.Fatalf("LocalPathForObject path = %q, want %q", path, want)
+	}
+}
+
+func TestLocalStoreLocalPathForObjectRejectsInvalidKeys(t *testing.T) {
+	store := NewLocalStore(t.TempDir())
+
+	invalidKeys := []string{
+		"",
+		"../secret.wav",
+		"recordings/../../secret.wav",
+		"/absolute/path.wav",
+		"recordings/rec_123/",
+	}
+
+	for _, key := range invalidKeys {
+		t.Run(key, func(t *testing.T) {
+			_, err := store.LocalPathForObject(key)
+			if err == nil {
+				t.Fatal("LocalPathForObject returned nil error, want invalid key error")
+			}
+		})
+	}
+}
+
 type errReader struct {
 	err error
 }

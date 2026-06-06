@@ -19,6 +19,19 @@ func NewLocalStore(root string) *LocalStore {
 	return &LocalStore{root: root}
 }
 
+// LocalPathForObject resolves an object key to a safe local filesystem path.
+func (s *LocalStore) LocalPathForObject(key string) (string, error) {
+	key, err := cleanObjectKey(key)
+	if err != nil {
+		return "", err
+	}
+	root := s.root
+	if strings.TrimSpace(root) == "" {
+		root = "."
+	}
+	return filepath.Join(root, filepath.FromSlash(key)), nil
+}
+
 // PutObject writes an object to local storage and returns the number of bytes written.
 func (s *LocalStore) PutObject(ctx context.Context, input PutObjectInput) (PutObjectResult, error) {
 	if input.Body == nil {
