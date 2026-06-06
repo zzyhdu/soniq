@@ -9,13 +9,13 @@ Completed foundation milestones:
 - Go backend skeleton with `GET /healthz`.
 - Postgres-backed recording API: `POST /recordings`, `POST /recordings/upload`, `GET /recordings/{id}`, `GET /recordings/{id}/status`.
 - Local filesystem object storage for uploaded recording audio.
-- Temporal workflow skeleton with Postgres-backed recording status activities.
+- Temporal workflow skeleton with Postgres-backed recording status and audio-probe activities.
 - Temporal worker registration with Soniq Postgres-backed activities.
 - API-to-Temporal workflow start: successful recording creation/upload starts `RecordingProcessingWorkflow` asynchronously.
 - Local Temporal development environment: Docker Compose services, Makefile targets, docs, and a full smoke helper.
-- Verified local smoke path: API → local object store → Soniq Postgres → Temporal → worker → `recordings.status=completed`.
+- Verified local smoke path: API → local object store → Soniq Postgres → Temporal → worker → `ffprobe` → `recording_audio_probes` → `recordings.status=completed`.
 
-The next focus is replacing skeleton processing with real audio/AI activities.
+The next focus is continuing from original-audio probing into normalization and provider-backed transcription/summarization.
 
 ## Phase 0 — Project skeleton and architecture docs
 
@@ -79,19 +79,25 @@ Status: complete.
 - Verify the full smoke path reaches both Temporal `COMPLETED` and `recordings.status=completed`.
 - Consider a `workflow_runs` table once workflow metadata is needed beyond recording status.
 
-### 1E — Audio upload and object storage
+### 1E — Audio upload, local object storage, and original-audio probe
 
-Status: planned.
+Status: complete.
+
+- Audio upload endpoint and original audio metadata persistence.
+- Local filesystem object storage for development.
+- `recording_audio_probes` table for original-audio ffprobe metadata.
+- Worker `ProbeRecordingAudio` activity that resolves the local object path, runs `ffprobe`, and upserts probe metadata before completion.
+
+Remaining future scope:
 
 - S3-compatible storage provider with MinIO local setup.
-- Audio upload session and recording creation API.
-- Store original audio artifact metadata.
+- Storage download/presigned-input support for worker-side probing when the object is not local.
 
-### 1F — First real processing activities
+### 1F — First transcription and summarization activities
 
 Status: planned.
 
-- ffmpeg probe/normalize activities.
+- audio normalization/format policy.
 - One transcription provider.
 - One LLM provider.
 - Persist transcript and summary.

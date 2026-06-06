@@ -4,7 +4,7 @@ Soniq uses Temporal for durable audio processing workflows.
 
 ## Current implementation status
 
-The repository currently contains an API-to-Temporal workflow start skeleton, not the full audio pipeline described below. The implemented boundary uses the real Temporal Go SDK and Temporal SDK testsuite, wires successful recording creation through a Temporal-backed recording processor, starts `RecordingProcessingWorkflow` asynchronously with workflow ID `recording-processing-<recording_id>`, and registers the workflow on the worker. The API supports metadata-only `POST /recordings` and multipart `POST /recordings/upload`; upload requests store the original audio through the local object-store provider and persist audio metadata before starting the workflow. The worker connects to Soniq application Postgres and registers store-backed recording activities under the workflow's stable Temporal activity names, so the current workflow persists recording status transitions from `uploaded` to `processing` to `completed`, with a best-effort `failed` transition if completion fails. It does not yet call ffmpeg, ASR providers, LLM providers, provider webhooks, or S3-compatible object storage.
+The repository currently contains an API-to-Temporal workflow start skeleton with the first real processing step: original-audio probing. The implemented boundary uses the real Temporal Go SDK and Temporal SDK testsuite, wires successful recording creation through a Temporal-backed recording processor, starts `RecordingProcessingWorkflow` asynchronously with workflow ID `recording-processing-<recording_id>`, and registers the workflow on the worker. The API supports metadata-only `POST /recordings` and multipart `POST /recordings/upload`; upload requests store the original audio through the local object-store provider and persist audio metadata before starting the workflow. The worker connects to Soniq application Postgres and registers store-backed recording activities under the workflow's stable Temporal activity names, so the current workflow persists recording status transitions from `uploaded` to `processing`, runs `ffprobe` against the uploaded original audio, persists one `recording_audio_probes` row, and then marks the recording `completed`, with a best-effort `failed` transition if probe or completion fails. It does not yet normalize audio, call ASR providers, call LLM providers, handle provider webhooks, or use S3-compatible object storage.
 
 ## Primary workflow
 
@@ -31,7 +31,11 @@ type RecordingProcessingInput struct {
 ```txt
 ValidateRecording
   ↓
+MarkRecordingProcessing
+  ↓
 ProbeAudio
+  ↓
+CompleteRecordingProcessing
   ↓
 NormalizeAudio
   ↓
@@ -51,6 +55,22 @@ PersistFinalResult
   ↓
 NotifyCompletion
 ```
+
+## Implemented audio probe boundary
+
+The currently implemented `ProbeAudio` step is deliberately narrow:
+
+```txt
+recording.AudioObjectKey
+  ↓
+local object path resolver
+  ↓
+ffprobe -v error -print_format json -show_format -show_streams
+  ↓
+recording_audio_probes upsert
+```
+
+The worker resolves local object keys under `LOCAL_STORAGE_PATH`, so this probe step is currently local-storage-only. It stores parsed duration, format, codec, sample rate, channels, bit rate, `probed_at`, and the raw `ffprobe` JSON in `recording_audio_probes`. The raw JSON is retained so later normalization/transcription milestones can read details that are not yet modeled as first-class columns.
 
 ## Workflow types
 
@@ -110,7 +130,7 @@ The signal pattern is preferred when provider webhooks are reliable.
 
 ## Retry policy guidance
 
-- ffmpeg probe/normalize: short retry, deterministic output path.
+- ffprobe probe / ffmpeg normalize: short retry, deterministic output path.
 - third-party ASR/LLM: exponential backoff, provider-specific retryable errors.
 - persistence: retry safely with idempotency keys.
 - notification/webhook: retry but do not fail the entire recording after final result is persisted.
