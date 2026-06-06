@@ -1,10 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -26,6 +31,8 @@ func TestBuildHandlerInjectsTemporalRecordingProcessor(t *testing.T) {
 		TemporalAddress:   "temporal.example:7233",
 		TemporalNamespace: "default",
 		TemporalTaskQueue: "soniq-audio-pipeline",
+		StorageProvider:   "local",
+		LocalStoragePath:  t.TempDir(),
 	}
 
 	handler, cleanup, err := buildHandler(context.Background(), cfg, func(ctx context.Context, cfg config.Config) (temporalWorkflowClient, error) {
@@ -89,12 +96,71 @@ func TestBuildHandlerInjectsTemporalRecordingProcessor(t *testing.T) {
 	}
 }
 
+func TestBuildHandlerWiresUploadEndpointToLocalObjectStorage(t *testing.T) {
+	temporalClient := &temporalClientSpy{}
+	store := newBuildHandlerRecordingStoreSpy()
+	storeFactory := &recordingStoreFactorySpy{store: store}
+	uploadRoot := t.TempDir()
+	cfg := config.Config{
+		PostgresDSN:       "postgres://custom_user:***@db:5432/custom?sslmode=disable",
+		TemporalAddress:   "temporal.example:7233",
+		TemporalNamespace: "default",
+		TemporalTaskQueue: "soniq-audio-pipeline",
+		StorageProvider:   "local",
+		LocalStoragePath:  uploadRoot,
+	}
+
+	handler, cleanup, err := buildHandler(context.Background(), cfg, func(context.Context, config.Config) (temporalWorkflowClient, error) {
+		return temporalClient, nil
+	}, storeFactory.Open)
+	if err != nil {
+		t.Fatalf("buildHandler returned error: %v", err)
+	}
+	defer cleanup()
+
+	request := newMultipartUploadRequest(t, "/recordings/upload", map[string]string{
+		"title":         "Weekly sync",
+		"workflow_type": "meeting",
+		"language":      "en",
+	}, "audio", "weekly.wav", "audio/wav", "audio-bytes")
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusCreated, response.Body.String())
+	}
+	var recording domain.Recording
+	if err := json.NewDecoder(response.Body).Decode(&recording); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if recording.AudioObjectKey == "" {
+		t.Fatal("AudioObjectKey is empty, want stored local object key")
+	}
+	if recording.AudioContentType != "audio/wav" {
+		t.Fatalf("AudioContentType = %q, want audio/wav", recording.AudioContentType)
+	}
+	if recording.AudioSizeBytes != int64(len("audio-bytes")) {
+		t.Fatalf("AudioSizeBytes = %d, want %d", recording.AudioSizeBytes, len("audio-bytes"))
+	}
+	storedBytes, err := os.ReadFile(filepath.Join(uploadRoot, filepath.FromSlash(recording.AudioObjectKey)))
+	if err != nil {
+		t.Fatalf("read uploaded object: %v", err)
+	}
+	if string(storedBytes) != "audio-bytes" {
+		t.Fatalf("stored object = %q, want audio-bytes", string(storedBytes))
+	}
+	if got, want := len(temporalClient.calls), 1; got != want {
+		t.Fatalf("ExecuteWorkflow calls = %d, want %d", got, want)
+	}
+}
+
 func TestBuildHandlerCleanupClosesTemporalClient(t *testing.T) {
 	temporalClient := &temporalClientSpy{}
 	store := newBuildHandlerRecordingStoreSpy()
 	storeFactory := &recordingStoreFactorySpy{store: store}
 
-	_, cleanup, err := buildHandler(context.Background(), config.Config{TemporalTaskQueue: "soniq-audio-pipeline", PostgresDSN: "postgres://custom_user:***@db:5432/custom?sslmode=disable"}, func(context.Context, config.Config) (temporalWorkflowClient, error) {
+	_, cleanup, err := buildHandler(context.Background(), config.Config{TemporalTaskQueue: "soniq-audio-pipeline", PostgresDSN: "postgres://custom_user:***@db:5432/custom?sslmode=disable", StorageProvider: "local", LocalStoragePath: t.TempDir()}, func(context.Context, config.Config) (temporalWorkflowClient, error) {
 		return temporalClient, nil
 	}, storeFactory.Open)
 	if err != nil {
@@ -113,6 +179,35 @@ func TestBuildHandlerCleanupClosesTemporalClient(t *testing.T) {
 
 func sameFunction(a, b interface{}) bool {
 	return reflect.ValueOf(a).Pointer() == reflect.ValueOf(b).Pointer()
+}
+
+func newMultipartUploadRequest(t *testing.T, target string, fields map[string]string, fileField, fileName, contentType, fileContents string) *http.Request {
+	t.Helper()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for name, value := range fields {
+		if err := writer.WriteField(name, value); err != nil {
+			t.Fatalf("WriteField(%q): %v", name, err)
+		}
+	}
+	header := make(textproto.MIMEHeader)
+	header.Set("Content-Disposition", `form-data; name="`+fileField+`"; filename="`+fileName+`"`)
+	header.Set("Content-Type", contentType)
+	part, err := writer.CreatePart(header)
+	if err != nil {
+		t.Fatalf("CreatePart: %v", err)
+	}
+	if _, err := part.Write([]byte(fileContents)); err != nil {
+		t.Fatalf("write file part: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, target, &body)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	return request
 }
 
 type recordingStoreFactorySpy struct {

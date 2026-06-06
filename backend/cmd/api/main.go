@@ -2,14 +2,17 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/zzyhdu/soniq/backend/internal/api"
 	"github.com/zzyhdu/soniq/backend/internal/config"
 	"github.com/zzyhdu/soniq/backend/internal/processing"
 	"github.com/zzyhdu/soniq/backend/internal/recordings"
+	"github.com/zzyhdu/soniq/backend/internal/storage"
 	"go.temporal.io/sdk/client"
 )
 
@@ -60,13 +63,28 @@ func buildHandler(ctx context.Context, cfg config.Config, temporalFactory tempor
 	processor := processing.NewTemporalRecordingProcessor(temporalClient, processing.TemporalRecordingProcessorConfig{
 		TaskQueue: cfg.TemporalTaskQueue,
 	})
-	handler := api.NewRouterWithProcessor(recordingStore, processor)
+	objectStore, err := buildObjectStore(cfg)
+	if err != nil {
+		recordingStore.Close()
+		temporalClient.Close()
+		return nil, func() {}, err
+	}
+	handler := api.NewRouterWithStorage(recordingStore, processor, objectStore)
 	cleanup := func() {
 		recordingStore.Close()
 		temporalClient.Close()
 	}
 
 	return handler, cleanup, nil
+}
+
+func buildObjectStore(cfg config.Config) (storage.ObjectStore, error) {
+	switch strings.ToLower(strings.TrimSpace(cfg.StorageProvider)) {
+	case "local":
+		return storage.NewLocalStore(cfg.LocalStoragePath), nil
+	default:
+		return nil, fmt.Errorf("unsupported storage provider %q", cfg.StorageProvider)
+	}
 }
 
 func dialTemporalClient(ctx context.Context, cfg config.Config) (temporalWorkflowClient, error) {
