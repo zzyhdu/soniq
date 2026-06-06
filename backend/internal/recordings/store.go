@@ -26,16 +26,46 @@ type UpdateRecordingStatusInput struct {
 	Status domain.RecordingStatus
 }
 
+// RecordingAudioProbe contains ffprobe metadata for a recording's original audio.
+type RecordingAudioProbe struct {
+	RecordingID     string
+	DurationSeconds float64
+	FormatName      string
+	CodecName       string
+	SampleRate      int
+	Channels        int
+	BitRate         int
+	RawProbeJSON    []byte
+	ProbedAt        time.Time
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
+// UpsertAudioProbeInput contains audio probe metadata to persist for a recording.
+type UpsertAudioProbeInput struct {
+	RecordingID     string
+	DurationSeconds float64
+	FormatName      string
+	CodecName       string
+	SampleRate      int
+	Channels        int
+	BitRate         int
+	RawProbeJSON    []byte
+	ProbedAt        time.Time
+}
+
 // MemoryStore is a thread-safe in-memory recording store for local skeleton workflows.
 type MemoryStore struct {
-	mu         sync.RWMutex
-	recordings map[string]domain.Recording
+	mu          sync.RWMutex
+	recordings  map[string]domain.Recording
+	audioProbes map[string]RecordingAudioProbe
 }
 
 // NewMemoryStore creates an empty in-memory recording store.
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		recordings: make(map[string]domain.Recording),
+		recordings:  make(map[string]domain.Recording),
+		audioProbes: make(map[string]RecordingAudioProbe),
 	}
 }
 
@@ -95,6 +125,46 @@ func (s *MemoryStore) UpdateStatus(input UpdateRecordingStatusInput) (domain.Rec
 	return recording, nil
 }
 
+// UpsertAudioProbe stores or replaces ffprobe metadata for a recording.
+func (s *MemoryStore) UpsertAudioProbe(input UpsertAudioProbeInput) (RecordingAudioProbe, error) {
+	if err := validateAudioProbeInput(input); err != nil {
+		return RecordingAudioProbe{}, err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now().UTC()
+	probe := RecordingAudioProbe{
+		RecordingID:     input.RecordingID,
+		DurationSeconds: input.DurationSeconds,
+		FormatName:      input.FormatName,
+		CodecName:       input.CodecName,
+		SampleRate:      input.SampleRate,
+		Channels:        input.Channels,
+		BitRate:         input.BitRate,
+		RawProbeJSON:    append([]byte(nil), input.RawProbeJSON...),
+		ProbedAt:        input.ProbedAt,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	if existing, ok := s.audioProbes[input.RecordingID]; ok {
+		probe.CreatedAt = existing.CreatedAt
+	}
+	s.audioProbes[input.RecordingID] = probe
+	return probe, nil
+}
+
+// GetAudioProbe returns persisted ffprobe metadata by recording id.
+func (s *MemoryStore) GetAudioProbe(recordingID string) (RecordingAudioProbe, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	probe, ok := s.audioProbes[recordingID]
+	probe.RawProbeJSON = append([]byte(nil), probe.RawProbeJSON...)
+	return probe, ok
+}
+
 func validateStatusUpdateInput(input UpdateRecordingStatusInput) error {
 	if input.ID == "" {
 		return fmt.Errorf("recording id is required")
@@ -105,6 +175,22 @@ func validateStatusUpdateInput(input UpdateRecordingStatusInput) error {
 	default:
 		return fmt.Errorf("unsupported recording status update: %s", input.Status)
 	}
+}
+
+func validateAudioProbeInput(input UpsertAudioProbeInput) error {
+	if input.RecordingID == "" {
+		return fmt.Errorf("recording id is required")
+	}
+	if input.FormatName == "" {
+		return fmt.Errorf("audio probe format name is required")
+	}
+	if len(input.RawProbeJSON) == 0 {
+		return fmt.Errorf("audio probe raw json is required")
+	}
+	if input.ProbedAt.IsZero() {
+		return fmt.Errorf("audio probe timestamp is required")
+	}
+	return nil
 }
 
 func newRecordingID() string {

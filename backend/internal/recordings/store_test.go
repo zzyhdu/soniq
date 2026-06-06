@@ -3,6 +3,7 @@ package recordings
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/zzyhdu/soniq/backend/internal/domain"
 )
@@ -176,5 +177,113 @@ func TestMemoryStoreUpdateStatusReturnsErrorForMissingRecording(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("UpdateStatus returned nil error, want missing recording error")
+	}
+}
+
+func TestMemoryStoreUpsertAndGetAudioProbe(t *testing.T) {
+	store := NewMemoryStore()
+	now := time.Date(2026, 6, 6, 1, 2, 3, 0, time.UTC)
+
+	probe, err := store.UpsertAudioProbe(UpsertAudioProbeInput{
+		RecordingID:     "rec_probe",
+		DurationSeconds: 12.5,
+		FormatName:      "wav",
+		CodecName:       "pcm_s16le",
+		SampleRate:      16000,
+		Channels:        1,
+		BitRate:         256000,
+		RawProbeJSON:    []byte(`{"format":{"duration":"12.5"}}`),
+		ProbedAt:        now,
+	})
+	if err != nil {
+		t.Fatalf("UpsertAudioProbe returned error: %v", err)
+	}
+
+	if probe.RecordingID != "rec_probe" {
+		t.Fatalf("RecordingID = %q, want rec_probe", probe.RecordingID)
+	}
+	if probe.DurationSeconds != 12.5 || probe.FormatName != "wav" || probe.CodecName != "pcm_s16le" {
+		t.Fatalf("probe core fields = %+v, want persisted metadata", probe)
+	}
+	if probe.SampleRate != 16000 || probe.Channels != 1 || probe.BitRate != 256000 {
+		t.Fatalf("probe audio fields = %+v, want persisted audio stream metadata", probe)
+	}
+	if string(probe.RawProbeJSON) != `{"format":{"duration":"12.5"}}` {
+		t.Fatalf("RawProbeJSON = %s, want raw ffprobe json", probe.RawProbeJSON)
+	}
+	if !probe.ProbedAt.Equal(now) {
+		t.Fatalf("ProbedAt = %s, want %s", probe.ProbedAt, now)
+	}
+	if probe.CreatedAt.IsZero() || probe.UpdatedAt.IsZero() {
+		t.Fatalf("timestamps = %s/%s, want non-zero", probe.CreatedAt, probe.UpdatedAt)
+	}
+
+	got, ok := store.GetAudioProbe("rec_probe")
+	if !ok {
+		t.Fatal("GetAudioProbe(rec_probe) ok = false, want true")
+	}
+	if got.RecordingID != probe.RecordingID || got.FormatName != probe.FormatName || got.CodecName != probe.CodecName {
+		t.Fatalf("stored probe = %+v, want %+v", got, probe)
+	}
+	if string(got.RawProbeJSON) != string(probe.RawProbeJSON) {
+		t.Fatalf("stored RawProbeJSON = %s, want %s", got.RawProbeJSON, probe.RawProbeJSON)
+	}
+}
+
+func TestMemoryStoreUpsertAudioProbeReplacesFieldsAndPreservesCreatedAt(t *testing.T) {
+	store := NewMemoryStore()
+	firstProbeAt := time.Date(2026, 6, 6, 1, 2, 3, 0, time.UTC)
+	secondProbeAt := firstProbeAt.Add(time.Minute)
+
+	first, err := store.UpsertAudioProbe(UpsertAudioProbeInput{
+		RecordingID:     "rec_probe",
+		DurationSeconds: 10,
+		FormatName:      "wav",
+		CodecName:       "pcm_s16le",
+		SampleRate:      16000,
+		Channels:        1,
+		BitRate:         256000,
+		RawProbeJSON:    []byte(`{"first":true}`),
+		ProbedAt:        firstProbeAt,
+	})
+	if err != nil {
+		t.Fatalf("first UpsertAudioProbe returned error: %v", err)
+	}
+
+	updated, err := store.UpsertAudioProbe(UpsertAudioProbeInput{
+		RecordingID:     "rec_probe",
+		DurationSeconds: 20.25,
+		FormatName:      "mp3",
+		CodecName:       "mp3",
+		SampleRate:      44100,
+		Channels:        2,
+		BitRate:         192000,
+		RawProbeJSON:    []byte(`{"second":true}`),
+		ProbedAt:        secondProbeAt,
+	})
+	if err != nil {
+		t.Fatalf("second UpsertAudioProbe returned error: %v", err)
+	}
+
+	if !updated.CreatedAt.Equal(first.CreatedAt) {
+		t.Fatalf("CreatedAt = %s, want preserved %s", updated.CreatedAt, first.CreatedAt)
+	}
+	if !updated.UpdatedAt.After(first.UpdatedAt) {
+		t.Fatalf("UpdatedAt = %s, want after %s", updated.UpdatedAt, first.UpdatedAt)
+	}
+	if updated.DurationSeconds != 20.25 || updated.FormatName != "mp3" || updated.CodecName != "mp3" {
+		t.Fatalf("updated probe fields = %+v, want replaced metadata", updated)
+	}
+	if string(updated.RawProbeJSON) != `{"second":true}` {
+		t.Fatalf("RawProbeJSON = %s, want second json", updated.RawProbeJSON)
+	}
+}
+
+func TestMemoryStoreGetAudioProbeReturnsFalseForMissingRecording(t *testing.T) {
+	store := NewMemoryStore()
+
+	_, ok := store.GetAudioProbe("rec_missing")
+	if ok {
+		t.Fatal("GetAudioProbe(rec_missing) ok = true, want false")
 	}
 }

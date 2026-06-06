@@ -66,6 +66,12 @@ func (r *postgresRowStub) Scan(dest ...any) error {
 			*target = value.(time.Time)
 		case *int64:
 			*target = value.(int64)
+		case *int:
+			*target = value.(int)
+		case *float64:
+			*target = value.(float64)
+		case *[]byte:
+			*target = append((*target)[:0], value.([]byte)...)
 		default:
 			return sql.ErrNoRows
 		}
@@ -307,5 +313,115 @@ func TestPostgresStoreUpdateStatusReturnsErrorForMissingRecording(t *testing.T) 
 	})
 	if err == nil {
 		t.Fatal("UpdateStatus returned nil error, want missing recording error")
+	}
+}
+
+func TestPostgresStoreUpsertAudioProbeInsertsOrUpdatesProbe(t *testing.T) {
+	probedAt := time.Date(2026, 6, 6, 1, 2, 3, 0, time.UTC)
+	createdAt := probedAt
+	updatedAt := probedAt.Add(time.Second)
+	raw := []byte(`{"format":{"duration":"12.5"}}`)
+	db := newPostgresExecutorSpy(postgresRow(
+		"rec_probe",
+		12.5,
+		"wav",
+		"pcm_s16le",
+		16000,
+		1,
+		256000,
+		raw,
+		probedAt,
+		createdAt,
+		updatedAt,
+	))
+	store := NewPostgresStore(db)
+
+	probe, err := store.UpsertAudioProbe(UpsertAudioProbeInput{
+		RecordingID:     "rec_probe",
+		DurationSeconds: 12.5,
+		FormatName:      "wav",
+		CodecName:       "pcm_s16le",
+		SampleRate:      16000,
+		Channels:        1,
+		BitRate:         256000,
+		RawProbeJSON:    raw,
+		ProbedAt:        probedAt,
+	})
+	if err != nil {
+		t.Fatalf("UpsertAudioProbe returned error: %v", err)
+	}
+
+	if probe.RecordingID != "rec_probe" || probe.FormatName != "wav" || probe.CodecName != "pcm_s16le" {
+		t.Fatalf("probe = %+v, want persisted audio probe", probe)
+	}
+	if probe.DurationSeconds != 12.5 || probe.SampleRate != 16000 || probe.Channels != 1 || probe.BitRate != 256000 {
+		t.Fatalf("probe numeric fields = %+v, want persisted values", probe)
+	}
+	if string(probe.RawProbeJSON) != string(raw) {
+		t.Fatalf("RawProbeJSON = %s, want %s", probe.RawProbeJSON, raw)
+	}
+	if got, want := len(db.calls), 1; got != want {
+		t.Fatalf("query calls = %d, want %d", got, want)
+	}
+	query := strings.ToLower(db.calls[0].query)
+	if !strings.Contains(query, "insert into recording_audio_probes") || !strings.Contains(query, "on conflict") || !strings.Contains(query, "returning") {
+		t.Fatalf("query = %q, want insert into recording_audio_probes on conflict returning", db.calls[0].query)
+	}
+	if got, want := len(db.calls[0].args), 11; got != want {
+		t.Fatalf("upsert args = %d, want %d", got, want)
+	}
+	if got, want := db.calls[0].args[0], "rec_probe"; got != want {
+		t.Fatalf("recording_id arg = %q, want %q", got, want)
+	}
+	if got, want := db.calls[0].args[7], raw; string(got.([]byte)) != string(want) {
+		t.Fatalf("raw json arg = %s, want %s", got, want)
+	}
+}
+
+func TestPostgresStoreGetAudioProbeReturnsExistingProbe(t *testing.T) {
+	probedAt := time.Date(2026, 6, 6, 1, 2, 3, 0, time.UTC)
+	createdAt := probedAt
+	updatedAt := probedAt.Add(time.Second)
+	db := newPostgresExecutorSpy(postgresRow(
+		"rec_probe",
+		12.5,
+		"wav",
+		"pcm_s16le",
+		16000,
+		1,
+		256000,
+		[]byte(`{"format":{"duration":"12.5"}}`),
+		probedAt,
+		createdAt,
+		updatedAt,
+	))
+	store := NewPostgresStore(db)
+
+	probe, ok := store.GetAudioProbe("rec_probe")
+	if !ok {
+		t.Fatal("GetAudioProbe(rec_probe) ok = false, want true")
+	}
+	if probe.RecordingID != "rec_probe" || probe.FormatName != "wav" || probe.CodecName != "pcm_s16le" {
+		t.Fatalf("probe = %+v, want persisted audio probe", probe)
+	}
+	if got, want := len(db.calls), 1; got != want {
+		t.Fatalf("query calls = %d, want %d", got, want)
+	}
+	query := strings.ToLower(db.calls[0].query)
+	if !strings.Contains(query, "select") || !strings.Contains(query, "from recording_audio_probes") {
+		t.Fatalf("query = %q, want select from recording_audio_probes", db.calls[0].query)
+	}
+	if got, want := db.calls[0].args[0], "rec_probe"; got != want {
+		t.Fatalf("recording_id arg = %q, want %q", got, want)
+	}
+}
+
+func TestPostgresStoreGetAudioProbeReturnsFalseForMissingRecording(t *testing.T) {
+	db := newPostgresExecutorSpy(postgresErrorRow(sql.ErrNoRows))
+	store := NewPostgresStore(db)
+
+	_, ok := store.GetAudioProbe("rec_missing")
+	if ok {
+		t.Fatal("GetAudioProbe(rec_missing) ok = true, want false")
 	}
 }

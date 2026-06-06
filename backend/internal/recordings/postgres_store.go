@@ -142,3 +142,86 @@ func scanRecording(row PostgresRow, recording *domain.Recording) error {
 		&recording.UpdatedAt,
 	)
 }
+
+// UpsertAudioProbe stores or replaces ffprobe metadata for a recording.
+func (s *PostgresStore) UpsertAudioProbe(input UpsertAudioProbeInput) (RecordingAudioProbe, error) {
+	if err := validateAudioProbeInput(input); err != nil {
+		return RecordingAudioProbe{}, err
+	}
+	if s == nil || s.db == nil {
+		return RecordingAudioProbe{}, fmt.Errorf("postgres recording store requires database executor")
+	}
+
+	now := time.Now().UTC()
+	var probe RecordingAudioProbe
+	row := s.db.QueryRow(
+		context.Background(),
+		`INSERT INTO recording_audio_probes (recording_id, duration_seconds, format_name, codec_name, sample_rate, channels, bit_rate, raw_probe_json, probed_at, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+ON CONFLICT (recording_id) DO UPDATE
+SET duration_seconds = EXCLUDED.duration_seconds,
+    format_name = EXCLUDED.format_name,
+    codec_name = EXCLUDED.codec_name,
+    sample_rate = EXCLUDED.sample_rate,
+    channels = EXCLUDED.channels,
+    bit_rate = EXCLUDED.bit_rate,
+    raw_probe_json = EXCLUDED.raw_probe_json,
+    probed_at = EXCLUDED.probed_at,
+    updated_at = EXCLUDED.updated_at
+RETURNING recording_id, duration_seconds, format_name, codec_name, sample_rate, channels, bit_rate, raw_probe_json, probed_at, created_at, updated_at`,
+		input.RecordingID,
+		input.DurationSeconds,
+		input.FormatName,
+		input.CodecName,
+		input.SampleRate,
+		input.Channels,
+		input.BitRate,
+		append([]byte(nil), input.RawProbeJSON...),
+		input.ProbedAt,
+		now,
+		now,
+	)
+	if err := scanAudioProbe(row, &probe); err != nil {
+		return RecordingAudioProbe{}, fmt.Errorf("upsert recording audio probe: %w", err)
+	}
+	return probe, nil
+}
+
+// GetAudioProbe returns persisted ffprobe metadata by recording id.
+func (s *PostgresStore) GetAudioProbe(recordingID string) (RecordingAudioProbe, bool) {
+	if s == nil || s.db == nil {
+		return RecordingAudioProbe{}, false
+	}
+
+	var probe RecordingAudioProbe
+	row := s.db.QueryRow(
+		context.Background(),
+		`SELECT recording_id, duration_seconds, format_name, codec_name, sample_rate, channels, bit_rate, raw_probe_json, probed_at, created_at, updated_at
+FROM recording_audio_probes
+WHERE recording_id = $1`,
+		recordingID,
+	)
+	if err := scanAudioProbe(row, &probe); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return RecordingAudioProbe{}, false
+		}
+		return RecordingAudioProbe{}, false
+	}
+	return probe, true
+}
+
+func scanAudioProbe(row PostgresRow, probe *RecordingAudioProbe) error {
+	return row.Scan(
+		&probe.RecordingID,
+		&probe.DurationSeconds,
+		&probe.FormatName,
+		&probe.CodecName,
+		&probe.SampleRate,
+		&probe.Channels,
+		&probe.BitRate,
+		&probe.RawProbeJSON,
+		&probe.ProbedAt,
+		&probe.CreatedAt,
+		&probe.UpdatedAt,
+	)
+}
