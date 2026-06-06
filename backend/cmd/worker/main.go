@@ -59,19 +59,29 @@ type recordingProcessingRegistry interface {
 	RegisterActivityWithOptions(interface{}, activity.RegisterOptions)
 }
 
-func registerRecordingProcessing(registry recordingProcessingRegistry, store activities.RecordingStore, resolver activities.LocalObjectPathResolver, runner activities.AudioProbeRunner) {
-	activitySet := activities.NewRecordingProcessingActivitiesWithAudioProbe(store, resolver, runner)
+func registerRecordingProcessing(registry recordingProcessingRegistry, store activities.PipelineStore, resolver activities.LocalObjectPathResolver, runner activities.AudioProbeRunner) {
+	activitySet := activities.NewRecordingProcessingActivitiesWithPipeline(
+		store,
+		resolver,
+		runner,
+		activities.FakeTranscriptionProvider{},
+		activities.FakeSummaryProvider{},
+	)
 
 	registry.RegisterWorkflow(workflows.RecordingProcessingWorkflow)
 	registry.RegisterActivityWithOptions(activitySet.ValidateRecording, activity.RegisterOptions{Name: activities.ValidateRecordingActivityName})
 	registry.RegisterActivityWithOptions(activitySet.MarkRecordingProcessing, activity.RegisterOptions{Name: activities.MarkRecordingProcessingActivityName})
 	registry.RegisterActivityWithOptions(activitySet.ProbeRecordingAudio, activity.RegisterOptions{Name: activities.ProbeRecordingAudioActivityName})
+	registry.RegisterActivityWithOptions(activitySet.MarkRecordingTranscribing, activity.RegisterOptions{Name: activities.MarkRecordingTranscribingActivityName})
+	registry.RegisterActivityWithOptions(activitySet.TranscribeRecordingAudio, activity.RegisterOptions{Name: activities.TranscribeRecordingAudioActivityName})
+	registry.RegisterActivityWithOptions(activitySet.MarkRecordingSummarizing, activity.RegisterOptions{Name: activities.MarkRecordingSummarizingActivityName})
+	registry.RegisterActivityWithOptions(activitySet.SummarizeRecording, activity.RegisterOptions{Name: activities.SummarizeRecordingActivityName})
 	registry.RegisterActivityWithOptions(activitySet.CompleteRecordingProcessing, activity.RegisterOptions{Name: activities.CompleteRecordingProcessingActivityName})
 	registry.RegisterActivityWithOptions(activitySet.FailRecordingProcessing, activity.RegisterOptions{Name: activities.FailRecordingProcessingActivityName})
 }
 
 type recordingStoreClient interface {
-	activities.RecordingStore
+	activities.PipelineStore
 	Close()
 }
 

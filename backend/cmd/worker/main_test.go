@@ -29,6 +29,10 @@ func TestRegisterRecordingProcessingRegistersWorkflowAndActivities(t *testing.T)
 		activities.ValidateRecordingActivityName,
 		activities.MarkRecordingProcessingActivityName,
 		activities.ProbeRecordingAudioActivityName,
+		activities.MarkRecordingTranscribingActivityName,
+		activities.TranscribeRecordingAudioActivityName,
+		activities.MarkRecordingSummarizingActivityName,
+		activities.SummarizeRecordingActivityName,
 		activities.CompleteRecordingProcessingActivityName,
 		activities.FailRecordingProcessingActivityName,
 	}
@@ -92,4 +96,16 @@ func (s *workerRecordingStoreSpy) UpdateStatus(input recordings.UpdateRecordingS
 
 func (s *workerRecordingStoreSpy) UpsertAudioProbe(input recordings.UpsertAudioProbeInput) (recordings.RecordingAudioProbe, error) {
 	return recordings.RecordingAudioProbe{RecordingID: input.RecordingID}, nil
+}
+
+func (s *workerRecordingStoreSpy) UpsertTranscript(input recordings.UpsertTranscriptInput) (recordings.RecordingTranscript, error) {
+	return recordings.RecordingTranscript{RecordingID: input.RecordingID}, nil
+}
+
+func (s *workerRecordingStoreSpy) GetTranscript(recordingID string) (recordings.RecordingTranscript, bool) {
+	return recordings.RecordingTranscript{RecordingID: recordingID}, true
+}
+
+func (s *workerRecordingStoreSpy) UpsertSummary(input recordings.UpsertSummaryInput) (recordings.RecordingSummary, error) {
+	return recordings.RecordingSummary{RecordingID: input.RecordingID}, nil
 }
