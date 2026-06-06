@@ -54,6 +54,82 @@ type UpsertAudioProbeInput struct {
 	ProbedAt        time.Time
 }
 
+// RecordingTranscript contains the latest transcript for a recording.
+type RecordingTranscript struct {
+	RecordingID   string
+	Provider      string
+	Model         string
+	Language      string
+	Text          string
+	RawResultJSON []byte
+	TranscribedAt time.Time
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
+// RecordingTranscriptSegment contains one transcript segment for a recording.
+type RecordingTranscriptSegment struct {
+	ID           string
+	RecordingID  string
+	SegmentIndex int
+	StartMS      int
+	EndMS        int
+	SpeakerLabel string
+	Text         string
+	Confidence   float64
+	CreatedAt    time.Time
+}
+
+// UpsertTranscriptSegmentInput contains a transcript segment to persist.
+type UpsertTranscriptSegmentInput struct {
+	SegmentIndex int
+	StartMS      int
+	EndMS        int
+	SpeakerLabel string
+	Text         string
+	Confidence   float64
+}
+
+// UpsertTranscriptInput contains transcript data to persist for a recording.
+type UpsertTranscriptInput struct {
+	RecordingID   string
+	Provider      string
+	Model         string
+	Language      string
+	Text          string
+	RawResultJSON []byte
+	TranscribedAt time.Time
+	Segments      []UpsertTranscriptSegmentInput
+}
+
+// RecordingSummary contains the latest summary for a recording.
+type RecordingSummary struct {
+	RecordingID     string
+	Provider        string
+	Model           string
+	Type            domain.WorkflowType
+	Title           string
+	Overview        string
+	ContentMarkdown string
+	RawResultJSON   []byte
+	SummarizedAt    time.Time
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
+// UpsertSummaryInput contains summary data to persist for a recording.
+type UpsertSummaryInput struct {
+	RecordingID     string
+	Provider        string
+	Model           string
+	Type            domain.WorkflowType
+	Title           string
+	Overview        string
+	ContentMarkdown string
+	RawResultJSON   []byte
+	SummarizedAt    time.Time
+}
+
 // MemoryStore is a thread-safe in-memory recording store for local skeleton workflows.
 type MemoryStore struct {
 	mu          sync.RWMutex
@@ -170,7 +246,7 @@ func validateStatusUpdateInput(input UpdateRecordingStatusInput) error {
 		return fmt.Errorf("recording id is required")
 	}
 	switch input.Status {
-	case domain.RecordingStatusProcessing, domain.RecordingStatusCompleted, domain.RecordingStatusFailed:
+	case domain.RecordingStatusProcessing, domain.RecordingStatusTranscribing, domain.RecordingStatusSummarizing, domain.RecordingStatusCompleted, domain.RecordingStatusFailed:
 		return nil
 	default:
 		return fmt.Errorf("unsupported recording status update: %s", input.Status)
@@ -191,6 +267,54 @@ func validateAudioProbeInput(input UpsertAudioProbeInput) error {
 		return fmt.Errorf("audio probe timestamp is required")
 	}
 	return nil
+}
+
+func validateTranscriptInput(input UpsertTranscriptInput) error {
+	if input.RecordingID == "" {
+		return fmt.Errorf("recording id is required")
+	}
+	if input.Provider == "" {
+		return fmt.Errorf("transcript provider is required")
+	}
+	if input.Text == "" {
+		return fmt.Errorf("transcript text is required")
+	}
+	if len(input.RawResultJSON) == 0 {
+		return fmt.Errorf("transcript raw json is required")
+	}
+	if input.TranscribedAt.IsZero() {
+		return fmt.Errorf("transcript timestamp is required")
+	}
+	return nil
+}
+
+func validateSummaryInput(input UpsertSummaryInput) error {
+	if input.RecordingID == "" {
+		return fmt.Errorf("recording id is required")
+	}
+	if input.Provider == "" {
+		return fmt.Errorf("summary provider is required")
+	}
+	if !domain.IsValidWorkflowType(string(input.Type)) {
+		return fmt.Errorf("summary type is invalid: %s", input.Type)
+	}
+	if input.Overview == "" {
+		return fmt.Errorf("summary overview is required")
+	}
+	if input.ContentMarkdown == "" {
+		return fmt.Errorf("summary markdown is required")
+	}
+	if len(input.RawResultJSON) == 0 {
+		return fmt.Errorf("summary raw json is required")
+	}
+	if input.SummarizedAt.IsZero() {
+		return fmt.Errorf("summary timestamp is required")
+	}
+	return nil
+}
+
+func transcriptSegmentID(recordingID string, index int) string {
+	return fmt.Sprintf("%s-seg-%06d", recordingID, index)
 }
 
 func newRecordingID() string {

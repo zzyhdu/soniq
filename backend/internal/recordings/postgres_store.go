@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/zzyhdu/soniq/backend/internal/domain"
 )
 
@@ -126,6 +127,196 @@ RETURNING id, title, status, workflow_type, language, audio_object_key, audio_co
 		return domain.Recording{}, fmt.Errorf("update recording status: %w", err)
 	}
 	return recording, nil
+}
+
+// UpsertTranscript stores or replaces the latest transcript and its segments for a recording.
+func (s *PostgresStore) UpsertTranscript(input UpsertTranscriptInput) (RecordingTranscript, error) {
+	if err := validateTranscriptInput(input); err != nil {
+		return RecordingTranscript{}, err
+	}
+	if s == nil || s.db == nil {
+		return RecordingTranscript{}, fmt.Errorf("postgres recording store requires database executor")
+	}
+
+	now := time.Now().UTC()
+	var transcript RecordingTranscript
+	row := s.db.QueryRow(
+		context.Background(),
+		`INSERT INTO recording_transcripts (recording_id, provider, model, language, text, raw_result_json, transcribed_at, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+ON CONFLICT (recording_id) DO UPDATE
+SET provider = EXCLUDED.provider,
+    model = EXCLUDED.model,
+    language = EXCLUDED.language,
+    text = EXCLUDED.text,
+    raw_result_json = EXCLUDED.raw_result_json,
+    transcribed_at = EXCLUDED.transcribed_at,
+    updated_at = EXCLUDED.updated_at
+RETURNING recording_id, provider, model, language, text, raw_result_json, transcribed_at, created_at, updated_at`,
+		input.RecordingID,
+		input.Provider,
+		input.Model,
+		input.Language,
+		input.Text,
+		append([]byte(nil), input.RawResultJSON...),
+		input.TranscribedAt,
+		now,
+		now,
+	)
+	if err := scanTranscript(row, &transcript); err != nil {
+		return RecordingTranscript{}, fmt.Errorf("upsert recording transcript: %w", err)
+	}
+
+	if err := s.db.QueryRow(context.Background(), `DELETE FROM recording_transcript_segments WHERE recording_id = $1`, input.RecordingID).Scan(); err != nil && !errors.Is(err, sql.ErrNoRows) && !errors.Is(err, pgx.ErrNoRows) {
+		return RecordingTranscript{}, fmt.Errorf("delete recording transcript segments: %w", err)
+	}
+	for i, segment := range input.Segments {
+		idx := segment.SegmentIndex
+		if idx < 0 {
+			idx = i
+		}
+		if err := s.db.QueryRow(
+			context.Background(),
+			`INSERT INTO recording_transcript_segments (id, recording_id, segment_index, start_ms, end_ms, speaker_label, text, confidence, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+			transcriptSegmentID(input.RecordingID, idx),
+			input.RecordingID,
+			idx,
+			segment.StartMS,
+			segment.EndMS,
+			segment.SpeakerLabel,
+			segment.Text,
+			segment.Confidence,
+			now,
+		).Scan(); err != nil && !errors.Is(err, sql.ErrNoRows) && !errors.Is(err, pgx.ErrNoRows) {
+			return RecordingTranscript{}, fmt.Errorf("insert recording transcript segment: %w", err)
+		}
+	}
+	return transcript, nil
+}
+
+// GetTranscript returns the latest transcript by recording id.
+func (s *PostgresStore) GetTranscript(recordingID string) (RecordingTranscript, bool) {
+	if s == nil || s.db == nil {
+		return RecordingTranscript{}, false
+	}
+	var transcript RecordingTranscript
+	row := s.db.QueryRow(
+		context.Background(),
+		`SELECT recording_id, provider, model, language, text, raw_result_json, transcribed_at, created_at, updated_at
+FROM recording_transcripts
+WHERE recording_id = $1`,
+		recordingID,
+	)
+	if err := scanTranscript(row, &transcript); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return RecordingTranscript{}, false
+		}
+		return RecordingTranscript{}, false
+	}
+	return transcript, true
+}
+
+// ListTranscriptSegments returns transcript segments by recording id ordered by segment_index.
+func (s *PostgresStore) ListTranscriptSegments(recordingID string) []RecordingTranscriptSegment {
+	if s == nil || s.db == nil {
+		return nil
+	}
+	segments := make([]RecordingTranscriptSegment, 0)
+	for index := 0; ; index++ {
+		var segment RecordingTranscriptSegment
+		row := s.db.QueryRow(
+			context.Background(),
+			`SELECT id, recording_id, segment_index, start_ms, end_ms, speaker_label, text, confidence, created_at
+FROM recording_transcript_segments
+WHERE recording_id = $1 AND segment_index = $2
+ORDER BY segment_index`,
+			recordingID,
+			index,
+		)
+		if err := scanTranscriptSegment(row, &segment); err != nil {
+			break
+		}
+		segments = append(segments, segment)
+	}
+	return segments
+}
+
+// UpsertSummary stores or replaces the latest summary for a recording.
+func (s *PostgresStore) UpsertSummary(input UpsertSummaryInput) (RecordingSummary, error) {
+	if err := validateSummaryInput(input); err != nil {
+		return RecordingSummary{}, err
+	}
+	if s == nil || s.db == nil {
+		return RecordingSummary{}, fmt.Errorf("postgres recording store requires database executor")
+	}
+	now := time.Now().UTC()
+	var summary RecordingSummary
+	row := s.db.QueryRow(
+		context.Background(),
+		`INSERT INTO recording_summaries (recording_id, provider, model, type, title, overview, content_markdown, raw_result_json, summarized_at, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+ON CONFLICT (recording_id) DO UPDATE
+SET provider = EXCLUDED.provider,
+    model = EXCLUDED.model,
+    type = EXCLUDED.type,
+    title = EXCLUDED.title,
+    overview = EXCLUDED.overview,
+    content_markdown = EXCLUDED.content_markdown,
+    raw_result_json = EXCLUDED.raw_result_json,
+    summarized_at = EXCLUDED.summarized_at,
+    updated_at = EXCLUDED.updated_at
+RETURNING recording_id, provider, model, type, title, overview, content_markdown, raw_result_json, summarized_at, created_at, updated_at`,
+		input.RecordingID,
+		input.Provider,
+		input.Model,
+		input.Type,
+		input.Title,
+		input.Overview,
+		input.ContentMarkdown,
+		append([]byte(nil), input.RawResultJSON...),
+		input.SummarizedAt,
+		now,
+		now,
+	)
+	if err := scanSummary(row, &summary); err != nil {
+		return RecordingSummary{}, fmt.Errorf("upsert recording summary: %w", err)
+	}
+	return summary, nil
+}
+
+// GetSummary returns the latest summary by recording id.
+func (s *PostgresStore) GetSummary(recordingID string) (RecordingSummary, bool) {
+	if s == nil || s.db == nil {
+		return RecordingSummary{}, false
+	}
+	var summary RecordingSummary
+	row := s.db.QueryRow(
+		context.Background(),
+		`SELECT recording_id, provider, model, type, title, overview, content_markdown, raw_result_json, summarized_at, created_at, updated_at
+FROM recording_summaries
+WHERE recording_id = $1`,
+		recordingID,
+	)
+	if err := scanSummary(row, &summary); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return RecordingSummary{}, false
+		}
+		return RecordingSummary{}, false
+	}
+	return summary, true
+}
+
+func scanTranscript(row PostgresRow, transcript *RecordingTranscript) error {
+	return row.Scan(&transcript.RecordingID, &transcript.Provider, &transcript.Model, &transcript.Language, &transcript.Text, &transcript.RawResultJSON, &transcript.TranscribedAt, &transcript.CreatedAt, &transcript.UpdatedAt)
+}
+
+func scanTranscriptSegment(row PostgresRow, segment *RecordingTranscriptSegment) error {
+	return row.Scan(&segment.ID, &segment.RecordingID, &segment.SegmentIndex, &segment.StartMS, &segment.EndMS, &segment.SpeakerLabel, &segment.Text, &segment.Confidence, &segment.CreatedAt)
+}
+
+func scanSummary(row PostgresRow, summary *RecordingSummary) error {
+	return row.Scan(&summary.RecordingID, &summary.Provider, &summary.Model, &summary.Type, &summary.Title, &summary.Overview, &summary.ContentMarkdown, &summary.RawResultJSON, &summary.SummarizedAt, &summary.CreatedAt, &summary.UpdatedAt)
 }
 
 func scanRecording(row PostgresRow, recording *domain.Recording) error {

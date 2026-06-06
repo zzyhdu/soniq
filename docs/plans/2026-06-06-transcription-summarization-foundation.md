@@ -244,13 +244,13 @@ docs: add transcription summarization foundation plan
 
 Add failing tests for:
 
-1. Memory store can upsert and get a transcript by recording ID.
-2. Memory store can upsert and replace transcript segments by recording ID.
-3. Memory store can upsert and get a summary by recording ID.
-4. Upserts preserve `CreatedAt` and advance `UpdatedAt` for latest transcript/summary rows.
-5. Missing transcript/summary getters return `ok=false`.
-6. Postgres store inserts/upserts transcript, segments, and summary using deterministic queries.
-7. Postgres get handles `sql.ErrNoRows` as `ok=false`.
+1. Postgres store inserts/upserts transcript, segments, and summary using deterministic queries.
+2. Postgres store can get transcript and summary by recording ID.
+3. Postgres store can list transcript segments by recording ID.
+4. Postgres get handles `sql.ErrNoRows` as `ok=false`.
+5. Upserts preserve `CreatedAt` and advance `UpdatedAt` for latest transcript/summary rows through returned Postgres rows.
+
+Do **not** add new MemoryStore transcript/summary coverage in this milestone. `MemoryStore` remains a legacy test fake for existing API/worker tests only and should be removed in a follow-up cleanup.
 
 **Expected RED failure:**
 
@@ -278,7 +278,7 @@ Commit together with H3 after GREEN unless the user explicitly asks for separate
 
 ## Task H3: Implement transcript/summary persistence and migration
 
-**Objective:** Add persistence models, in-memory store support, Postgres store support, and migration `0004`.
+**Objective:** Add persistence models, Postgres store support, and migration `0004`. Keep `MemoryStore` as-is for legacy tests; do not extend it with transcript/summary behavior.
 
 **Files:**
 
@@ -646,6 +646,8 @@ docs: document transcription summary workflow boundary
 - Activities own side effects.
 - Fake providers are named as fake/deterministic and cannot be mistaken for production ASR/LLM quality.
 - Store methods copy JSON byte slices where needed.
+- Do not extend `MemoryStore` with new transcript/summary behavior; it is a legacy test fake pending removal.
+- Identify remaining `MemoryStore` call sites and, if small enough, replace them with focused test spies before leaving H.
 - Smoke proves rows exist using real Postgres/Temporal.
 - No real provider credentials/config were added.
 
@@ -691,7 +693,9 @@ The H milestone is complete when:
 
 ## Follow-up milestone after H
 
-After H is complete, the next milestone should choose exactly one real provider integration path:
+After H is complete, remove the legacy `MemoryStore` entirely unless a real no-Postgres runtime mode is explicitly designed first. Replace current test usages with focused spies/fakes that implement only the interface under test, so Soniq has one real persistence path: application Postgres.
+
+Then choose exactly one real provider integration path:
 
 1. **Local faster-whisper HTTP provider** for ASR, because it aligns with offline/self-hosted goals.
 2. **OpenAI-compatible LLM provider** for summarization, because it can support DeepSeek/Qwen/Kimi/vLLM-style endpoints behind one adapter.

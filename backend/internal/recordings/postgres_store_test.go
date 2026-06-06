@@ -425,3 +425,217 @@ func TestPostgresStoreGetAudioProbeReturnsFalseForMissingRecording(t *testing.T)
 		t.Fatal("GetAudioProbe(rec_missing) ok = true, want false")
 	}
 }
+
+func TestPostgresStoreUpsertTranscriptInsertsOrUpdatesTranscript(t *testing.T) {
+	transcribedAt := time.Date(2026, 6, 6, 2, 3, 4, 0, time.UTC)
+	createdAt := transcribedAt
+	updatedAt := transcribedAt.Add(time.Second)
+	raw := []byte(`{"text":"hello world"}`)
+	db := newPostgresExecutorSpy(postgresRow(
+		"rec_transcript",
+		"fake_transcription",
+		"fake-whisper-v1",
+		"en",
+		"hello world",
+		raw,
+		transcribedAt,
+		createdAt,
+		updatedAt,
+	))
+	store := NewPostgresStore(db)
+
+	transcript, err := store.UpsertTranscript(UpsertTranscriptInput{
+		RecordingID:   "rec_transcript",
+		Provider:      "fake_transcription",
+		Model:         "fake-whisper-v1",
+		Language:      "en",
+		Text:          "hello world",
+		RawResultJSON: raw,
+		TranscribedAt: transcribedAt,
+		Segments:      []UpsertTranscriptSegmentInput{{SegmentIndex: 0, Text: "hello world"}},
+	})
+	if err != nil {
+		t.Fatalf("UpsertTranscript returned error: %v", err)
+	}
+	if transcript.RecordingID != "rec_transcript" || transcript.Provider != "fake_transcription" || transcript.Text != "hello world" {
+		t.Fatalf("transcript = %+v, want persisted transcript", transcript)
+	}
+	if string(transcript.RawResultJSON) != string(raw) {
+		t.Fatalf("RawResultJSON = %s, want %s", transcript.RawResultJSON, raw)
+	}
+	if got, want := len(db.calls), 3; got != want {
+		t.Fatalf("query calls = %d, want %d", got, want)
+	}
+	query := strings.ToLower(db.calls[0].query)
+	if !strings.Contains(query, "insert into recording_transcripts") || !strings.Contains(query, "on conflict") || !strings.Contains(query, "returning") {
+		t.Fatalf("query = %q, want insert into recording_transcripts on conflict returning", db.calls[0].query)
+	}
+	if got, want := len(db.calls[0].args), 9; got != want {
+		t.Fatalf("transcript upsert args = %d, want %d", got, want)
+	}
+	if got, want := db.calls[0].args[0], "rec_transcript"; got != want {
+		t.Fatalf("recording_id arg = %q, want %q", got, want)
+	}
+	if !strings.Contains(strings.ToLower(db.calls[1].query), "delete from recording_transcript_segments") {
+		t.Fatalf("second query = %q, want delete transcript segments", db.calls[1].query)
+	}
+	if !strings.Contains(strings.ToLower(db.calls[2].query), "insert into recording_transcript_segments") {
+		t.Fatalf("third query = %q, want insert transcript segment", db.calls[2].query)
+	}
+}
+
+func TestPostgresStoreGetTranscriptReturnsExistingTranscript(t *testing.T) {
+	transcribedAt := time.Date(2026, 6, 6, 2, 3, 4, 0, time.UTC)
+	createdAt := transcribedAt
+	updatedAt := transcribedAt.Add(time.Second)
+	raw := []byte(`{"text":"hello world"}`)
+	db := newPostgresExecutorSpy(postgresRow(
+		"rec_transcript",
+		"fake_transcription",
+		"fake-whisper-v1",
+		"en",
+		"hello world",
+		raw,
+		transcribedAt,
+		createdAt,
+		updatedAt,
+	))
+	store := NewPostgresStore(db)
+
+	transcript, ok := store.GetTranscript("rec_transcript")
+	if !ok {
+		t.Fatal("GetTranscript(rec_transcript) ok = false, want true")
+	}
+	if transcript.RecordingID != "rec_transcript" || transcript.Provider != "fake_transcription" || transcript.Text != "hello world" {
+		t.Fatalf("transcript = %+v, want persisted transcript", transcript)
+	}
+	query := strings.ToLower(db.calls[0].query)
+	if !strings.Contains(query, "select") || !strings.Contains(query, "from recording_transcripts") {
+		t.Fatalf("query = %q, want select from recording_transcripts", db.calls[0].query)
+	}
+}
+
+func TestPostgresStoreGetTranscriptReturnsFalseForMissingRecording(t *testing.T) {
+	db := newPostgresExecutorSpy(postgresErrorRow(sql.ErrNoRows))
+	store := NewPostgresStore(db)
+	_, ok := store.GetTranscript("rec_missing")
+	if ok {
+		t.Fatal("GetTranscript(rec_missing) ok = true, want false")
+	}
+}
+
+func TestPostgresStoreListTranscriptSegmentsReturnsExistingSegments(t *testing.T) {
+	createdAt := time.Date(2026, 6, 6, 2, 3, 4, 0, time.UTC)
+	db := newPostgresExecutorSpy(
+		postgresRow("rec_transcript-seg-000000", "rec_transcript", 0, 0, 1200, "speaker_1", "hello", 0.95, createdAt),
+		postgresRow("rec_transcript-seg-000001", "rec_transcript", 1, 1200, 2400, "speaker_1", "world", 0.96, createdAt),
+		postgresErrorRow(sql.ErrNoRows),
+	)
+	store := NewPostgresStore(db)
+
+	segments := store.ListTranscriptSegments("rec_transcript")
+	if got, want := len(segments), 2; got != want {
+		t.Fatalf("segments = %d, want %d", got, want)
+	}
+	if segments[0].ID != "rec_transcript-seg-000000" || segments[0].Text != "hello" {
+		t.Fatalf("first segment = %+v, want persisted first segment", segments[0])
+	}
+	query := strings.ToLower(db.calls[0].query)
+	if !strings.Contains(query, "from recording_transcript_segments") || !strings.Contains(query, "segment_index") {
+		t.Fatalf("query = %q, want select transcript segments ordered by segment_index", db.calls[0].query)
+	}
+}
+
+func TestPostgresStoreUpsertSummaryInsertsOrUpdatesSummary(t *testing.T) {
+	summarizedAt := time.Date(2026, 6, 6, 3, 4, 5, 0, time.UTC)
+	createdAt := summarizedAt
+	updatedAt := summarizedAt.Add(time.Second)
+	raw := []byte(`{"overview":"weekly sync summary"}`)
+	db := newPostgresExecutorSpy(postgresRow(
+		"rec_summary",
+		"fake_llm",
+		"fake-summary-v1",
+		domain.WorkflowTypeMeeting,
+		"Weekly sync",
+		"weekly sync summary",
+		"# Weekly sync\n\n- hello world",
+		raw,
+		summarizedAt,
+		createdAt,
+		updatedAt,
+	))
+	store := NewPostgresStore(db)
+
+	summary, err := store.UpsertSummary(UpsertSummaryInput{
+		RecordingID:     "rec_summary",
+		Provider:        "fake_llm",
+		Model:           "fake-summary-v1",
+		Type:            domain.WorkflowTypeMeeting,
+		Title:           "Weekly sync",
+		Overview:        "weekly sync summary",
+		ContentMarkdown: "# Weekly sync\n\n- hello world",
+		RawResultJSON:   raw,
+		SummarizedAt:    summarizedAt,
+	})
+	if err != nil {
+		t.Fatalf("UpsertSummary returned error: %v", err)
+	}
+	if summary.RecordingID != "rec_summary" || summary.Provider != "fake_llm" || summary.Overview != "weekly sync summary" {
+		t.Fatalf("summary = %+v, want persisted summary", summary)
+	}
+	if string(summary.RawResultJSON) != string(raw) {
+		t.Fatalf("RawResultJSON = %s, want %s", summary.RawResultJSON, raw)
+	}
+	if got, want := len(db.calls), 1; got != want {
+		t.Fatalf("query calls = %d, want %d", got, want)
+	}
+	query := strings.ToLower(db.calls[0].query)
+	if !strings.Contains(query, "insert into recording_summaries") || !strings.Contains(query, "on conflict") || !strings.Contains(query, "returning") {
+		t.Fatalf("query = %q, want insert into recording_summaries on conflict returning", db.calls[0].query)
+	}
+	if got, want := len(db.calls[0].args), 11; got != want {
+		t.Fatalf("summary upsert args = %d, want %d", got, want)
+	}
+}
+
+func TestPostgresStoreGetSummaryReturnsExistingSummary(t *testing.T) {
+	summarizedAt := time.Date(2026, 6, 6, 3, 4, 5, 0, time.UTC)
+	createdAt := summarizedAt
+	updatedAt := summarizedAt.Add(time.Second)
+	raw := []byte(`{"overview":"weekly sync summary"}`)
+	db := newPostgresExecutorSpy(postgresRow(
+		"rec_summary",
+		"fake_llm",
+		"fake-summary-v1",
+		domain.WorkflowTypeMeeting,
+		"Weekly sync",
+		"weekly sync summary",
+		"# Weekly sync\n\n- hello world",
+		raw,
+		summarizedAt,
+		createdAt,
+		updatedAt,
+	))
+	store := NewPostgresStore(db)
+
+	summary, ok := store.GetSummary("rec_summary")
+	if !ok {
+		t.Fatal("GetSummary(rec_summary) ok = false, want true")
+	}
+	if summary.RecordingID != "rec_summary" || summary.Provider != "fake_llm" || summary.Overview != "weekly sync summary" {
+		t.Fatalf("summary = %+v, want persisted summary", summary)
+	}
+	query := strings.ToLower(db.calls[0].query)
+	if !strings.Contains(query, "select") || !strings.Contains(query, "from recording_summaries") {
+		t.Fatalf("query = %q, want select from recording_summaries", db.calls[0].query)
+	}
+}
+
+func TestPostgresStoreGetSummaryReturnsFalseForMissingRecording(t *testing.T) {
+	db := newPostgresExecutorSpy(postgresErrorRow(sql.ErrNoRows))
+	store := NewPostgresStore(db)
+	_, ok := store.GetSummary("rec_missing")
+	if ok {
+		t.Fatal("GetSummary(rec_missing) ok = true, want false")
+	}
+}
