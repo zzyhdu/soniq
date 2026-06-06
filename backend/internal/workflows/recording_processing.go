@@ -29,6 +29,10 @@ func RecordingProcessingWorkflow(ctx workflow.Context, input RecordingProcessing
 	if err := workflow.ExecuteActivity(ctx, activities.MarkRecordingProcessingActivity, input.RecordingID).Get(ctx, nil); err != nil {
 		return RecordingProcessingResult{}, err
 	}
+	if err := workflow.ExecuteActivity(ctx, activities.ProbeRecordingAudioActivity, input.RecordingID).Get(ctx, nil); err != nil {
+		_ = workflow.ExecuteActivity(ctx, activities.FailRecordingProcessingActivity, input.RecordingID).Get(ctx, nil)
+		return RecordingProcessingResult{}, err
+	}
 
 	var result RecordingProcessingResult
 	if err := workflow.ExecuteActivity(ctx, activities.CompleteRecordingProcessingActivity, input.RecordingID).Get(ctx, &result); err != nil {

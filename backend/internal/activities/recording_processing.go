@@ -123,6 +123,15 @@ func FailRecordingProcessingActivity(ctx context.Context, recordingID string) er
 	return nil
 }
 
+// ProbeRecordingAudioActivity is the current stateless compatibility activity.
+// Store-backed audio probing lives in RecordingProcessingActivities.ProbeRecordingAudio.
+func ProbeRecordingAudioActivity(ctx context.Context, recordingID string) error {
+	if recordingID == "" {
+		return errors.New("recording id is required")
+	}
+	return nil
+}
+
 // ValidateRecording validates processing input and confirms the recording exists.
 func (a *RecordingProcessingActivities) ValidateRecording(ctx context.Context, input RecordingProcessingInput) error {
 	if err := ValidateRecordingActivity(ctx, input); err != nil {

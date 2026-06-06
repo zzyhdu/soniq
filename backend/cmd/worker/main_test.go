@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"reflect"
 	"testing"
 
+	"github.com/zzyhdu/soniq/backend/internal/activities"
 	"github.com/zzyhdu/soniq/backend/internal/recordings"
 	"github.com/zzyhdu/soniq/backend/internal/workflows"
 	"go.temporal.io/sdk/activity"
@@ -13,7 +15,7 @@ func TestRegisterRecordingProcessingRegistersWorkflowAndActivities(t *testing.T)
 	worker := &recordingWorkerSpy{}
 	store := recordings.NewMemoryStore()
 
-	registerRecordingProcessing(worker, store)
+	registerRecordingProcessing(worker, store, localPathResolverTestStub{}, audioProbeRunnerTestStub{})
 
 	if got, want := len(worker.workflows), 1; got != want {
 		t.Fatalf("registered workflows = %d, want %d", got, want)
@@ -25,6 +27,7 @@ func TestRegisterRecordingProcessingRegistersWorkflowAndActivities(t *testing.T)
 	wantActivityNames := []string{
 		"ValidateRecordingActivity",
 		"MarkRecordingProcessingActivity",
+		"ProbeRecordingAudioActivity",
 		"CompleteRecordingProcessingActivity",
 		"FailRecordingProcessingActivity",
 	}
@@ -40,6 +43,18 @@ func TestRegisterRecordingProcessingRegistersWorkflowAndActivities(t *testing.T)
 
 func sameFunction(a, b interface{}) bool {
 	return reflect.ValueOf(a).Pointer() == reflect.ValueOf(b).Pointer()
+}
+
+type localPathResolverTestStub struct{}
+
+func (localPathResolverTestStub) LocalPathForObject(key string) (string, error) {
+	return key, nil
+}
+
+type audioProbeRunnerTestStub struct{}
+
+func (audioProbeRunnerTestStub) Probe(ctx context.Context, path string) (activities.AudioProbeResult, error) {
+	return activities.AudioProbeResult{}, nil
 }
 
 type registeredActivity struct {

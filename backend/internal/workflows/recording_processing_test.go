@@ -22,6 +22,7 @@ func TestRecordingProcessingWorkflowCompletesSkeletonPipeline(t *testing.T) {
 
 	env.OnActivity(activities.ValidateRecordingActivity, mock.Anything, input).Return(nil).Once()
 	env.OnActivity(activities.MarkRecordingProcessingActivity, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.ProbeRecordingAudioActivity, mock.Anything, input.RecordingID).Return(nil).Once()
 	env.OnActivity(activities.CompleteRecordingProcessingActivity, mock.Anything, input.RecordingID).Return(RecordingProcessingResult{
 		RecordingID: "rec_test",
 		Status:      "completed",
@@ -63,6 +64,7 @@ func TestRecordingProcessingWorkflowMarksFailedWhenCompletionFails(t *testing.T)
 
 	env.OnActivity(activities.ValidateRecordingActivity, mock.Anything, input).Return(nil).Once()
 	env.OnActivity(activities.MarkRecordingProcessingActivity, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.ProbeRecordingAudioActivity, mock.Anything, input.RecordingID).Return(nil).Once()
 	env.OnActivity(activities.CompleteRecordingProcessingActivity, mock.Anything, input.RecordingID).Return(RecordingProcessingResult{}, completeErr).Once()
 	env.OnActivity(activities.FailRecordingProcessingActivity, mock.Anything, input.RecordingID).Return(nil).Once()
 
@@ -77,6 +79,37 @@ func TestRecordingProcessingWorkflowMarksFailedWhenCompletionFails(t *testing.T)
 	}
 	if !strings.Contains(err.Error(), "complete failed") {
 		t.Fatalf("workflow error = %v, want original completion error", err)
+	}
+	env.AssertExpectations(t)
+}
+
+func TestRecordingProcessingWorkflowMarksFailedWhenProbeFails(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+
+	input := RecordingProcessingInput{
+		RecordingID:  "rec_test",
+		WorkflowType: "meeting",
+		Language:     "en",
+	}
+	probeErr := errors.New("probe failed")
+
+	env.OnActivity(activities.ValidateRecordingActivity, mock.Anything, input).Return(nil).Once()
+	env.OnActivity(activities.MarkRecordingProcessingActivity, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.ProbeRecordingAudioActivity, mock.Anything, input.RecordingID).Return(probeErr).Once()
+	env.OnActivity(activities.FailRecordingProcessingActivity, mock.Anything, input.RecordingID).Return(nil).Once()
+
+	env.ExecuteWorkflow(RecordingProcessingWorkflow, input)
+
+	if !env.IsWorkflowCompleted() {
+		t.Fatalf("workflow did not complete")
+	}
+	err := env.GetWorkflowError()
+	if err == nil {
+		t.Fatalf("workflow error = nil, want probe error")
+	}
+	if !strings.Contains(err.Error(), "probe failed") {
+		t.Fatalf("workflow error = %v, want original probe error", err)
 	}
 	env.AssertExpectations(t)
 }

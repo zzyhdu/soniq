@@ -8,6 +8,7 @@ import (
 	"github.com/zzyhdu/soniq/backend/internal/activities"
 	"github.com/zzyhdu/soniq/backend/internal/config"
 	"github.com/zzyhdu/soniq/backend/internal/recordings"
+	"github.com/zzyhdu/soniq/backend/internal/storage"
 	"github.com/zzyhdu/soniq/backend/internal/workflows"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
@@ -47,7 +48,7 @@ func run(ctx context.Context, cfg config.Config) error {
 	defer recordingStore.Close()
 
 	worker := temporalworker.New(temporalClient, cfg.TemporalTaskQueue, temporalworker.Options{})
-	registerRecordingProcessing(worker, recordingStore)
+	registerRecordingProcessing(worker, recordingStore, storage.NewLocalStore(cfg.LocalStoragePath), activities.FFProbeRunner{})
 
 	return worker.Run(temporalworker.InterruptCh())
 }
@@ -58,12 +59,13 @@ type recordingProcessingRegistry interface {
 	RegisterActivityWithOptions(interface{}, activity.RegisterOptions)
 }
 
-func registerRecordingProcessing(registry recordingProcessingRegistry, store activities.RecordingStore) {
-	activitySet := activities.NewRecordingProcessingActivities(store)
+func registerRecordingProcessing(registry recordingProcessingRegistry, store activities.RecordingStore, resolver activities.LocalObjectPathResolver, runner activities.AudioProbeRunner) {
+	activitySet := activities.NewRecordingProcessingActivitiesWithAudioProbe(store, resolver, runner)
 
 	registry.RegisterWorkflow(workflows.RecordingProcessingWorkflow)
 	registry.RegisterActivityWithOptions(activitySet.ValidateRecording, activity.RegisterOptions{Name: "ValidateRecordingActivity"})
 	registry.RegisterActivityWithOptions(activitySet.MarkRecordingProcessing, activity.RegisterOptions{Name: "MarkRecordingProcessingActivity"})
+	registry.RegisterActivityWithOptions(activitySet.ProbeRecordingAudio, activity.RegisterOptions{Name: "ProbeRecordingAudioActivity"})
 	registry.RegisterActivityWithOptions(activitySet.CompleteRecordingProcessing, activity.RegisterOptions{Name: "CompleteRecordingProcessingActivity"})
 	registry.RegisterActivityWithOptions(activitySet.FailRecordingProcessing, activity.RegisterOptions{Name: "FailRecordingProcessingActivity"})
 }
