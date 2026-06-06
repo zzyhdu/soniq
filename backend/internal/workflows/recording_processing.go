@@ -23,20 +23,20 @@ func RecordingProcessingWorkflow(ctx workflow.Context, input RecordingProcessing
 		},
 	})
 
-	if err := workflow.ExecuteActivity(ctx, activities.ValidateRecordingActivity, input).Get(ctx, nil); err != nil {
+	if err := workflow.ExecuteActivity(ctx, activities.ValidateRecordingActivityName, input).Get(ctx, nil); err != nil {
 		return RecordingProcessingResult{}, err
 	}
-	if err := workflow.ExecuteActivity(ctx, activities.MarkRecordingProcessingActivity, input.RecordingID).Get(ctx, nil); err != nil {
+	if err := workflow.ExecuteActivity(ctx, activities.MarkRecordingProcessingActivityName, input.RecordingID).Get(ctx, nil); err != nil {
 		return RecordingProcessingResult{}, err
 	}
-	if err := workflow.ExecuteActivity(ctx, activities.ProbeRecordingAudioActivity, input.RecordingID).Get(ctx, nil); err != nil {
-		_ = workflow.ExecuteActivity(ctx, activities.FailRecordingProcessingActivity, input.RecordingID).Get(ctx, nil)
+	if err := workflow.ExecuteActivity(ctx, activities.ProbeRecordingAudioActivityName, input.RecordingID).Get(ctx, nil); err != nil {
+		_ = workflow.ExecuteActivity(ctx, activities.FailRecordingProcessingActivityName, input.RecordingID).Get(ctx, nil)
 		return RecordingProcessingResult{}, err
 	}
 
 	var result RecordingProcessingResult
-	if err := workflow.ExecuteActivity(ctx, activities.CompleteRecordingProcessingActivity, input.RecordingID).Get(ctx, &result); err != nil {
-		_ = workflow.ExecuteActivity(ctx, activities.FailRecordingProcessingActivity, input.RecordingID).Get(ctx, nil)
+	if err := workflow.ExecuteActivity(ctx, activities.CompleteRecordingProcessingActivityName, input.RecordingID).Get(ctx, &result); err != nil {
+		_ = workflow.ExecuteActivity(ctx, activities.FailRecordingProcessingActivityName, input.RecordingID).Get(ctx, nil)
 		return RecordingProcessingResult{}, err
 	}
 

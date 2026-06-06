@@ -1,18 +1,21 @@
 package workflows
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/mock"
 	"github.com/zzyhdu/soniq/backend/internal/activities"
+	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/testsuite"
 )
 
 func TestRecordingProcessingWorkflowCompletesSkeletonPipeline(t *testing.T) {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
+	registerRecordingProcessingActivityNames(env)
 
 	input := RecordingProcessingInput{
 		RecordingID:  "rec_test",
@@ -20,10 +23,10 @@ func TestRecordingProcessingWorkflowCompletesSkeletonPipeline(t *testing.T) {
 		Language:     "en",
 	}
 
-	env.OnActivity(activities.ValidateRecordingActivity, mock.Anything, input).Return(nil).Once()
-	env.OnActivity(activities.MarkRecordingProcessingActivity, mock.Anything, input.RecordingID).Return(nil).Once()
-	env.OnActivity(activities.ProbeRecordingAudioActivity, mock.Anything, input.RecordingID).Return(nil).Once()
-	env.OnActivity(activities.CompleteRecordingProcessingActivity, mock.Anything, input.RecordingID).Return(RecordingProcessingResult{
+	env.OnActivity(activities.ValidateRecordingActivityName, mock.Anything, input).Return(nil).Once()
+	env.OnActivity(activities.MarkRecordingProcessingActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.ProbeRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.CompleteRecordingProcessingActivityName, mock.Anything, input.RecordingID).Return(RecordingProcessingResult{
 		RecordingID: "rec_test",
 		Status:      "completed",
 	}, nil).Once()
@@ -54,6 +57,7 @@ func TestRecordingProcessingWorkflowCompletesSkeletonPipeline(t *testing.T) {
 func TestRecordingProcessingWorkflowMarksFailedWhenCompletionFails(t *testing.T) {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
+	registerRecordingProcessingActivityNames(env)
 
 	input := RecordingProcessingInput{
 		RecordingID:  "rec_test",
@@ -62,11 +66,11 @@ func TestRecordingProcessingWorkflowMarksFailedWhenCompletionFails(t *testing.T)
 	}
 	completeErr := errors.New("complete failed")
 
-	env.OnActivity(activities.ValidateRecordingActivity, mock.Anything, input).Return(nil).Once()
-	env.OnActivity(activities.MarkRecordingProcessingActivity, mock.Anything, input.RecordingID).Return(nil).Once()
-	env.OnActivity(activities.ProbeRecordingAudioActivity, mock.Anything, input.RecordingID).Return(nil).Once()
-	env.OnActivity(activities.CompleteRecordingProcessingActivity, mock.Anything, input.RecordingID).Return(RecordingProcessingResult{}, completeErr).Once()
-	env.OnActivity(activities.FailRecordingProcessingActivity, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.ValidateRecordingActivityName, mock.Anything, input).Return(nil).Once()
+	env.OnActivity(activities.MarkRecordingProcessingActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.ProbeRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.CompleteRecordingProcessingActivityName, mock.Anything, input.RecordingID).Return(RecordingProcessingResult{}, completeErr).Once()
+	env.OnActivity(activities.FailRecordingProcessingActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
 
 	env.ExecuteWorkflow(RecordingProcessingWorkflow, input)
 
@@ -86,6 +90,7 @@ func TestRecordingProcessingWorkflowMarksFailedWhenCompletionFails(t *testing.T)
 func TestRecordingProcessingWorkflowMarksFailedWhenProbeFails(t *testing.T) {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
+	registerRecordingProcessingActivityNames(env)
 
 	input := RecordingProcessingInput{
 		RecordingID:  "rec_test",
@@ -94,10 +99,10 @@ func TestRecordingProcessingWorkflowMarksFailedWhenProbeFails(t *testing.T) {
 	}
 	probeErr := errors.New("probe failed")
 
-	env.OnActivity(activities.ValidateRecordingActivity, mock.Anything, input).Return(nil).Once()
-	env.OnActivity(activities.MarkRecordingProcessingActivity, mock.Anything, input.RecordingID).Return(nil).Once()
-	env.OnActivity(activities.ProbeRecordingAudioActivity, mock.Anything, input.RecordingID).Return(probeErr).Once()
-	env.OnActivity(activities.FailRecordingProcessingActivity, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.ValidateRecordingActivityName, mock.Anything, input).Return(nil).Once()
+	env.OnActivity(activities.MarkRecordingProcessingActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.ProbeRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(probeErr).Once()
+	env.OnActivity(activities.FailRecordingProcessingActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
 
 	env.ExecuteWorkflow(RecordingProcessingWorkflow, input)
 
@@ -112,4 +117,14 @@ func TestRecordingProcessingWorkflowMarksFailedWhenProbeFails(t *testing.T) {
 		t.Fatalf("workflow error = %v, want original probe error", err)
 	}
 	env.AssertExpectations(t)
+}
+
+func registerRecordingProcessingActivityNames(env *testsuite.TestWorkflowEnvironment) {
+	env.RegisterActivityWithOptions(func(context.Context, activities.RecordingProcessingInput) error { return nil }, activity.RegisterOptions{Name: activities.ValidateRecordingActivityName})
+	env.RegisterActivityWithOptions(func(context.Context, string) error { return nil }, activity.RegisterOptions{Name: activities.MarkRecordingProcessingActivityName})
+	env.RegisterActivityWithOptions(func(context.Context, string) error { return nil }, activity.RegisterOptions{Name: activities.ProbeRecordingAudioActivityName})
+	env.RegisterActivityWithOptions(func(context.Context, string) (RecordingProcessingResult, error) {
+		return RecordingProcessingResult{}, nil
+	}, activity.RegisterOptions{Name: activities.CompleteRecordingProcessingActivityName})
+	env.RegisterActivityWithOptions(func(context.Context, string) error { return nil }, activity.RegisterOptions{Name: activities.FailRecordingProcessingActivityName})
 }

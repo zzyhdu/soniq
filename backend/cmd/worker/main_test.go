@@ -25,11 +25,11 @@ func TestRegisterRecordingProcessingRegistersWorkflowAndActivities(t *testing.T)
 	}
 
 	wantActivityNames := []string{
-		"ValidateRecordingActivity",
-		"MarkRecordingProcessingActivity",
-		"ProbeRecordingAudioActivity",
-		"CompleteRecordingProcessingActivity",
-		"FailRecordingProcessingActivity",
+		activities.ValidateRecordingActivityName,
+		activities.MarkRecordingProcessingActivityName,
+		activities.ProbeRecordingAudioActivityName,
+		activities.CompleteRecordingProcessingActivityName,
+		activities.FailRecordingProcessingActivityName,
 	}
 	if got, want := len(worker.activities), len(wantActivityNames); got != want {
 		t.Fatalf("registered activities = %d, want %d", got, want)

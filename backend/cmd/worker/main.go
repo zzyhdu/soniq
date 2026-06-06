@@ -63,11 +63,11 @@ func registerRecordingProcessing(registry recordingProcessingRegistry, store act
 	activitySet := activities.NewRecordingProcessingActivitiesWithAudioProbe(store, resolver, runner)
 
 	registry.RegisterWorkflow(workflows.RecordingProcessingWorkflow)
-	registry.RegisterActivityWithOptions(activitySet.ValidateRecording, activity.RegisterOptions{Name: "ValidateRecordingActivity"})
-	registry.RegisterActivityWithOptions(activitySet.MarkRecordingProcessing, activity.RegisterOptions{Name: "MarkRecordingProcessingActivity"})
-	registry.RegisterActivityWithOptions(activitySet.ProbeRecordingAudio, activity.RegisterOptions{Name: "ProbeRecordingAudioActivity"})
-	registry.RegisterActivityWithOptions(activitySet.CompleteRecordingProcessing, activity.RegisterOptions{Name: "CompleteRecordingProcessingActivity"})
-	registry.RegisterActivityWithOptions(activitySet.FailRecordingProcessing, activity.RegisterOptions{Name: "FailRecordingProcessingActivity"})
+	registry.RegisterActivityWithOptions(activitySet.ValidateRecording, activity.RegisterOptions{Name: activities.ValidateRecordingActivityName})
+	registry.RegisterActivityWithOptions(activitySet.MarkRecordingProcessing, activity.RegisterOptions{Name: activities.MarkRecordingProcessingActivityName})
+	registry.RegisterActivityWithOptions(activitySet.ProbeRecordingAudio, activity.RegisterOptions{Name: activities.ProbeRecordingAudioActivityName})
+	registry.RegisterActivityWithOptions(activitySet.CompleteRecordingProcessing, activity.RegisterOptions{Name: activities.CompleteRecordingProcessingActivityName})
+	registry.RegisterActivityWithOptions(activitySet.FailRecordingProcessing, activity.RegisterOptions{Name: activities.FailRecordingProcessingActivityName})
 }
 
 type recordingStoreClient interface {

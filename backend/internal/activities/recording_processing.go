@@ -14,7 +14,7 @@ import (
 	"github.com/zzyhdu/soniq/backend/internal/recordings"
 )
 
-// RecordingProcessingInput is the input shared by the recording processing workflow and activity stubs.
+// RecordingProcessingInput is the input shared by the recording processing workflow and activities.
 type RecordingProcessingInput struct {
 	RecordingID  string
 	WorkflowType domain.WorkflowType
@@ -26,6 +26,14 @@ type RecordingProcessingResult struct {
 	RecordingID string
 	Status      domain.RecordingStatus
 }
+
+const (
+	ValidateRecordingActivityName           = "ValidateRecordingActivity"
+	MarkRecordingProcessingActivityName     = "MarkRecordingProcessingActivity"
+	ProbeRecordingAudioActivityName         = "ProbeRecordingAudioActivity"
+	CompleteRecordingProcessingActivityName = "CompleteRecordingProcessingActivity"
+	FailRecordingProcessingActivityName     = "FailRecordingProcessingActivity"
+)
 
 // RecordingStore is the persistence seam used by recording processing activities.
 type RecordingStore interface {
@@ -78,64 +86,13 @@ func NewRecordingProcessingActivitiesWithAudioProbe(store RecordingStore, resolv
 	return &RecordingProcessingActivities{store: store, pathResolver: resolver, probeRunner: runner}
 }
 
-// ValidateRecordingActivity validates the minimal recording processing input.
-//
-// This package-level function is the current stateless Temporal activity used
-// by the existing workflow/worker wiring. The store-backed
-// RecordingProcessingActivities methods below are the next wiring target.
-func ValidateRecordingActivity(ctx context.Context, input RecordingProcessingInput) error {
+// ValidateRecording validates processing input and confirms the recording exists.
+func (a *RecordingProcessingActivities) ValidateRecording(ctx context.Context, input RecordingProcessingInput) error {
 	if input.RecordingID == "" {
 		return errors.New("recording id is required")
 	}
 	if !domain.IsValidWorkflowType(string(input.WorkflowType)) {
 		return errors.New("workflow type is invalid")
-	}
-	return nil
-}
-
-// MarkRecordingProcessingActivity is the current stateless compatibility activity.
-// Store-backed status persistence lives in RecordingProcessingActivities.MarkRecordingProcessing.
-func MarkRecordingProcessingActivity(ctx context.Context, recordingID string) error {
-	if recordingID == "" {
-		return errors.New("recording id is required")
-	}
-	return nil
-}
-
-// CompleteRecordingProcessingActivity is the current stateless compatibility activity.
-// Store-backed status persistence lives in RecordingProcessingActivities.CompleteRecordingProcessing.
-func CompleteRecordingProcessingActivity(ctx context.Context, recordingID string) (RecordingProcessingResult, error) {
-	if recordingID == "" {
-		return RecordingProcessingResult{}, errors.New("recording id is required")
-	}
-	return RecordingProcessingResult{
-		RecordingID: recordingID,
-		Status:      domain.RecordingStatusCompleted,
-	}, nil
-}
-
-// FailRecordingProcessingActivity is the current stateless compatibility activity.
-// Store-backed status persistence lives in RecordingProcessingActivities.FailRecordingProcessing.
-func FailRecordingProcessingActivity(ctx context.Context, recordingID string) error {
-	if recordingID == "" {
-		return errors.New("recording id is required")
-	}
-	return nil
-}
-
-// ProbeRecordingAudioActivity is the current stateless compatibility activity.
-// Store-backed audio probing lives in RecordingProcessingActivities.ProbeRecordingAudio.
-func ProbeRecordingAudioActivity(ctx context.Context, recordingID string) error {
-	if recordingID == "" {
-		return errors.New("recording id is required")
-	}
-	return nil
-}
-
-// ValidateRecording validates processing input and confirms the recording exists.
-func (a *RecordingProcessingActivities) ValidateRecording(ctx context.Context, input RecordingProcessingInput) error {
-	if err := ValidateRecordingActivity(ctx, input); err != nil {
-		return err
 	}
 	if a == nil || a.store == nil {
 		return errors.New("recording store is required")
