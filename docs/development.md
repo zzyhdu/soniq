@@ -71,6 +71,24 @@ make lint
 make test
 ```
 
+## Full local smoke verification
+
+To avoid opening several terminals manually, run the full smoke target from the repository root:
+
+```bash
+make smoke-postgres-temporal
+```
+
+This target runs `scripts/smoke-postgres-temporal.sh`. The script starts the Compose infrastructure, applies the `recordings` migration if needed, starts the API and worker as temporary local background processes, creates a recording, verifies the recording can be read from Postgres before and after an API restart, confirms the Temporal workflow reaches `COMPLETED`, and then stops the API/worker processes it started.
+
+The script intentionally leaves the Compose infrastructure running by default so local Postgres and Temporal state remain available for follow-up debugging. To stop Compose services after the smoke run, set:
+
+```bash
+SMOKE_DOWN=1 make smoke-postgres-temporal
+```
+
+If an API is already listening on `localhost:8080`, the script refuses to run because it needs to own API startup and restart during the persistence check. Stop the existing API process first, then re-run the target.
+
 ## Run the API skeleton
 
 `make api` now builds the HTTP router with a Postgres-backed recording store and a Temporal-backed recording processor. At startup it opens Soniq Postgres and dials the configured Temporal server, so both services must be reachable before serving requests.
@@ -141,7 +159,9 @@ After a recording is created successfully in Postgres, the API calls an injectab
 
 ### Manual local Temporal smoke flow
 
-This is a manual local development smoke flow, not a CI requirement. It assumes Docker is available and uses the local Temporal stack from `compose.temporal.yml`.
+This is the manual version of the full local smoke verification above. Use it when you want to inspect each process yourself in separate terminals. For routine checks, prefer `make smoke-postgres-temporal`.
+
+It assumes Docker is available and uses the local Temporal/Postgres stack from `compose.temporal.yml`.
 
 Start Temporal and Soniq Postgres and confirm the services are running:
 
