@@ -155,6 +155,54 @@ func TestLocalStoreLocalPathForObjectRejectsInvalidKeys(t *testing.T) {
 	}
 }
 
+func TestNormalizedAudioObjectKeyReturnsSiblingNormalizedWAV(t *testing.T) {
+	key, err := NormalizedAudioObjectKey("recordings/20260606T150747.170276465Z/weekly.wav")
+	if err != nil {
+		t.Fatalf("NormalizedAudioObjectKey returned error: %v", err)
+	}
+	if key != "recordings/20260606T150747.170276465Z/normalized.wav" {
+		t.Fatalf("NormalizedAudioObjectKey = %q, want sibling normalized.wav", key)
+	}
+}
+
+func TestNormalizedAudioObjectKeyHandlesNestedOriginalNames(t *testing.T) {
+	key, err := NormalizedAudioObjectKey("recordings/20260606T150747.170276465Z/uploads/raw/weekly.wav")
+	if err != nil {
+		t.Fatalf("NormalizedAudioObjectKey returned error: %v", err)
+	}
+	if key != "recordings/20260606T150747.170276465Z/uploads/raw/normalized.wav" {
+		t.Fatalf("NormalizedAudioObjectKey = %q, want normalized.wav beside original", key)
+	}
+}
+
+func TestNormalizedAudioObjectKeyNormalizesBackslashes(t *testing.T) {
+	key, err := NormalizedAudioObjectKey(`recordings\\20260606T150747.170276465Z\\weekly.wav`)
+	if err != nil {
+		t.Fatalf("NormalizedAudioObjectKey returned error: %v", err)
+	}
+	if key != "recordings/20260606T150747.170276465Z/normalized.wav" {
+		t.Fatalf("NormalizedAudioObjectKey = %q, want normalized slash key", key)
+	}
+}
+
+func TestNormalizedAudioObjectKeyRejectsInvalidKeys(t *testing.T) {
+	invalidKeys := []string{
+		"",
+		"../secret.wav",
+		"recordings/../../secret.wav",
+		"/absolute/path.wav",
+		"recordings/rec_123/",
+	}
+	for _, key := range invalidKeys {
+		t.Run(key, func(t *testing.T) {
+			_, err := NormalizedAudioObjectKey(key)
+			if err == nil {
+				t.Fatal("NormalizedAudioObjectKey returned nil error, want invalid key error")
+			}
+		})
+	}
+}
+
 type errReader struct {
 	err error
 }
