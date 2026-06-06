@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/zzyhdu/soniq/backend/internal/domain"
 	"github.com/zzyhdu/soniq/backend/internal/recordings"
+	"github.com/zzyhdu/soniq/backend/internal/storage"
 )
 
 // RecordingProcessingInput is the input shared by the recording processing workflow and activities.
@@ -32,6 +34,7 @@ const (
 	ValidateRecordingActivityName           = "ValidateRecordingActivity"
 	MarkRecordingProcessingActivityName     = "MarkRecordingProcessingActivity"
 	ProbeRecordingAudioActivityName         = "ProbeRecordingAudioActivity"
+	NormalizeRecordingAudioActivityName     = "NormalizeRecordingAudioActivity"
 	MarkRecordingTranscribingActivityName   = "MarkRecordingTranscribingActivity"
 	TranscribeRecordingAudioActivityName    = "TranscribeRecordingAudioActivity"
 	MarkRecordingSummarizingActivityName    = "MarkRecordingSummarizingActivity"
@@ -45,6 +48,12 @@ type RecordingStore interface {
 	Get(id string) (domain.Recording, bool)
 	UpdateStatus(input recordings.UpdateRecordingStatusInput) (domain.Recording, error)
 	UpsertAudioProbe(input recordings.UpsertAudioProbeInput) (recordings.RecordingAudioProbe, error)
+}
+
+// NormalizedAudioStore is the normalized audio persistence seam used by normalization activities.
+type NormalizedAudioStore interface {
+	UpsertNormalizedAudio(input recordings.UpsertNormalizedAudioInput) (recordings.RecordingNormalizedAudio, error)
+	GetNormalizedAudio(recordingID string) (recordings.RecordingNormalizedAudio, bool)
 }
 
 // TranscriptStore is the transcript persistence seam used by transcription and summarization activities.
@@ -63,6 +72,12 @@ type PipelineStore interface {
 	RecordingStore
 	TranscriptStore
 	SummaryStore
+}
+
+// NormalizingPipelineStore is the complete persistence seam used once normalization participates in the activity set.
+type NormalizingPipelineStore interface {
+	PipelineStore
+	NormalizedAudioStore
 }
 
 // LocalObjectPathResolver resolves stored object keys to local filesystem paths.
@@ -153,10 +168,12 @@ type FFProbeRunner struct {
 // RecordingProcessingActivities contains store-backed Temporal activity methods.
 type RecordingProcessingActivities struct {
 	store                 RecordingStore
+	normalizedAudioStore  NormalizedAudioStore
 	transcriptStore       TranscriptStore
 	summaryStore          SummaryStore
 	pathResolver          LocalObjectPathResolver
 	probeRunner           AudioProbeRunner
+	normalizeRunner       AudioNormalizeRunner
 	transcriptionProvider TranscriptionProvider
 	summaryProvider       SummaryProvider
 }
@@ -182,6 +199,14 @@ func NewRecordingProcessingActivitiesWithPipeline(store PipelineStore, resolver 
 		transcriptionProvider: transcriptionProvider,
 		summaryProvider:       summaryProvider,
 	}
+}
+
+// NewRecordingProcessingActivitiesWithNormalizedAudio creates recording processing activities with normalization dependencies.
+func NewRecordingProcessingActivitiesWithNormalizedAudio(store NormalizingPipelineStore, resolver LocalObjectPathResolver, probeRunner AudioProbeRunner, normalizeRunner AudioNormalizeRunner, transcriptionProvider TranscriptionProvider, summaryProvider SummaryProvider) *RecordingProcessingActivities {
+	activities := NewRecordingProcessingActivitiesWithPipeline(store, resolver, probeRunner, transcriptionProvider, summaryProvider)
+	activities.normalizedAudioStore = store
+	activities.normalizeRunner = normalizeRunner
+	return activities
 }
 
 // ValidateRecording validates processing input and confirms the recording exists.
@@ -281,6 +306,68 @@ func (a *RecordingProcessingActivities) ProbeRecordingAudio(ctx context.Context,
 	})
 	if err != nil {
 		return fmt.Errorf("persist recording audio probe: %w", err)
+	}
+	return nil
+}
+
+// NormalizeRecordingAudio normalizes the original recording audio and persists normalized artifact metadata.
+func (a *RecordingProcessingActivities) NormalizeRecordingAudio(ctx context.Context, recordingID string) error {
+	if recordingID == "" {
+		return errors.New("recording id is required")
+	}
+	if a == nil || a.store == nil {
+		return errors.New("recording store is required")
+	}
+	if a.normalizedAudioStore == nil {
+		return errors.New("normalized audio store is required")
+	}
+	if a.pathResolver == nil {
+		return errors.New("audio object path resolver is required")
+	}
+	if a.normalizeRunner == nil {
+		return errors.New("audio normalize runner is required")
+	}
+
+	recording, ok := a.store.Get(recordingID)
+	if !ok {
+		return fmt.Errorf("recording not found: %s", recordingID)
+	}
+	if strings.TrimSpace(recording.AudioObjectKey) == "" {
+		return fmt.Errorf("recording audio object key is required: %s", recordingID)
+	}
+	inputPath, err := a.pathResolver.LocalPathForObject(recording.AudioObjectKey)
+	if err != nil {
+		return fmt.Errorf("resolve recording audio object path: %w", err)
+	}
+	normalizedObjectKey, err := storage.NormalizedAudioObjectKey(recording.AudioObjectKey)
+	if err != nil {
+		return fmt.Errorf("build normalized audio object key: %w", err)
+	}
+	outputPath, err := a.pathResolver.LocalPathForObject(normalizedObjectKey)
+	if err != nil {
+		return fmt.Errorf("resolve normalized audio object path: %w", err)
+	}
+	result, err := a.normalizeRunner.Normalize(ctx, AudioNormalizeRequest{InputPath: inputPath, OutputPath: outputPath})
+	if err != nil {
+		return fmt.Errorf("normalize recording audio: %w", err)
+	}
+	stat, err := os.Stat(result.OutputPath)
+	if err != nil {
+		return fmt.Errorf("stat normalized audio: %w", err)
+	}
+	_, err = a.normalizedAudioStore.UpsertNormalizedAudio(recordings.UpsertNormalizedAudioInput{
+		RecordingID:  recordingID,
+		ObjectKey:    normalizedObjectKey,
+		ContentType:  result.ContentType,
+		SizeBytes:    stat.Size(),
+		FormatName:   result.FormatName,
+		CodecName:    result.CodecName,
+		SampleRate:   result.SampleRate,
+		Channels:     result.Channels,
+		NormalizedAt: result.NormalizedAt,
+	})
+	if err != nil {
+		return fmt.Errorf("upsert normalized audio: %w", err)
 	}
 	return nil
 }
