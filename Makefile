@@ -1,4 +1,4 @@
-.PHONY: fmt lint test api worker temporal-up temporal-down temporal-logs temporal-ps
+.PHONY: fmt lint test api worker temporal-up temporal-down temporal-logs temporal-ps smoke-postgres-temporal
 
 fmt:
 	cd backend && go fmt ./...
@@ -26,3 +26,6 @@ temporal-logs:
 
 temporal-ps:
 	docker compose -f compose.temporal.yml ps
+
+smoke-postgres-temporal:
+	./scripts/smoke-postgres-temporal.sh
