@@ -41,25 +41,31 @@ func (s *PostgresStore) Create(input CreateRecordingInput) (domain.Recording, er
 
 	now := time.Now().UTC()
 	recording := domain.Recording{
-		ID:           newRecordingID(),
-		Title:        input.Title,
-		Status:       domain.RecordingStatusUploaded,
-		WorkflowType: input.WorkflowType,
-		Language:     input.Language,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		ID:               newRecordingID(),
+		Title:            input.Title,
+		Status:           domain.RecordingStatusUploaded,
+		WorkflowType:     input.WorkflowType,
+		Language:         input.Language,
+		AudioObjectKey:   input.AudioObjectKey,
+		AudioContentType: input.AudioContentType,
+		AudioSizeBytes:   input.AudioSizeBytes,
+		CreatedAt:        now,
+		UpdatedAt:        now,
 	}
 
 	row := s.db.QueryRow(
 		context.Background(),
-		`INSERT INTO recordings (id, title, status, workflow_type, language, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, title, status, workflow_type, language, created_at, updated_at`,
+		`INSERT INTO recordings (id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+RETURNING id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, created_at, updated_at`,
 		recording.ID,
 		recording.Title,
 		recording.Status,
 		recording.WorkflowType,
 		recording.Language,
+		recording.AudioObjectKey,
+		recording.AudioContentType,
+		recording.AudioSizeBytes,
 		recording.CreatedAt,
 		recording.UpdatedAt,
 	)
@@ -78,7 +84,7 @@ func (s *PostgresStore) Get(id string) (domain.Recording, bool) {
 	var recording domain.Recording
 	row := s.db.QueryRow(
 		context.Background(),
-		`SELECT id, title, status, workflow_type, language, created_at, updated_at
+		`SELECT id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, created_at, updated_at
 FROM recordings
 WHERE id = $1`,
 		id,
@@ -99,6 +105,9 @@ func scanRecording(row PostgresRow, recording *domain.Recording) error {
 		&recording.Status,
 		&recording.WorkflowType,
 		&recording.Language,
+		&recording.AudioObjectKey,
+		&recording.AudioContentType,
+		&recording.AudioSizeBytes,
 		&recording.CreatedAt,
 		&recording.UpdatedAt,
 	)

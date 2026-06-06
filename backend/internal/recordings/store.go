@@ -12,9 +12,12 @@ import (
 
 // CreateRecordingInput contains the metadata needed to create a recording skeleton.
 type CreateRecordingInput struct {
-	Title        string
-	WorkflowType domain.WorkflowType
-	Language     string
+	Title            string
+	WorkflowType     domain.WorkflowType
+	Language         string
+	AudioObjectKey   string
+	AudioContentType string
+	AudioSizeBytes   int64
 }
 
 // MemoryStore is a thread-safe in-memory recording store for local skeleton workflows.
@@ -38,13 +41,16 @@ func (s *MemoryStore) Create(input CreateRecordingInput) (domain.Recording, erro
 
 	now := time.Now().UTC()
 	recording := domain.Recording{
-		ID:           newRecordingID(),
-		Title:        input.Title,
-		Status:       domain.RecordingStatusUploaded,
-		WorkflowType: input.WorkflowType,
-		Language:     input.Language,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		ID:               newRecordingID(),
+		Title:            input.Title,
+		Status:           domain.RecordingStatusUploaded,
+		WorkflowType:     input.WorkflowType,
+		Language:         input.Language,
+		AudioObjectKey:   input.AudioObjectKey,
+		AudioContentType: input.AudioContentType,
+		AudioSizeBytes:   input.AudioSizeBytes,
+		CreatedAt:        now,
+		UpdatedAt:        now,
 	}
 
 	s.mu.Lock()

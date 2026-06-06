@@ -27,13 +27,16 @@ const (
 
 // Recording is the minimal domain representation used by the recording API skeleton.
 type Recording struct {
-	ID           string          `json:"id"`
-	Title        string          `json:"title"`
-	Status       RecordingStatus `json:"status"`
-	WorkflowType WorkflowType    `json:"workflow_type"`
-	Language     string          `json:"language"`
-	CreatedAt    time.Time       `json:"created_at"`
-	UpdatedAt    time.Time       `json:"updated_at"`
+	ID               string          `json:"id"`
+	Title            string          `json:"title"`
+	Status           RecordingStatus `json:"status"`
+	WorkflowType     WorkflowType    `json:"workflow_type"`
+	Language         string          `json:"language"`
+	AudioObjectKey   string          `json:"audio_object_key,omitempty"`
+	AudioContentType string          `json:"audio_content_type,omitempty"`
+	AudioSizeBytes   int64           `json:"audio_size_bytes,omitempty"`
+	CreatedAt        time.Time       `json:"created_at"`
+	UpdatedAt        time.Time       `json:"updated_at"`
 }
 
 // IsValidWorkflowType reports whether value is one of the supported workflow types.

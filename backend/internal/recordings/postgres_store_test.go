@@ -64,6 +64,8 @@ func (r *postgresRowStub) Scan(dest ...any) error {
 			*target = value.(domain.WorkflowType)
 		case *time.Time:
 			*target = value.(time.Time)
+		case *int64:
+			*target = value.(int64)
 		default:
 			return sql.ErrNoRows
 		}
@@ -80,6 +82,9 @@ func TestPostgresStoreCreateInsertsRecording(t *testing.T) {
 		domain.RecordingStatusUploaded,
 		domain.WorkflowTypeMeeting,
 		"en",
+		"",
+		"",
+		int64(0),
 		createdAt,
 		updatedAt,
 	))
@@ -112,11 +117,63 @@ func TestPostgresStoreCreateInsertsRecording(t *testing.T) {
 	if !strings.Contains(strings.ToLower(db.calls[0].query), "insert into recordings") {
 		t.Fatalf("query = %q, want insert into recordings", db.calls[0].query)
 	}
-	if got, want := len(db.calls[0].args), 7; got != want {
+	if got, want := len(db.calls[0].args), 10; got != want {
 		t.Fatalf("insert args = %d, want %d", got, want)
 	}
 	if id, ok := db.calls[0].args[0].(string); !ok || !strings.HasPrefix(id, "rec_") {
 		t.Fatalf("first insert arg = %#v, want generated rec_ id", db.calls[0].args[0])
+	}
+}
+
+func TestPostgresStoreCreatePreservesAudioMetadata(t *testing.T) {
+	createdAt := time.Date(2026, 6, 6, 1, 2, 3, 0, time.UTC)
+	updatedAt := createdAt
+	db := newPostgresExecutorSpy(postgresRow(
+		"rec_pg",
+		"Weekly sync",
+		domain.RecordingStatusUploaded,
+		domain.WorkflowTypeMeeting,
+		"en",
+		"recordings/rec_pg/original.wav",
+		"audio/wav",
+		int64(12345),
+		createdAt,
+		updatedAt,
+	))
+	store := NewPostgresStore(db)
+
+	recording, err := store.Create(CreateRecordingInput{
+		Title:            "Weekly sync",
+		WorkflowType:     domain.WorkflowTypeMeeting,
+		Language:         "en",
+		AudioObjectKey:   "recordings/rec_pg/original.wav",
+		AudioContentType: "audio/wav",
+		AudioSizeBytes:   12345,
+	})
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+
+	if recording.AudioObjectKey != "recordings/rec_pg/original.wav" {
+		t.Fatalf("AudioObjectKey = %q, want object key", recording.AudioObjectKey)
+	}
+	if recording.AudioContentType != "audio/wav" {
+		t.Fatalf("AudioContentType = %q, want audio/wav", recording.AudioContentType)
+	}
+	if recording.AudioSizeBytes != 12345 {
+		t.Fatalf("AudioSizeBytes = %d, want 12345", recording.AudioSizeBytes)
+	}
+	if got, want := len(db.calls[0].args), 10; got != want {
+		t.Fatalf("insert args = %d, want %d", got, want)
+	}
+	if got, want := db.calls[0].args[5], "recordings/rec_pg/original.wav"; got != want {
+		t.Fatalf("audio object key arg = %q, want %q", got, want)
+	}
+	if got, want := db.calls[0].args[6], "audio/wav"; got != want {
+		t.Fatalf("audio content type arg = %q, want %q", got, want)
+	}
+	if got, want := db.calls[0].args[7], int64(12345); got != want {
+		t.Fatalf("audio size arg = %v, want %v", got, want)
 	}
 }
 
@@ -129,6 +186,9 @@ func TestPostgresStoreGetReturnsExistingRecording(t *testing.T) {
 		domain.RecordingStatusUploaded,
 		domain.WorkflowTypeLecture,
 		"zh",
+		"",
+		"",
+		int64(0),
 		createdAt,
 		updatedAt,
 	))

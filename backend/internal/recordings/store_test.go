@@ -45,6 +45,40 @@ func TestMemoryStoreCreateAssignsRecordingDefaults(t *testing.T) {
 	}
 }
 
+func TestMemoryStoreCreatePreservesAudioMetadata(t *testing.T) {
+	store := NewMemoryStore()
+
+	recording, err := store.Create(CreateRecordingInput{
+		Title:            "Weekly sync",
+		WorkflowType:     domain.WorkflowTypeMeeting,
+		Language:         "en",
+		AudioObjectKey:   "recordings/rec_123/original.wav",
+		AudioContentType: "audio/wav",
+		AudioSizeBytes:   12345,
+	})
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+
+	if recording.AudioObjectKey != "recordings/rec_123/original.wav" {
+		t.Fatalf("AudioObjectKey = %q, want object key", recording.AudioObjectKey)
+	}
+	if recording.AudioContentType != "audio/wav" {
+		t.Fatalf("AudioContentType = %q, want audio/wav", recording.AudioContentType)
+	}
+	if recording.AudioSizeBytes != 12345 {
+		t.Fatalf("AudioSizeBytes = %d, want 12345", recording.AudioSizeBytes)
+	}
+
+	got, ok := store.Get(recording.ID)
+	if !ok {
+		t.Fatalf("Get(%q) ok = false, want true", recording.ID)
+	}
+	if got.AudioObjectKey != recording.AudioObjectKey || got.AudioContentType != recording.AudioContentType || got.AudioSizeBytes != recording.AudioSizeBytes {
+		t.Fatalf("stored audio metadata = %+v, want %+v", got, recording)
+	}
+}
+
 func TestMemoryStoreGetReturnsExistingRecording(t *testing.T) {
 	store := NewMemoryStore()
 
