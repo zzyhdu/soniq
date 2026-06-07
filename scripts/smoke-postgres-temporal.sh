@@ -12,6 +12,16 @@ POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-soniq_password}"
 POSTGRES_DSN="${POSTGRES_DSN:-postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@localhost:5432/soniq?sslmode=disable}"
 STORAGE_PROVIDER="${STORAGE_PROVIDER:-local}"
 LOCAL_STORAGE_PATH="${LOCAL_STORAGE_PATH:-$ROOT_DIR/var/uploads/smoke}"
+TRANSCRIPTION_PROVIDER="${TRANSCRIPTION_PROVIDER:-fake_transcription}"
+TRANSCRIPTION_BASE_URL="${TRANSCRIPTION_BASE_URL:-https://api.xiaomimimo.com/v1}"
+TRANSCRIPTION_API_KEY="${TRANSCRIPTION_API_KEY:-}"
+MIMO_API_KEY="${MIMO_API_KEY:-}"
+TRANSCRIPTION_MODEL="${TRANSCRIPTION_MODEL:-mimo-v2.5-asr}"
+TRANSCRIPTION_AUTH_HEADER="${TRANSCRIPTION_AUTH_HEADER:-api-key}"
+TRANSCRIPTION_LANGUAGE="${TRANSCRIPTION_LANGUAGE:-auto}"
+TRANSCRIPTION_MAX_BASE64_BYTES="${TRANSCRIPTION_MAX_BASE64_BYTES:-10485760}"
+EXPECTED_TRANSCRIPT_PROVIDER="${EXPECTED_TRANSCRIPT_PROVIDER:-}"
+EXPECTED_TRANSCRIPT_MODEL="${EXPECTED_TRANSCRIPT_MODEL:-}"
 SMOKE_DOWN="${SMOKE_DOWN:-0}"
 
 API_PID=""
@@ -24,18 +34,25 @@ log() {
   printf '[smoke] %s\n' "$*"
 }
 
+stop_process_tree() {
+  local label="$1"
+  local pid="$2"
+  if [[ -z "$pid" ]] || ! kill -0 "$pid" 2>/dev/null; then
+    return 0
+  fi
+  log "stopping $label process group $pid"
+  kill -- -"$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -9 -- -"$pid" 2>/dev/null || kill -9 "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+  fi
+}
+
 cleanup() {
   local exit_code=$?
-  if [[ -n "$API_PID" ]] && kill -0 "$API_PID" 2>/dev/null; then
-    log "stopping API process $API_PID"
-    kill "$API_PID" 2>/dev/null || true
-    wait "$API_PID" 2>/dev/null || true
-  fi
-  if [[ -n "$WORKER_PID" ]] && kill -0 "$WORKER_PID" 2>/dev/null; then
-    log "stopping worker process $WORKER_PID"
-    kill "$WORKER_PID" 2>/dev/null || true
-    wait "$WORKER_PID" 2>/dev/null || true
-  fi
+  stop_process_tree "API" "$API_PID"
+  stop_process_tree "worker" "$WORKER_PID"
   if [[ "$SMOKE_DOWN" == "1" ]]; then
     log "SMOKE_DOWN=1, stopping Compose services"
     (cd "$ROOT_DIR" && docker compose -f "$COMPOSE_FILE" down) || true
@@ -72,15 +89,23 @@ wait_for_api() {
 
 start_worker() {
   log "starting worker; log: $WORKER_LOG"
-  (
-    cd "$ROOT_DIR"
-    TEMPORAL_NAMESPACE="$TEMPORAL_NAMESPACE" \
-    TEMPORAL_TASK_QUEUE="$TEMPORAL_TASK_QUEUE" \
-    POSTGRES_DSN="$POSTGRES_DSN" \
-    STORAGE_PROVIDER="$STORAGE_PROVIDER" \
-    LOCAL_STORAGE_PATH="$LOCAL_STORAGE_PATH" \
+  setsid bash -c '
+    cd "$1"
+    TEMPORAL_NAMESPACE="$2" \
+    TEMPORAL_TASK_QUEUE="$3" \
+    POSTGRES_DSN="$4" \
+    STORAGE_PROVIDER="$5" \
+    LOCAL_STORAGE_PATH="$6" \
+    TRANSCRIPTION_PROVIDER="$7" \
+    TRANSCRIPTION_BASE_URL="$8" \
+    TRANSCRIPTION_API_KEY="$9" \
+    MIMO_API_KEY="${10}" \
+    TRANSCRIPTION_MODEL="${11}" \
+    TRANSCRIPTION_AUTH_HEADER="${12}" \
+    TRANSCRIPTION_LANGUAGE="${13}" \
+    TRANSCRIPTION_MAX_BASE64_BYTES="${14}" \
     make worker
-  ) >"$WORKER_LOG" 2>&1 &
+  ' _ "$ROOT_DIR" "$TEMPORAL_NAMESPACE" "$TEMPORAL_TASK_QUEUE" "$POSTGRES_DSN" "$STORAGE_PROVIDER" "$LOCAL_STORAGE_PATH" "$TRANSCRIPTION_PROVIDER" "$TRANSCRIPTION_BASE_URL" "$TRANSCRIPTION_API_KEY" "$MIMO_API_KEY" "$TRANSCRIPTION_MODEL" "$TRANSCRIPTION_AUTH_HEADER" "$TRANSCRIPTION_LANGUAGE" "$TRANSCRIPTION_MAX_BASE64_BYTES" >"$WORKER_LOG" 2>&1 &
   WORKER_PID=$!
   sleep 2
   if ! kill -0 "$WORKER_PID" 2>/dev/null; then
@@ -92,26 +117,22 @@ start_worker() {
 start_api() {
   log "starting API at $API_ADDRESS; log: $API_LOG"
   : >"$API_LOG"
-  (
-    cd "$ROOT_DIR"
-    API_ADDRESS="$API_ADDRESS" \
-    POSTGRES_DSN="$POSTGRES_DSN" \
-    TEMPORAL_NAMESPACE="$TEMPORAL_NAMESPACE" \
-    TEMPORAL_TASK_QUEUE="$TEMPORAL_TASK_QUEUE" \
-    STORAGE_PROVIDER="$STORAGE_PROVIDER" \
-    LOCAL_STORAGE_PATH="$LOCAL_STORAGE_PATH" \
+  setsid bash -c '
+    cd "$1"
+    API_ADDRESS="$2" \
+    POSTGRES_DSN="$3" \
+    TEMPORAL_NAMESPACE="$4" \
+    TEMPORAL_TASK_QUEUE="$5" \
+    STORAGE_PROVIDER="$6" \
+    LOCAL_STORAGE_PATH="$7" \
     make api
-  ) >>"$API_LOG" 2>&1 &
+  ' _ "$ROOT_DIR" "$API_ADDRESS" "$POSTGRES_DSN" "$TEMPORAL_NAMESPACE" "$TEMPORAL_TASK_QUEUE" "$STORAGE_PROVIDER" "$LOCAL_STORAGE_PATH" >>"$API_LOG" 2>&1 &
   API_PID=$!
   wait_for_api
 }
 
 stop_api() {
-  if [[ -n "$API_PID" ]] && kill -0 "$API_PID" 2>/dev/null; then
-    log "stopping API process $API_PID"
-    kill "$API_PID" 2>/dev/null || true
-    wait "$API_PID" 2>/dev/null || true
-  fi
+  stop_process_tree "API" "$API_PID"
   API_PID=""
 }
 
