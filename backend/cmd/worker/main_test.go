@@ -16,7 +16,7 @@ func TestRegisterRecordingProcessingRegistersWorkflowAndActivities(t *testing.T)
 	worker := &recordingWorkerSpy{}
 	store := &workerRecordingStoreSpy{}
 
-	registerRecordingProcessing(worker, store, localPathResolverTestStub{}, audioProbeRunnerTestStub{})
+	registerRecordingProcessing(worker, store, localPathResolverTestStub{}, audioProbeRunnerTestStub{}, audioNormalizeRunnerTestStub{})
 
 	if got, want := len(worker.workflows), 1; got != want {
 		t.Fatalf("registered workflows = %d, want %d", got, want)
@@ -29,6 +29,7 @@ func TestRegisterRecordingProcessingRegistersWorkflowAndActivities(t *testing.T)
 		activities.ValidateRecordingActivityName,
 		activities.MarkRecordingProcessingActivityName,
 		activities.ProbeRecordingAudioActivityName,
+		activities.NormalizeRecordingAudioActivityName,
 		activities.MarkRecordingTranscribingActivityName,
 		activities.TranscribeRecordingAudioActivityName,
 		activities.MarkRecordingSummarizingActivityName,
@@ -60,6 +61,12 @@ type audioProbeRunnerTestStub struct{}
 
 func (audioProbeRunnerTestStub) Probe(ctx context.Context, path string) (activities.AudioProbeResult, error) {
 	return activities.AudioProbeResult{}, nil
+}
+
+type audioNormalizeRunnerTestStub struct{}
+
+func (audioNormalizeRunnerTestStub) Normalize(ctx context.Context, input activities.AudioNormalizeRequest) (activities.AudioNormalizeResult, error) {
+	return activities.AudioNormalizeResult{}, nil
 }
 
 type registeredActivity struct {
@@ -96,6 +103,14 @@ func (s *workerRecordingStoreSpy) UpdateStatus(input recordings.UpdateRecordingS
 
 func (s *workerRecordingStoreSpy) UpsertAudioProbe(input recordings.UpsertAudioProbeInput) (recordings.RecordingAudioProbe, error) {
 	return recordings.RecordingAudioProbe{RecordingID: input.RecordingID}, nil
+}
+
+func (s *workerRecordingStoreSpy) UpsertNormalizedAudio(input recordings.UpsertNormalizedAudioInput) (recordings.RecordingNormalizedAudio, error) {
+	return recordings.RecordingNormalizedAudio{RecordingID: input.RecordingID, ObjectKey: input.ObjectKey}, nil
+}
+
+func (s *workerRecordingStoreSpy) GetNormalizedAudio(recordingID string) (recordings.RecordingNormalizedAudio, bool) {
+	return recordings.RecordingNormalizedAudio{RecordingID: recordingID, ObjectKey: "recordings/rec/normalized.wav"}, true
 }
 
 func (s *workerRecordingStoreSpy) UpsertTranscript(input recordings.UpsertTranscriptInput) (recordings.RecordingTranscript, error) {

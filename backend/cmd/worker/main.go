@@ -48,7 +48,7 @@ func run(ctx context.Context, cfg config.Config) error {
 	defer recordingStore.Close()
 
 	worker := temporalworker.New(temporalClient, cfg.TemporalTaskQueue, temporalworker.Options{})
-	registerRecordingProcessing(worker, recordingStore, storage.NewLocalStore(cfg.LocalStoragePath), activities.FFProbeRunner{})
+	registerRecordingProcessing(worker, recordingStore, storage.NewLocalStore(cfg.LocalStoragePath), activities.FFProbeRunner{}, activities.FFmpegNormalizeRunner{})
 
 	return worker.Run(temporalworker.InterruptCh())
 }
@@ -59,11 +59,12 @@ type recordingProcessingRegistry interface {
 	RegisterActivityWithOptions(interface{}, activity.RegisterOptions)
 }
 
-func registerRecordingProcessing(registry recordingProcessingRegistry, store activities.PipelineStore, resolver activities.LocalObjectPathResolver, runner activities.AudioProbeRunner) {
-	activitySet := activities.NewRecordingProcessingActivitiesWithPipeline(
+func registerRecordingProcessing(registry recordingProcessingRegistry, store activities.NormalizingPipelineStore, resolver activities.LocalObjectPathResolver, probeRunner activities.AudioProbeRunner, normalizeRunner activities.AudioNormalizeRunner) {
+	activitySet := activities.NewRecordingProcessingActivitiesWithNormalizedAudio(
 		store,
 		resolver,
-		runner,
+		probeRunner,
+		normalizeRunner,
 		activities.FakeTranscriptionProvider{},
 		activities.FakeSummaryProvider{},
 	)
@@ -72,6 +73,7 @@ func registerRecordingProcessing(registry recordingProcessingRegistry, store act
 	registry.RegisterActivityWithOptions(activitySet.ValidateRecording, activity.RegisterOptions{Name: activities.ValidateRecordingActivityName})
 	registry.RegisterActivityWithOptions(activitySet.MarkRecordingProcessing, activity.RegisterOptions{Name: activities.MarkRecordingProcessingActivityName})
 	registry.RegisterActivityWithOptions(activitySet.ProbeRecordingAudio, activity.RegisterOptions{Name: activities.ProbeRecordingAudioActivityName})
+	registry.RegisterActivityWithOptions(activitySet.NormalizeRecordingAudio, activity.RegisterOptions{Name: activities.NormalizeRecordingAudioActivityName})
 	registry.RegisterActivityWithOptions(activitySet.MarkRecordingTranscribing, activity.RegisterOptions{Name: activities.MarkRecordingTranscribingActivityName})
 	registry.RegisterActivityWithOptions(activitySet.TranscribeRecordingAudio, activity.RegisterOptions{Name: activities.TranscribeRecordingAudioActivityName})
 	registry.RegisterActivityWithOptions(activitySet.MarkRecordingSummarizing, activity.RegisterOptions{Name: activities.MarkRecordingSummarizingActivityName})
@@ -81,7 +83,7 @@ func registerRecordingProcessing(registry recordingProcessingRegistry, store act
 }
 
 type recordingStoreClient interface {
-	activities.PipelineStore
+	activities.NormalizingPipelineStore
 	Close()
 }
 
