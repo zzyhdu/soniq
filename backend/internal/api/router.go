@@ -264,9 +264,8 @@ func recordingByIDHandler(store RecordingStore) http.HandlerFunc {
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
 		if wantsStatus {
+			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(struct {
 				ID     string                 `json:"id"`
 				Status domain.RecordingStatus `json:"status"`
@@ -290,9 +289,11 @@ func recordingByIDHandler(store RecordingStore) http.HandlerFunc {
 			if summary, ok := detailsStore.GetSummary(id); ok {
 				details.Summary = toRecordingSummaryResponse(summary)
 			}
+			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(details)
 			return
 		}
+		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(recording)
 	}
 }

@@ -42,6 +42,10 @@ type recordingDetailsFixture struct {
 	hasSummary    bool
 }
 
+type recordingOnlyStore struct {
+	stored map[string]domain.Recording
+}
+
 type objectStoreSpy struct {
 	puts []storedObject
 	err  error
@@ -105,6 +109,15 @@ func (s *fakeRecordingStore) GetSummary(recordingID string) (recordings.Recordin
 		return recordings.RecordingSummary{}, false
 	}
 	return fixture.summary, true
+}
+
+func (s recordingOnlyStore) Create(recordings.CreateRecordingInput) (domain.Recording, error) {
+	return domain.Recording{}, errors.New("create should not be called")
+}
+
+func (s recordingOnlyStore) Get(id string) (domain.Recording, bool) {
+	recording, ok := s.stored[id]
+	return recording, ok
 }
 
 func (s *recordingProcessorSpy) Enqueue(recording domain.Recording) error {
@@ -513,6 +526,25 @@ func TestGetRecordingDetailsReturnsTranscriptSegmentsAndSummary(t *testing.T) {
 	}
 	if summaryBody["recording_id"] != recording.ID || summaryBody["provider"] != "openai_compatible_llm" || summaryBody["overview"] == "" {
 		t.Fatalf("summary = %#v, want public summary DTO", summaryBody)
+	}
+}
+
+func TestGetRecordingDetailsReturnsInternalServerErrorWhenDetailsStoreMissing(t *testing.T) {
+	recording := domain.Recording{
+		ID:           "rec_no_details_store",
+		Title:        "Stored recording",
+		Status:       domain.RecordingStatusUploaded,
+		WorkflowType: domain.WorkflowTypeMemo,
+		Language:     "en",
+	}
+	router := NewRouterWithStore(recordingOnlyStore{stored: map[string]domain.Recording{recording.ID: recording}})
+	request := httptest.NewRequest(http.MethodGet, "/recordings/"+recording.ID+"/details", nil)
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusInternalServerError, response.Body.String())
 	}
 }
 
