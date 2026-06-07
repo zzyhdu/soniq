@@ -29,6 +29,11 @@ WORKER_PID=""
 LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/soniq-smoke.XXXXXX")"
 API_LOG="$LOG_DIR/api.log"
 WORKER_LOG="$LOG_DIR/worker.log"
+case "$LOCAL_STORAGE_PATH" in
+  /*) EFFECTIVE_LOCAL_STORAGE_PATH="$LOCAL_STORAGE_PATH" ;;
+  *) EFFECTIVE_LOCAL_STORAGE_PATH="$ROOT_DIR/$LOCAL_STORAGE_PATH" ;;
+esac
+EXPECTED_TRANSCRIPT_LANGUAGE="${EXPECTED_TRANSCRIPT_LANGUAGE:-$TRANSCRIPTION_LANGUAGE}"
 
 log() {
   printf '[smoke] %s\n' "$*"
@@ -105,7 +110,7 @@ start_worker() {
     TRANSCRIPTION_LANGUAGE="${13}" \
     TRANSCRIPTION_MAX_BASE64_BYTES="${14}" \
     make worker
-  ' _ "$ROOT_DIR" "$TEMPORAL_NAMESPACE" "$TEMPORAL_TASK_QUEUE" "$POSTGRES_DSN" "$STORAGE_PROVIDER" "$LOCAL_STORAGE_PATH" "$TRANSCRIPTION_PROVIDER" "$TRANSCRIPTION_BASE_URL" "$TRANSCRIPTION_API_KEY" "$MIMO_API_KEY" "$TRANSCRIPTION_MODEL" "$TRANSCRIPTION_AUTH_HEADER" "$TRANSCRIPTION_LANGUAGE" "$TRANSCRIPTION_MAX_BASE64_BYTES" >"$WORKER_LOG" 2>&1 &
+  ' _ "$ROOT_DIR" "$TEMPORAL_NAMESPACE" "$TEMPORAL_TASK_QUEUE" "$POSTGRES_DSN" "$STORAGE_PROVIDER" "$EFFECTIVE_LOCAL_STORAGE_PATH" "$TRANSCRIPTION_PROVIDER" "$TRANSCRIPTION_BASE_URL" "$TRANSCRIPTION_API_KEY" "$MIMO_API_KEY" "$TRANSCRIPTION_MODEL" "$TRANSCRIPTION_AUTH_HEADER" "$TRANSCRIPTION_LANGUAGE" "$TRANSCRIPTION_MAX_BASE64_BYTES" >"$WORKER_LOG" 2>&1 &
   WORKER_PID=$!
   sleep 2
   if ! kill -0 "$WORKER_PID" 2>/dev/null; then
@@ -126,7 +131,7 @@ start_api() {
     STORAGE_PROVIDER="$6" \
     LOCAL_STORAGE_PATH="$7" \
     make api
-  ' _ "$ROOT_DIR" "$API_ADDRESS" "$POSTGRES_DSN" "$TEMPORAL_NAMESPACE" "$TEMPORAL_TASK_QUEUE" "$STORAGE_PROVIDER" "$LOCAL_STORAGE_PATH" >>"$API_LOG" 2>&1 &
+  ' _ "$ROOT_DIR" "$API_ADDRESS" "$POSTGRES_DSN" "$TEMPORAL_NAMESPACE" "$TEMPORAL_TASK_QUEUE" "$STORAGE_PROVIDER" "$EFFECTIVE_LOCAL_STORAGE_PATH" >>"$API_LOG" 2>&1 &
   API_PID=$!
   wait_for_api
 }
@@ -220,7 +225,7 @@ apply_recording_migrations() {
 assert_uploaded_object() {
   local object_key="$1"
   local expected_size_bytes="$2"
-  local object_path="$LOCAL_STORAGE_PATH/$object_key"
+  local object_path="$EFFECTIVE_LOCAL_STORAGE_PATH/$object_key"
   if [[ ! -f "$object_path" ]]; then
     log "uploaded object does not exist: $object_path"
     return 1
@@ -292,7 +297,7 @@ assert_recording_normalized_audio_in_db() {
     return 1
   fi
 
-  object_path="$LOCAL_STORAGE_PATH/$object_key"
+  object_path="$EFFECTIVE_LOCAL_STORAGE_PATH/$object_key"
   if [[ ! -f "$object_path" ]]; then
     log "normalized audio object does not exist: $object_path"
     return 1
@@ -315,8 +320,12 @@ assert_recording_transcript_summary_in_db() {
   fi
 
   IFS=$'\t' read -r transcript_provider transcript_model transcript_language transcript_has_text transcript_raw_json_type <<<"$transcript_row"
-  if [[ -z "$transcript_provider" || -z "$transcript_model" || "$transcript_language" != "en" || "$transcript_has_text" != "t" || "$transcript_raw_json_type" != "object" ]]; then
+  if [[ -z "$transcript_provider" || -z "$transcript_model" || "$transcript_has_text" != "t" || "$transcript_raw_json_type" != "object" ]]; then
     log "unexpected DB transcript row: $transcript_row"
+    return 1
+  fi
+  if [[ -n "$EXPECTED_TRANSCRIPT_LANGUAGE" && "$transcript_language" != "$EXPECTED_TRANSCRIPT_LANGUAGE" ]]; then
+    log "unexpected DB transcript language: $transcript_language, want $EXPECTED_TRANSCRIPT_LANGUAGE"
     return 1
   fi
 
@@ -364,8 +373,8 @@ main() {
 
   apply_recording_migrations
 
-  rm -rf "$LOCAL_STORAGE_PATH"
-  mkdir -p "$LOCAL_STORAGE_PATH"
+  rm -rf "$EFFECTIVE_LOCAL_STORAGE_PATH"
+  mkdir -p "$EFFECTIVE_LOCAL_STORAGE_PATH"
 
   start_worker
   start_api
