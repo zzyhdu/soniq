@@ -2,17 +2,17 @@
 
 This document describes the current local backend workflow for Soniq.
 
-Soniq is currently in the local audio-upload, Postgres-backed recording persistence, original-audio probe, and first fake transcription/summarization milestone. The commands below intentionally run a small backend foundation:
+Soniq is currently in the local audio-upload, Postgres-backed recording persistence, original-audio probe, normalized-audio artifact, and fake transcription/summarization milestone. The commands below intentionally run a small backend foundation:
 
 - the API exposes `GET /healthz`;
 - the API exposes recording endpoints: `POST /recordings`, `POST /recordings/upload`, `GET /recordings/{id}`, and `GET /recordings/{id}/status`;
 - the production API command uses Soniq Postgres for recording metadata persistence;
 - `POST /recordings` creates metadata-only recordings; `POST /recordings/upload` accepts multipart audio, writes the original audio through an object-store seam, persists audio metadata, and then invokes the same injectable recording processor seam;
 - the production API command wires the recording processor seam to Temporal and starts `RecordingProcessingWorkflow` asynchronously;
-- the worker starts a real Temporal SDK worker, registers the recording processing workflow and Soniq Postgres-backed recording status/audio-probe/transcript/summary activities, and polls the configured task queue;
-- local filesystem object storage is implemented for development; the worker can resolve local object keys and run `ffprobe` against uploaded original audio to persist probe metadata;
-- deterministic fake transcription and summarization providers are wired for local development verification and persist transcript, transcript segment, and summary rows without external credentials;
-- S3-compatible storage, audio normalization, real ASR providers, real LLM providers, authentication, and the web UI are not implemented in this milestone.
+- the worker starts a real Temporal SDK worker, registers the recording processing workflow and Soniq Postgres-backed recording status/audio-probe/normalized-audio/transcript/summary activities, and polls the configured task queue;
+- local filesystem object storage is implemented for development; the worker resolves local object keys, runs `ffprobe` against uploaded original audio to persist probe metadata, and runs `ffmpeg` to write a deterministic normalized WAV/PCM artifact;
+- deterministic fake transcription and summarization providers are wired for local development verification; transcription reads the normalized audio artifact and persists transcript, transcript segment, and summary rows without external credentials;
+- S3-compatible storage, real ASR providers, real LLM providers, authentication, and the web UI are not implemented in this milestone.
 
 ## Prerequisites
 
@@ -83,7 +83,7 @@ To avoid opening several terminals manually, run the full smoke target from the 
 make smoke-postgres-temporal
 ```
 
-This target runs `scripts/smoke-postgres-temporal.sh`. The script starts the Compose infrastructure, applies the recording migrations if needed, starts the API and worker as temporary local background processes, generates and uploads a small valid WAV file through `POST /recordings/upload`, verifies the local object file and Postgres audio metadata, verifies the recording can be read from Postgres before and after an API restart, confirms the Temporal workflow reaches `COMPLETED`, verifies `recordings.status=completed`, verifies a `recording_audio_probes` row was persisted from real `ffprobe` output, verifies fake-provider transcript/segment/summary rows were persisted, and then stops the API/worker processes it started.
+This target runs `scripts/smoke-postgres-temporal.sh`. The script starts the Compose infrastructure, applies the recording migrations if needed, starts the API and worker as temporary local background processes, generates and uploads a small valid WAV file through `POST /recordings/upload`, verifies the local object file and Postgres audio metadata, verifies the recording can be read from Postgres before and after an API restart, confirms the Temporal workflow reaches `COMPLETED`, verifies `recordings.status=completed`, verifies a `recording_audio_probes` row was persisted from real `ffprobe` output, verifies a `recording_normalized_audios` row and local `normalized.wav` artifact were persisted from real `ffmpeg` normalization, verifies fake-provider transcript/segment/summary rows were persisted, and then stops the API/worker processes it started.
 
 The script intentionally leaves the Compose infrastructure running by default so local Postgres and Temporal state remain available for follow-up debugging. To stop Compose services after the smoke run, set:
 
@@ -163,9 +163,9 @@ Content-Type: application/json
 
 ## Use the Recording API
 
-The recording endpoints now persist metadata in Soniq Postgres in the production API path. Records survive API process restarts as long as the local Postgres volume remains intact. Audio-backed recordings also write the original uploaded file under `LOCAL_STORAGE_PATH` through the local object-store provider.
+The recording endpoints now persist metadata in Soniq Postgres in the production API path. Records survive API process restarts as long as the local Postgres volume remains intact. Audio-backed recordings also write the original uploaded file under `LOCAL_STORAGE_PATH` through the local object-store provider; the worker later writes a sibling normalized artifact named `normalized.wav`.
 
-After a recording is created successfully in Postgres, the API calls an injectable `RecordingProcessor` seam. In the production API command, that seam is wired to a Temporal-backed processor that starts `RecordingProcessingWorkflow` asynchronously with workflow ID `recording-processing-<recording_id>` on `TEMPORAL_TASK_QUEUE`. The HTTP response returns the newly created metadata record; it does not wait for workflow completion. The worker consumes that workflow from the same task queue, uses Soniq Postgres-backed activities, and updates the recording status from `uploaded` through `processing`, `transcribing`, `summarizing`, and `completed`. For audio-backed recordings, the worker resolves the original local object path, runs `ffprobe`, persists original-audio probe metadata in `recording_audio_probes`, calls deterministic fake transcription and summary providers, persists `recording_transcripts`, `recording_transcript_segments`, and `recording_summaries`, and then marks the recording `completed`. If probe, transcription, summarization, or completion fails, the workflow schedules a best-effort `failed` status update before returning the original error.
+After a recording is created successfully in Postgres, the API calls an injectable `RecordingProcessor` seam. In the production API command, that seam is wired to a Temporal-backed processor that starts `RecordingProcessingWorkflow` asynchronously with workflow ID `recording-processing-<recording_id>` on `TEMPORAL_TASK_QUEUE`. The HTTP response returns the newly created metadata record; it does not wait for workflow completion. The worker consumes that workflow from the same task queue, uses Soniq Postgres-backed activities, and updates the recording status from `uploaded` through `processing`, `transcribing`, `summarizing`, and `completed`. For audio-backed recordings, the worker resolves the original local object path, runs `ffprobe`, persists original-audio probe metadata in `recording_audio_probes`, runs `ffmpeg` normalization to create a local WAV/PCM artifact, persists normalized metadata in `recording_normalized_audios`, calls deterministic fake transcription against the normalized audio path, calls deterministic fake summary providers, persists `recording_transcripts`, `recording_transcript_segments`, and `recording_summaries`, and then marks the recording `completed`. If probe, normalization, transcription, summarization, or completion fails, the workflow schedules a best-effort `failed` status update before returning the original error.
 
 ### Upload an audio-backed recording
 
@@ -229,7 +229,7 @@ var/uploads/recordings/...
 
 The `var/` directory is ignored by git because it contains local runtime artifacts.
 
-After the Temporal worker processes the upload, it probes the original audio with `ffprobe`, stores one probe row in `recording_audio_probes`, runs deterministic fake transcription/summarization providers, and stores transcript, segment, and summary rows. For local inspection:
+After the Temporal worker processes the upload, it probes the original audio with `ffprobe`, stores one probe row in `recording_audio_probes`, normalizes the audio with `ffmpeg` to a WAV/PCM target (`pcm_s16le`, 16 kHz, mono), stores one row in `recording_normalized_audios`, runs deterministic fake transcription/summarization providers, and stores transcript, segment, and summary rows. For local inspection:
 
 ```bash
 docker compose -f compose.temporal.yml exec -T soniq-postgresql \
@@ -237,7 +237,7 @@ docker compose -f compose.temporal.yml exec -T soniq-postgresql \
   -c "SELECT recording_id, duration_seconds, format_name, codec_name, sample_rate, channels, bit_rate, probed_at FROM recording_audio_probes WHERE recording_id = '<id>'"
 ```
 
-The probe and fake transcription steps currently support local object storage only because the worker resolves `audio_object_key` to `<LOCAL_STORAGE_PATH>/<audio_object_key>` before invoking `ffprobe` or the local fake transcription provider.
+The probe, normalization, and fake transcription steps currently support local object storage only because the worker resolves object keys to `<LOCAL_STORAGE_PATH>/<object_key>` before invoking `ffprobe`, `ffmpeg`, or the local fake transcription provider. Fake transcription now reads the normalized object key from `recording_normalized_audios`; it does not silently fall back to the original upload.
 
 ### Create a metadata-only recording
 
@@ -458,11 +458,11 @@ The current Temporal implementation is intentionally narrow but no longer statel
 
 - The workflow is implemented with the real Temporal Go SDK and covered by the Temporal SDK testsuite.
 - Workflow code stays deterministic and delegates Soniq Postgres writes to activities.
-- Worker-registered activities validate that the recording exists, persist `processing`, probe original audio with `ffprobe`, persist one `recording_audio_probes` row, persist `transcribing`, persist fake-provider transcript and segment rows, persist `summarizing`, persist a fake-provider summary row, persist `completed`, and can persist `failed` on probe/transcription/summarization/completion failure paths.
+- Worker-registered activities validate that the recording exists, persist `processing`, probe original audio with `ffprobe`, persist one `recording_audio_probes` row, normalize audio with `ffmpeg`, persist one `recording_normalized_audios` row, persist `transcribing`, persist fake-provider transcript and segment rows from the normalized audio path, persist `summarizing`, persist a fake-provider summary row, persist `completed`, and can persist `failed` on probe/normalization/transcription/summarization/completion failure paths.
 - The API calls an injectable recording processor seam after `POST /recordings` and `POST /recordings/upload`; the production API command wires that seam to a Temporal client and starts `RecordingProcessingWorkflow` asynchronously.
 - Worker startup is the boundary where the code leaves in-process tests and requires a real Temporal server plus Soniq application Postgres.
 
-Real audio normalization, real ASR providers, real LLM summarization providers, provider webhooks, and S3-compatible object storage remain future milestones. Those integrations should be added separately with explicit local service configuration.
+Real ASR providers, real LLM summarization providers, provider webhooks, and S3-compatible object storage remain future milestones. Those integrations should be added separately with explicit local service configuration.
 
 ## Configuration
 
@@ -501,18 +501,17 @@ The current backend foundation provides:
 - a standard-library HTTP router;
 - `GET /healthz`;
 - Postgres-backed recording endpoints for metadata-only creation, audio upload, full-recording lookup, and status lookup;
-- SQL migrations for the `recordings` table, audio object metadata columns, `recording_audio_probes`, `recording_transcripts`, `recording_transcript_segments`, and `recording_summaries`;
+- SQL migrations for the `recordings` table, audio object metadata columns, `recording_audio_probes`, `recording_normalized_audios`, `recording_transcripts`, `recording_transcript_segments`, and `recording_summaries`;
 - a local filesystem object-store provider selected with `STORAGE_PROVIDER=local` and rooted at `LOCAL_STORAGE_PATH`;
 - API and Temporal worker command entrypoints;
 - a Temporal-backed recording processor that starts `RecordingProcessingWorkflow` after successful recording creation or upload requests;
 - a Temporal SDK recording processing workflow;
-- Soniq Postgres-backed activities for recording validation, durable status transitions, original-audio `ffprobe` metadata persistence, fake transcription persistence, and fake summary persistence;
+- Soniq Postgres-backed activities for recording validation, durable status transitions, original-audio `ffprobe` metadata persistence, ffmpeg normalized-audio metadata persistence, fake transcription persistence from normalized audio, and fake summary persistence;
 - root `Makefile` quality and smoke commands.
 
 It does not yet provide:
 
 - MinIO/S3 storage integration;
-- audio normalization/transcoding;
 - real ASR or LLM provider calls;
 - authentication/RBAC;
 - frontend UI.

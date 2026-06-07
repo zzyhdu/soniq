@@ -4,7 +4,7 @@ Soniq uses Temporal for durable audio processing workflows.
 
 ## Current implementation status
 
-The repository currently contains a local end-to-end Temporal processing foundation through original-audio probing, deterministic fake transcription, and deterministic fake summarization. The implemented boundary uses the real Temporal Go SDK and Temporal SDK testsuite, wires successful recording creation through a Temporal-backed recording processor, starts `RecordingProcessingWorkflow` asynchronously with workflow ID `recording-processing-<recording_id>`, and registers the workflow on the worker. The API supports metadata-only `POST /recordings` and multipart `POST /recordings/upload`; upload requests store the original audio through the local object-store provider and persist audio metadata before starting the workflow. The worker connects to Soniq application Postgres and registers store-backed recording activities under stable Temporal activity names, so the current workflow persists status transitions through `uploaded -> processing -> transcribing -> summarizing -> completed`, runs `ffprobe` against the uploaded original audio, persists one `recording_audio_probes` row, persists `recording_transcripts` and `recording_transcript_segments` using the fake transcription provider, and persists `recording_summaries` using the fake summary provider, with a best-effort `failed` transition if probe/transcription/summarization/completion fails. Real audio normalization, real ASR providers, real LLM providers, provider webhooks, and S3-compatible object storage remain future milestones.
+The repository currently contains a local end-to-end Temporal processing foundation through original-audio probing, ffmpeg-based audio normalization, deterministic fake transcription, and deterministic fake summarization. The implemented boundary uses the real Temporal Go SDK and Temporal SDK testsuite, wires successful recording creation through a Temporal-backed recording processor, starts `RecordingProcessingWorkflow` asynchronously with workflow ID `recording-processing-<recording_id>`, and registers the workflow on the worker. The API supports metadata-only `POST /recordings` and multipart `POST /recordings/upload`; upload requests store the original audio through the local object-store provider and persist audio metadata before starting the workflow. The worker connects to Soniq application Postgres and registers store-backed recording activities under stable Temporal activity names, so the current workflow persists status transitions through `uploaded -> processing -> transcribing -> summarizing -> completed`, runs `ffprobe` against the uploaded original audio, persists one `recording_audio_probes` row, normalizes audio to a local WAV/PCM artifact (`pcm_s16le`, 16 kHz, mono), persists one `recording_normalized_audios` row, persists `recording_transcripts` and `recording_transcript_segments` using the fake transcription provider against the normalized audio path, and persists `recording_summaries` using the fake summary provider, with a best-effort `failed` transition if probe/normalization/transcription/summarization/completion fails. Real ASR providers, real LLM providers, provider webhooks, and S3-compatible object storage remain future milestones.
 
 ## Primary workflow
 
@@ -37,6 +37,8 @@ MarkRecordingProcessing
   ↓
 ProbeRecordingAudio
   ↓
+NormalizeRecordingAudio
+  ↓
 MarkRecordingTranscribing
   ↓
 TranscribeRecordingAudio  // deterministic fake provider for now
@@ -51,8 +53,6 @@ CompleteRecordingProcessing
 Future workflow steps still planned after this boundary:
 
 ```txt
-NormalizeAudio
-  ↓
 SplitAudioIfNeeded
   ↓
 Real provider-backed TranscribeAudio / TranscribeChunks
@@ -79,7 +79,11 @@ ffprobe -v error -print_format json -show_format -show_streams
   ↓
 recording_audio_probes upsert
   ↓
-fake transcription provider
+ffmpeg -y -hide_banner -loglevel error -ac 1 -ar 16000 -c:a pcm_s16le
+  ↓
+recording_normalized_audios upsert + local normalized.wav artifact
+  ↓
+fake transcription provider reads normalized audio path
   ↓
 recording_transcripts + recording_transcript_segments upsert
   ↓
@@ -88,7 +92,7 @@ fake summary provider
 recording_summaries upsert
 ```
 
-The worker resolves local object keys under `LOCAL_STORAGE_PATH`, so the probe and fake transcription steps are currently local-storage-only. The fake providers are deterministic local development providers used to verify workflow, activity, and persistence wiring without credentials. They are not real ASR or LLM integrations.
+The worker resolves local object keys under `LOCAL_STORAGE_PATH`, so the probe, normalization, and fake transcription steps are currently local-storage-only. The fake providers are deterministic local development providers used to verify workflow, activity, and persistence wiring without credentials. They are not real ASR or LLM integrations.
 
 ## Workflow types
 

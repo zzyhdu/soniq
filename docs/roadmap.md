@@ -9,13 +9,13 @@ Completed foundation milestones:
 - Go backend skeleton with `GET /healthz`.
 - Postgres-backed recording API: `POST /recordings`, `POST /recordings/upload`, `GET /recordings/{id}`, `GET /recordings/{id}/status`.
 - Local filesystem object storage for uploaded recording audio.
-- Temporal workflow with Postgres-backed recording status, audio-probe, fake transcription, and fake summarization activities.
+- Temporal workflow with Postgres-backed recording status, audio-probe, audio-normalization, fake transcription, and fake summarization activities.
 - Temporal worker registration with Soniq Postgres-backed activities.
 - API-to-Temporal workflow start: successful recording creation/upload starts `RecordingProcessingWorkflow` asynchronously.
 - Local Temporal development environment: Docker Compose services, Makefile targets, docs, and a full smoke helper.
-- Verified local smoke path: API → local object store → Soniq Postgres → Temporal → worker → `ffprobe` → `recording_audio_probes` → fake transcription → `recording_transcripts`/segments → fake summary → `recording_summaries` → `recordings.status=completed`.
+- Verified local smoke path: API → local object store → Soniq Postgres → Temporal → worker → `ffprobe` → `recording_audio_probes` → `ffmpeg` → `recording_normalized_audios` + local `normalized.wav` → fake transcription → `recording_transcripts`/segments → fake summary → `recording_summaries` → `recordings.status=completed`.
 
-The next focus is documentation cleanup for the completed fake-provider 1F boundary, then normalization and real provider-backed transcription/summarization in later milestones.
+The next focus is final cleanup for the completed normalized-audio fake-provider boundary, then real provider-backed transcription/summarization in later milestones.
 
 ## Phase 0 — Project skeleton and architecture docs
 
@@ -93,20 +93,20 @@ Remaining future scope:
 - S3-compatible storage provider with MinIO local setup.
 - Storage download/presigned-input support for worker-side probing when the object is not local.
 
-### 1F — First transcription and summarization activities
+### 1F — First transcription, normalization, and summarization activities
 
-Status: complete for provider-neutral fake-provider foundation.
+Status: complete for provider-neutral local fake-provider foundation.
 
 Completed scope:
 
-- `recording_transcripts`, `recording_transcript_segments`, and `recording_summaries` persistence.
+- `recording_transcripts`, `recording_transcript_segments`, `recording_summaries`, and `recording_normalized_audios` persistence.
 - Workflow status transitions through `processing`, `transcribing`, `summarizing`, and `completed`.
-- Deterministic local fake transcription and summary providers wired into worker registration.
-- Full local smoke verifies probe metadata, transcript rows, segment rows, summary rows, Temporal `COMPLETED`, and `recordings.status=completed`.
+- Original-audio probe plus ffmpeg normalization to WAV/PCM (`pcm_s16le`, 16 kHz, mono).
+- Deterministic local fake transcription and summary providers wired into worker registration; transcription requires normalized audio metadata and reads the normalized local path.
+- Full local smoke verifies probe metadata, normalized audio metadata and artifact, transcript rows, segment rows, summary rows, Temporal `COMPLETED`, and `recordings.status=completed`.
 
 Remaining future scope:
 
-- Audio normalization/format policy.
 - Real ASR provider integration.
 - Real LLM provider integration.
 - Provider configuration, credentials, retries, and webhook/polling support.

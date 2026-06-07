@@ -154,8 +154,9 @@ The current application Postgres schema is intentionally smaller than the long-t
 
 - `recordings` for recording metadata, upload metadata, status, and timestamps.
 - `recording_audio_probes` for original-audio `ffprobe` metadata and raw probe JSON.
+- `recording_normalized_audios` for the current normalized WAV/PCM artifact metadata (`object_key`, `content_type`, `size_bytes`, `format_name`, `codec_name`, `sample_rate`, `channels`, `normalized_at`).
 - `recording_transcripts` for the latest provider-neutral transcript per recording.
 - `recording_transcript_segments` for ordered transcript segments.
 - `recording_summaries` for the latest provider-neutral summary per recording.
 
-`Artifact`, workspace/user tenancy tables, workflow run history, and retention policy tables are still future scope. Temporal's internal database remains separate from Soniq application Postgres.
+A generic `Artifact` table, workspace/user tenancy tables, workflow run history, and retention policy tables are still future scope. Temporal's internal database remains separate from Soniq application Postgres.

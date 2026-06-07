@@ -16,7 +16,7 @@ type StorageProvider interface {
 
 Current implementation:
 
-- `local` filesystem provider for development.
+- `local` filesystem provider for development. Original uploads and derived normalized audio artifacts are stored under `LOCAL_STORAGE_PATH`; normalized audio uses a deterministic sibling object key ending in `/normalized.wav`.
 
 Planned implementations:
 
@@ -46,7 +46,7 @@ Provider categories:
 
 Current implementation:
 
-- `fake_transcription`, a deterministic local provider used to verify workflow/activity/persistence wiring without credentials.
+- `fake_transcription`, a deterministic local provider used to verify workflow/activity/persistence wiring without credentials. In the current workflow it receives the normalized audio local path from `recording_normalized_audios`, not the original upload path.
 
 Initial real target providers:
 
