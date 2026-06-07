@@ -499,6 +499,42 @@ The current backend reads environment variables directly. Important local settin
 
 Do not commit real secrets. Keep real API keys and credentials in local environment files only.
 
+
+## OpenAI-compatible ASR smoke modes
+
+The automated ASR smoke uses a local fake server and never calls Xiaomi MiMo:
+
+```bash
+API_URL=http://localhost:18080 API_ADDRESS=:18080 bash scripts/smoke-openai-compatible-asr-fake.sh
+```
+
+Use the fake-server smoke for normal development and CI-style verification. It proves that the worker can call the OpenAI-compatible ASR adapter, send normalized WAV audio as Base64 `input_audio`, and persist transcript rows with `provider=openai_compatible_asr` and `model=mimo-v2.5-asr` without sending audio outside the machine.
+
+To manually test real Xiaomi MiMo ASR, put the real key only in local `.env` or your shell environment:
+
+```bash
+cp .env.example .env
+# edit .env locally; do not commit it
+TRANSCRIPTION_PROVIDER=openai_compatible_asr
+TRANSCRIPTION_BASE_URL=https://api.xiaomimimo.com/v1
+TRANSCRIPTION_API_KEY=<your Xiaomi MiMo key>
+TRANSCRIPTION_MODEL=mimo-v2.5-asr
+TRANSCRIPTION_AUTH_HEADER=api-key
+TRANSCRIPTION_LANGUAGE=zh
+PRIVACY_ALLOW_EXTERNAL_MODEL_PROVIDERS=true
+```
+
+Then export the values and run the regular end-to-end smoke:
+
+```bash
+set -a
+. ./.env
+set +a
+API_URL=http://localhost:18080 API_ADDRESS=:18080 bash scripts/smoke-postgres-temporal.sh
+```
+
+This manual smoke sends the normalized audio artifact to Xiaomi MiMo. Use only non-sensitive test audio unless you have confirmed the privacy/compliance implications. Never paste or commit the real API key; `.env` is ignored by git.
+
 ## Current milestone boundaries
 
 The current backend foundation provides:

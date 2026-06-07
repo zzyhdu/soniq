@@ -119,4 +119,6 @@ Fallback must be explicit because compliance-sensitive deployments may forbid ex
 
 ## Xiaomi MiMo ASR configuration target
 
-The next real transcription provider target is Xiaomi MiMo ASR (`mimo-v2.5-asr`). It uses `POST /chat/completions` at `https://api.xiaomimimo.com/v1` with a Base64 `input_audio` content part, not multipart `/audio/transcriptions`. Runtime API keys must come from local environment variables such as `TRANSCRIPTION_API_KEY` or `MIMO_API_KEY`; repository files must contain placeholders only.
+The first real transcription provider target is Xiaomi MiMo ASR (`mimo-v2.5-asr`). It uses `POST /chat/completions` at `https://api.xiaomimimo.com/v1` with a Base64 `input_audio` content part, not multipart `/audio/transcriptions`. Runtime API keys must come from local environment variables such as `TRANSCRIPTION_API_KEY` or `MIMO_API_KEY`; repository files must contain placeholders only.
+
+Automated verification must use `scripts/smoke-openai-compatible-asr-fake.sh`, which starts a local fake ASR server and does not call Xiaomi. Real Xiaomi verification is manual-only: set `TRANSCRIPTION_PROVIDER=openai_compatible_asr`, `TRANSCRIPTION_API_KEY`, `TRANSCRIPTION_MODEL=mimo-v2.5-asr`, `TRANSCRIPTION_AUTH_HEADER=api-key`, and `TRANSCRIPTION_LANGUAGE=zh` in local `.env`, then run `scripts/smoke-postgres-temporal.sh`. That manual smoke sends normalized WAV audio to Xiaomi MiMo, so use only appropriate test audio and never commit real keys.
