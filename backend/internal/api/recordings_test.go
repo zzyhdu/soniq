@@ -437,11 +437,12 @@ func TestGetRecordingDetailsReturnsTranscriptSegmentsAndSummary(t *testing.T) {
 	store.put(recording)
 	store.details[recording.ID] = recordingDetailsFixture{
 		transcript: recordings.RecordingTranscript{
-			RecordingID: recording.ID,
-			Provider:    "dashscope_asr",
-			Model:       "paraformer-v2",
-			Language:    "zh",
-			Text:        "大家早上好。",
+			RecordingID:   recording.ID,
+			Provider:      "dashscope_asr",
+			Model:         "paraformer-v2",
+			Language:      "zh",
+			Text:          "大家早上好。",
+			RawResultJSON: []byte(`{"provider":"raw-transcript"}`),
 		},
 		segments: []recordings.RecordingTranscriptSegment{{
 			RecordingID:  recording.ID,
@@ -460,6 +461,7 @@ func TestGetRecordingDetailsReturnsTranscriptSegmentsAndSummary(t *testing.T) {
 			Title:           "Weekly sync",
 			Overview:        "同步了测试计划。",
 			ContentMarkdown: "## 概览\n同步了测试计划。",
+			RawResultJSON:   []byte(`{"provider":"raw-summary"}`),
 		},
 		hasTranscript: true,
 		hasSummary:    true,
@@ -473,26 +475,44 @@ func TestGetRecordingDetailsReturnsTranscriptSegmentsAndSummary(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusOK, response.Body.String())
 	}
-	var body struct {
-		Recording  domain.Recording                        `json:"recording"`
-		Transcript *recordings.RecordingTranscript         `json:"transcript"`
-		Segments   []recordings.RecordingTranscriptSegment `json:"segments"`
-		Summary    *recordings.RecordingSummary            `json:"summary"`
-	}
+	var body map[string]any
 	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
 		t.Fatalf("decode response body: %v", err)
 	}
-	if body.Recording.ID != recording.ID {
-		t.Fatalf("recording id = %q, want %q", body.Recording.ID, recording.ID)
+	if body["Recording"] != nil || body["Transcript"] != nil || body["Summary"] != nil {
+		t.Fatalf("body uses PascalCase persistence fields: %#v", body)
 	}
-	if body.Transcript == nil || body.Transcript.Provider != "dashscope_asr" || body.Transcript.Text == "" {
-		t.Fatalf("transcript = %+v, want persisted transcript", body.Transcript)
+	recordingBody, ok := body["recording"].(map[string]any)
+	if !ok || recordingBody["id"] != recording.ID {
+		t.Fatalf("recording = %#v, want id %q", body["recording"], recording.ID)
 	}
-	if got, want := len(body.Segments), 1; got != want {
-		t.Fatalf("segments = %d, want %d", got, want)
+	transcriptBody, ok := body["transcript"].(map[string]any)
+	if !ok {
+		t.Fatalf("transcript = %#v, want object", body["transcript"])
 	}
-	if body.Summary == nil || body.Summary.Provider != "openai_compatible_llm" || body.Summary.Overview == "" {
-		t.Fatalf("summary = %+v, want persisted summary", body.Summary)
+	if transcriptBody["RecordingID"] != nil || transcriptBody["RawResultJSON"] != nil || transcriptBody["raw_result_json"] != nil {
+		t.Fatalf("transcript leaked persistence/raw fields: %#v", transcriptBody)
+	}
+	if transcriptBody["recording_id"] != recording.ID || transcriptBody["provider"] != "dashscope_asr" || transcriptBody["text"] == "" {
+		t.Fatalf("transcript = %#v, want public transcript DTO", transcriptBody)
+	}
+	segments, ok := body["segments"].([]any)
+	if !ok || len(segments) != 1 {
+		t.Fatalf("segments = %#v, want one segment", body["segments"])
+	}
+	segmentBody, ok := segments[0].(map[string]any)
+	if !ok || segmentBody["segment_index"] == nil || segmentBody["speaker_label"] != "0" || segmentBody["text"] == "" {
+		t.Fatalf("segment = %#v, want public segment DTO", segments[0])
+	}
+	summaryBody, ok := body["summary"].(map[string]any)
+	if !ok {
+		t.Fatalf("summary = %#v, want object", body["summary"])
+	}
+	if summaryBody["RecordingID"] != nil || summaryBody["RawResultJSON"] != nil || summaryBody["raw_result_json"] != nil {
+		t.Fatalf("summary leaked persistence/raw fields: %#v", summaryBody)
+	}
+	if summaryBody["recording_id"] != recording.ID || summaryBody["provider"] != "openai_compatible_llm" || summaryBody["overview"] == "" {
+		t.Fatalf("summary = %#v, want public summary DTO", summaryBody)
 	}
 }
 
