@@ -46,7 +46,15 @@ Provider categories:
 
 Current implementation:
 
-- `fake_transcription`, a deterministic local provider used to verify workflow/activity/persistence wiring without credentials. In the current workflow it receives the normalized audio local path from `recording_normalized_audios`, not the original upload path.
+- `fake_transcription`, a deterministic local provider used by default smoke tests to verify the real API/storage/Postgres/Temporal/worker/persistence pipeline without credentials. In the current workflow it receives the normalized audio local path from `recording_normalized_audios`, not the original upload path.
+- `openai_compatible_asr`, a real provider adapter shape that is covered by automated fake-server smoke tests and can be pointed at real compatible providers manually.
+- `dashscope_asr`, a native DashScope ASR adapter for explicit/manual real-provider runs.
+
+Verification boundary:
+
+- Automated smoke (`make smoke-postgres-temporal`) should keep deterministic fake model providers by default. It validates the real processing pipeline and persistence boundary without network, credentials, provider cost, or privacy risk.
+- Automated provider-shape smoke should use local fake servers such as `scripts/smoke-openai-compatible-asr-fake.sh`; this verifies request/response wiring without calling external model providers.
+- Real external ASR verification is manual/opt-in. Set provider-specific credentials in a local ignored environment and run `scripts/smoke-postgres-temporal.sh` explicitly. Do not make real provider calls part of the default smoke path.
 
 Initial real target providers:
 
@@ -65,7 +73,8 @@ type LLMProvider interface {
 
 Current implementation:
 
-- `fake_llm`, a deterministic local summary provider used to verify workflow/activity/persistence wiring without credentials.
+- `fake_llm`, a deterministic local summary provider used by default smoke tests to verify workflow/activity/persistence wiring without credentials.
+- `openai_compatible`, a real LLM adapter shape for explicit/manual compatible-provider runs.
 
 Initial real implementations:
 

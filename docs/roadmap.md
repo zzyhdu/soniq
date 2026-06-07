@@ -13,9 +13,10 @@ Completed foundation milestones:
 - Temporal worker registration with Soniq Postgres-backed activities.
 - API-to-Temporal workflow start: successful audio uploads start `RecordingProcessingWorkflow` asynchronously; metadata-only recording creation does not enqueue processing.
 - Local Temporal development environment: Docker Compose services, Makefile targets, docs, and a full smoke helper.
-- Verified local smoke path: API → local object store → Soniq Postgres → Temporal → worker → `ffprobe` → `recording_audio_probes` → `ffmpeg` → `recording_normalized_audios` + local `normalized.wav` → fake transcription → `recording_transcripts`/segments → fake summary → `recording_summaries` → `recordings.status=completed`.
+- Verified local smoke path: API → local object store → Soniq Postgres → Temporal → worker → `ffprobe` → `recording_audio_probes` → `ffmpeg` → `recording_normalized_audios` + local `normalized.wav` → fake transcription → `recording_transcripts`/segments → fake summary → `recording_summaries` → `recordings.status=completed`. This is a real pipeline/infrastructure smoke; only the model providers are deterministic fakes by default.
+- Backend-owned OpenAPI + Scalar API Console served at `/openapi.yaml` and `/api-console`, with same-origin browser "Try it" support for upload, status, and details endpoints.
 
-The next focus is final cleanup for the completed normalized-audio fake-provider boundary, then real provider-backed transcription/summarization in later milestones.
+The next focus is choosing a product direction: keep real external model providers as manual/opt-in verification while improving provider productization, or begin the basic product web UI on top of the now-documented API.
 
 ## Phase 0 — Project skeleton and architecture docs
 
@@ -111,11 +112,19 @@ Remaining future scope:
 - Real LLM provider integration.
 - Provider configuration, credentials, retries, and webhook/polling support.
 
-### 1G — Basic web UI
+### 1G — API Console developer UI
+
+Status: complete.
+
+- Backend-owned OpenAPI 3.1 contract embedded in the API binary.
+- Scalar API Console served by the Go API at `/api-console`.
+- Same-origin API visualization for health, metadata-only create, upload, status, and details.
+
+### 1H — Basic product web UI
 
 Status: planned.
 
-- Basic web UI for upload/status/result.
+- Basic product UI for upload/status/result.
 
 ## Phase 2 — Provider expansion
 
