@@ -53,9 +53,13 @@ func run(ctx context.Context, cfg config.Config) error {
 	if err != nil {
 		return err
 	}
+	summaryProvider, err := summaryProviderForConfig(cfg)
+	if err != nil {
+		return err
+	}
 
 	worker := temporalworker.New(temporalClient, cfg.TemporalTaskQueue, temporalworker.Options{})
-	registerRecordingProcessing(worker, recordingStore, storage.NewLocalStore(cfg.LocalStoragePath), activities.FFProbeRunner{}, activities.FFmpegNormalizeRunner{}, transcriptionProvider)
+	registerRecordingProcessing(worker, recordingStore, storage.NewLocalStore(cfg.LocalStoragePath), activities.FFProbeRunner{}, activities.FFmpegNormalizeRunner{}, transcriptionProvider, summaryProvider)
 
 	return worker.Run(temporalworker.InterruptCh())
 }
@@ -66,14 +70,14 @@ type recordingProcessingRegistry interface {
 	RegisterActivityWithOptions(interface{}, activity.RegisterOptions)
 }
 
-func registerRecordingProcessing(registry recordingProcessingRegistry, store activities.NormalizingPipelineStore, resolver activities.LocalObjectPathResolver, probeRunner activities.AudioProbeRunner, normalizeRunner activities.AudioNormalizeRunner, transcriptionProvider activities.TranscriptionProvider) {
+func registerRecordingProcessing(registry recordingProcessingRegistry, store activities.NormalizingPipelineStore, resolver activities.LocalObjectPathResolver, probeRunner activities.AudioProbeRunner, normalizeRunner activities.AudioNormalizeRunner, transcriptionProvider activities.TranscriptionProvider, summaryProvider activities.SummaryProvider) {
 	activitySet := activities.NewRecordingProcessingActivitiesWithNormalizedAudio(
 		store,
 		resolver,
 		probeRunner,
 		normalizeRunner,
 		transcriptionProvider,
-		activities.FakeSummaryProvider{},
+		summaryProvider,
 	)
 
 	registry.RegisterWorkflow(workflows.RecordingProcessingWorkflow)
@@ -138,6 +142,34 @@ func transcriptionProviderForConfig(cfg config.Config) (activities.Transcription
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported transcription provider %q", provider)
+	}
+}
+
+func summaryProviderForConfig(cfg config.Config) (activities.SummaryProvider, error) {
+	provider := strings.TrimSpace(cfg.LLMProvider)
+	switch provider {
+	case "", "fake_llm":
+		return activities.FakeSummaryProvider{}, nil
+	case "openai_compatible":
+		if !cfg.PrivacyAllowExternalModelProviders {
+			return nil, fmt.Errorf("external LLM provider %q is disabled by privacy settings", provider)
+		}
+		if strings.TrimSpace(cfg.LLMAPIKey) == "" {
+			return nil, fmt.Errorf("LLM_API_KEY is required for external LLM provider %q", provider)
+		}
+		if strings.TrimSpace(cfg.LLMBaseURL) == "" {
+			return nil, fmt.Errorf("LLM_BASE_URL is required for external LLM provider %q", provider)
+		}
+		if strings.TrimSpace(cfg.LLMModel) == "" {
+			return nil, fmt.Errorf("LLM_MODEL is required for external LLM provider %q", provider)
+		}
+		return activities.OpenAICompatibleSummaryProvider{
+			BaseURL: cfg.LLMBaseURL,
+			APIKey:  cfg.LLMAPIKey,
+			Model:   cfg.LLMModel,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported LLM provider %q", provider)
 	}
 }
 

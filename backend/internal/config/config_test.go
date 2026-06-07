@@ -1,8 +1,55 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"testing"
+)
+
+func clearConfigEnv(t *testing.T) {
+	t.Helper()
+	for _, key := range []string{
+		"APP_ENV",
+		"APP_PUBLIC_URL",
+		"API_ADDRESS",
+		"POSTGRES_DSN",
+		"TEMPORAL_ADDRESS",
+		"TEMPORAL_NAMESPACE",
+		"TEMPORAL_TASK_QUEUE",
+		"STORAGE_PROVIDER",
+		"LOCAL_STORAGE_PATH",
+		"TRANSCRIPTION_PROVIDER",
+		"TRANSCRIPTION_BASE_URL",
+		"TRANSCRIPTION_API_KEY",
+		"MIMO_API_KEY",
+		"TRANSCRIPTION_MODEL",
+		"TRANSCRIPTION_AUTH_HEADER",
+		"TRANSCRIPTION_LANGUAGE",
+		"TRANSCRIPTION_MAX_BASE64_BYTES",
+		"DASHSCOPE_BASE_URL",
+		"DASHSCOPE_API_KEY",
+		"DASHSCOPE_ASR_MODEL",
+		"LLM_PROVIDER",
+		"LLM_BASE_URL",
+		"LLM_API_KEY",
+		"LLM_MODEL",
+		"PRIVACY_ALLOW_EXTERNAL_MODEL_PROVIDERS",
+		"PRIVACY_DELETE_ORIGINAL_AUDIO_AFTER_TRANSCRIPTION",
+	} {
+		key := key
+		oldValue, hadValue := os.LookupEnv(key)
+		os.Unsetenv(key)
+		t.Cleanup(func() {
+			if hadValue {
+				os.Setenv(key, oldValue)
+			} else {
+				os.Unsetenv(key)
+			}
+		})
+	}
+}
 
 func TestLoadFromEnvUsesDevelopmentDefaults(t *testing.T) {
+	clearConfigEnv(t)
 	cfg := LoadFromEnv()
 
 	if cfg.AppEnv != "development" {
@@ -62,14 +109,14 @@ func TestLoadFromEnvUsesDevelopmentDefaults(t *testing.T) {
 	if cfg.DashScopeASRModel != "paraformer-v2" {
 		t.Fatalf("DashScopeASRModel = %q, want paraformer-v2", cfg.DashScopeASRModel)
 	}
-	if cfg.LLMProvider != "openai_compatible" {
-		t.Fatalf("LLMProvider = %q, want openai_compatible", cfg.LLMProvider)
+	if cfg.LLMProvider != "fake_llm" {
+		t.Fatalf("LLMProvider = %q, want fake_llm", cfg.LLMProvider)
 	}
-	if cfg.LLMBaseURL != "https://api.openai.com/v1" {
-		t.Fatalf("LLMBaseURL = %q, want https://api.openai.com/v1", cfg.LLMBaseURL)
+	if cfg.LLMBaseURL != "https://dashscope.aliyuncs.com/compatible-mode/v1" {
+		t.Fatalf("LLMBaseURL = %q, want DashScope OpenAI-compatible default", cfg.LLMBaseURL)
 	}
-	if cfg.LLMModel != "gpt-4o-mini" {
-		t.Fatalf("LLMModel = %q, want gpt-4o-mini", cfg.LLMModel)
+	if cfg.LLMModel != "qwen3.7-plus" {
+		t.Fatalf("LLMModel = %q, want qwen3.7-plus", cfg.LLMModel)
 	}
 	if !cfg.PrivacyAllowExternalModelProviders {
 		t.Fatal("PrivacyAllowExternalModelProviders = false, want true")
@@ -185,6 +232,17 @@ func TestLoadFromEnvAppliesEnvironmentOverrides(t *testing.T) {
 	}
 }
 
+func TestLoadFromEnvUsesDashScopeAPIKeyAsLLMFallback(t *testing.T) {
+	clearConfigEnv(t)
+	t.Setenv("DASHSCOPE_API_KEY", "dashscope-secret")
+
+	cfg := LoadFromEnv()
+
+	if cfg.LLMAPIKey != "dashscope-secret" {
+		t.Fatal("LLMAPIKey did not fall back to DASHSCOPE_API_KEY")
+	}
+}
+
 func TestValidateForStartupRejectsRequiredEmptyValues(t *testing.T) {
 	cfg := LoadFromEnv()
 	cfg.TemporalTaskQueue = ""
@@ -212,16 +270,16 @@ func TestValidateForStartupRejectsEmptyLocalStoragePath(t *testing.T) {
 	}
 }
 
-func TestValidateForStartupAllowsMissingLLMAPIKeyInDevelopment(t *testing.T) {
+func TestValidateForStartupAllowsMissingLLMAPIKeyForFakeProvider(t *testing.T) {
 	cfg := LoadFromEnv()
-	cfg.AppEnv = "development"
+	cfg.LLMProvider = "fake_llm"
 	cfg.LLMAPIKey = ""
 
 	if err := cfg.ValidateForStartup(); err != nil {
 		t.Fatalf("ValidateForStartup() error = %v, want nil", err)
 	}
-	if !cfg.NeedsLLMAPIKeyForExternalProvider() {
-		t.Fatal("NeedsLLMAPIKeyForExternalProvider() = false, want true")
+	if cfg.NeedsLLMAPIKeyForExternalProvider() {
+		t.Fatal("NeedsLLMAPIKeyForExternalProvider() = true for fake provider, want false")
 	}
 }
 

@@ -57,10 +57,10 @@ func LoadFromEnv() Config {
 		DashScopeBaseURL:                   envString("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/api/v1"),
 		DashScopeAPIKey:                    envString("DASHSCOPE_API_KEY", ""),
 		DashScopeASRModel:                  envString("DASHSCOPE_ASR_MODEL", "paraformer-v2"),
-		LLMProvider:                        envString("LLM_PROVIDER", "openai_compatible"),
-		LLMBaseURL:                         envString("LLM_BASE_URL", "https://api.openai.com/v1"),
-		LLMAPIKey:                          envString("LLM_API_KEY", ""),
-		LLMModel:                           envString("LLM_MODEL", "gpt-4o-mini"),
+		LLMProvider:                        envString("LLM_PROVIDER", "fake_llm"),
+		LLMBaseURL:                         envString("LLM_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+		LLMAPIKey:                          envStringWithFallback("LLM_API_KEY", "DASHSCOPE_API_KEY", ""),
+		LLMModel:                           envString("LLM_MODEL", "qwen3.7-plus"),
 		PrivacyAllowExternalModelProviders: envBool("PRIVACY_ALLOW_EXTERNAL_MODEL_PROVIDERS", true),
 		PrivacyDeleteOriginalAudioAfterTranscription: envBool("PRIVACY_DELETE_ORIGINAL_AUDIO_AFTER_TRANSCRIPTION", false),
 	}
@@ -110,6 +110,17 @@ func (c Config) ValidateForStartup() error {
 	if strings.TrimSpace(c.LLMProvider) == "" {
 		return fmt.Errorf("LLM_PROVIDER is required")
 	}
+	if c.isExternalLLMProvider() {
+		if strings.TrimSpace(c.LLMBaseURL) == "" {
+			return fmt.Errorf("LLM_BASE_URL is required for external LLM provider")
+		}
+		if strings.TrimSpace(c.LLMModel) == "" {
+			return fmt.Errorf("LLM_MODEL is required for external LLM provider")
+		}
+		if c.NeedsLLMAPIKeyForExternalProvider() {
+			return fmt.Errorf("LLM_API_KEY is required for external LLM provider")
+		}
+	}
 	return nil
 }
 
@@ -137,11 +148,12 @@ func (c Config) NeedsLLMAPIKeyForExternalProvider() bool {
 	if strings.TrimSpace(c.LLMAPIKey) != "" {
 		return false
 	}
+	return c.isExternalLLMProvider() && c.PrivacyAllowExternalModelProviders
+}
+
+func (c Config) isExternalLLMProvider() bool {
 	provider := strings.TrimSpace(c.LLMProvider)
-	if provider == "" || provider == "ollama" {
-		return false
-	}
-	return c.PrivacyAllowExternalModelProviders
+	return provider != "" && provider != "fake_llm" && provider != "ollama"
 }
 
 func envString(key, fallback string) string {

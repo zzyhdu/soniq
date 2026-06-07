@@ -18,7 +18,7 @@ func TestRegisterRecordingProcessingRegistersWorkflowAndActivities(t *testing.T)
 	worker := &recordingWorkerSpy{}
 	store := &workerRecordingStoreSpy{}
 
-	registerRecordingProcessing(worker, store, localPathResolverTestStub{}, audioProbeRunnerTestStub{}, audioNormalizeRunnerTestStub{}, activities.FakeTranscriptionProvider{})
+	registerRecordingProcessing(worker, store, localPathResolverTestStub{}, audioProbeRunnerTestStub{}, audioNormalizeRunnerTestStub{}, activities.FakeTranscriptionProvider{}, activities.FakeSummaryProvider{})
 
 	if got, want := len(worker.workflows), 1; got != want {
 		t.Fatalf("registered workflows = %d, want %d", got, want)
@@ -127,6 +127,63 @@ func TestTranscriptionProviderForConfigRejectsExternalProviderInPrivateMode(t *t
 
 	_, err := transcriptionProviderForConfig(cfg)
 	if err == nil || !strings.Contains(err.Error(), "external transcription provider") {
+		t.Fatalf("error = %v, want private-mode external provider error", err)
+	}
+}
+
+func TestSummaryProviderForConfigDefaultsToFakeProvider(t *testing.T) {
+	cfg := config.LoadFromEnv()
+	cfg.LLMProvider = "fake_llm"
+
+	provider, err := summaryProviderForConfig(cfg)
+	if err != nil {
+		t.Fatalf("summaryProviderForConfig returned error: %v", err)
+	}
+	if _, ok := provider.(activities.FakeSummaryProvider); !ok {
+		t.Fatalf("provider = %T, want FakeSummaryProvider", provider)
+	}
+}
+
+func TestSummaryProviderForConfigBuildsOpenAICompatibleLLM(t *testing.T) {
+	cfg := config.LoadFromEnv()
+	cfg.LLMProvider = "openai_compatible"
+	cfg.LLMBaseURL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+	cfg.LLMAPIKey = "summary-key"
+	cfg.LLMModel = "qwen-plus"
+
+	provider, err := summaryProviderForConfig(cfg)
+	if err != nil {
+		t.Fatalf("summaryProviderForConfig returned error: %v", err)
+	}
+	summary, ok := provider.(activities.OpenAICompatibleSummaryProvider)
+	if !ok {
+		t.Fatalf("provider = %T, want OpenAICompatibleSummaryProvider", provider)
+	}
+	if summary.BaseURL != cfg.LLMBaseURL || summary.APIKey != cfg.LLMAPIKey || summary.Model != cfg.LLMModel {
+		t.Fatalf("summary provider = %+v, want config-derived fields", summary)
+	}
+}
+
+func TestSummaryProviderForConfigRejectsMissingAPIKeyForExternalProvider(t *testing.T) {
+	cfg := config.LoadFromEnv()
+	cfg.LLMProvider = "openai_compatible"
+	cfg.LLMAPIKey = ""
+	cfg.PrivacyAllowExternalModelProviders = true
+
+	_, err := summaryProviderForConfig(cfg)
+	if err == nil || !strings.Contains(err.Error(), "LLM_API_KEY") {
+		t.Fatalf("error = %v, want missing LLM_API_KEY error", err)
+	}
+}
+
+func TestSummaryProviderForConfigRejectsExternalProviderInPrivateMode(t *testing.T) {
+	cfg := config.LoadFromEnv()
+	cfg.LLMProvider = "openai_compatible"
+	cfg.LLMAPIKey = "summary-key"
+	cfg.PrivacyAllowExternalModelProviders = false
+
+	_, err := summaryProviderForConfig(cfg)
+	if err == nil || !strings.Contains(err.Error(), "external LLM provider") {
 		t.Fatalf("error = %v, want private-mode external provider error", err)
 	}
 }

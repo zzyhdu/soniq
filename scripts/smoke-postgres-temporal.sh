@@ -23,8 +23,14 @@ TRANSCRIPTION_MAX_BASE64_BYTES="${TRANSCRIPTION_MAX_BASE64_BYTES:-10485760}"
 DASHSCOPE_BASE_URL="${DASHSCOPE_BASE_URL:-https://dashscope.aliyuncs.com/api/v1}"
 DASHSCOPE_API_KEY="${DASHSCOPE_API_KEY:-}"
 DASHSCOPE_ASR_MODEL="${DASHSCOPE_ASR_MODEL:-paraformer-v2}"
+LLM_PROVIDER="${LLM_PROVIDER:-fake_llm}"
+LLM_BASE_URL="${LLM_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}"
+LLM_API_KEY="${LLM_API_KEY:-${DASHSCOPE_API_KEY:-}}"
+LLM_MODEL="${LLM_MODEL:-qwen-plus}"
 EXPECTED_TRANSCRIPT_PROVIDER="${EXPECTED_TRANSCRIPT_PROVIDER:-}"
 EXPECTED_TRANSCRIPT_MODEL="${EXPECTED_TRANSCRIPT_MODEL:-}"
+EXPECTED_SUMMARY_PROVIDER="${EXPECTED_SUMMARY_PROVIDER:-}"
+EXPECTED_SUMMARY_MODEL="${EXPECTED_SUMMARY_MODEL:-}"
 SMOKE_DOWN="${SMOKE_DOWN:-0}"
 
 API_PID=""
@@ -115,8 +121,12 @@ start_worker() {
     DASHSCOPE_BASE_URL="${15}" \
     DASHSCOPE_API_KEY="${16}" \
     DASHSCOPE_ASR_MODEL="${17}" \
+    LLM_PROVIDER="${18}" \
+    LLM_BASE_URL="${19}" \
+    LLM_API_KEY="${20}" \
+    LLM_MODEL="${21}" \
     make worker
-  ' _ "$ROOT_DIR" "$TEMPORAL_NAMESPACE" "$TEMPORAL_TASK_QUEUE" "$POSTGRES_DSN" "$STORAGE_PROVIDER" "$EFFECTIVE_LOCAL_STORAGE_PATH" "$TRANSCRIPTION_PROVIDER" "$TRANSCRIPTION_BASE_URL" "$TRANSCRIPTION_API_KEY" "$MIMO_API_KEY" "$TRANSCRIPTION_MODEL" "$TRANSCRIPTION_AUTH_HEADER" "$TRANSCRIPTION_LANGUAGE" "$TRANSCRIPTION_MAX_BASE64_BYTES" "$DASHSCOPE_BASE_URL" "$DASHSCOPE_API_KEY" "$DASHSCOPE_ASR_MODEL" >"$WORKER_LOG" 2>&1 &
+  ' _ "$ROOT_DIR" "$TEMPORAL_NAMESPACE" "$TEMPORAL_TASK_QUEUE" "$POSTGRES_DSN" "$STORAGE_PROVIDER" "$EFFECTIVE_LOCAL_STORAGE_PATH" "$TRANSCRIPTION_PROVIDER" "$TRANSCRIPTION_BASE_URL" "$TRANSCRIPTION_API_KEY" "$MIMO_API_KEY" "$TRANSCRIPTION_MODEL" "$TRANSCRIPTION_AUTH_HEADER" "$TRANSCRIPTION_LANGUAGE" "$TRANSCRIPTION_MAX_BASE64_BYTES" "$DASHSCOPE_BASE_URL" "$DASHSCOPE_API_KEY" "$DASHSCOPE_ASR_MODEL" "$LLM_PROVIDER" "$LLM_BASE_URL" "$LLM_API_KEY" "$LLM_MODEL" >"$WORKER_LOG" 2>&1 &
   WORKER_PID=$!
   sleep 2
   if ! kill -0 "$WORKER_PID" 2>/dev/null; then
@@ -364,6 +374,14 @@ assert_recording_transcript_summary_in_db() {
   IFS=$'\t' read -r summary_provider summary_model summary_type summary_has_content summary_raw_json_type <<<"$summary_row"
   if [[ -z "$summary_provider" || -z "$summary_model" || "$summary_type" != "meeting" || "$summary_has_content" != "t" || "$summary_raw_json_type" != "object" ]]; then
     log "unexpected DB summary row: $summary_row"
+    return 1
+  fi
+  if [[ -n "$EXPECTED_SUMMARY_PROVIDER" && "$summary_provider" != "$EXPECTED_SUMMARY_PROVIDER" ]]; then
+    log "unexpected DB summary provider: $summary_provider, want $EXPECTED_SUMMARY_PROVIDER"
+    return 1
+  fi
+  if [[ -n "$EXPECTED_SUMMARY_MODEL" && "$summary_model" != "$EXPECTED_SUMMARY_MODEL" ]]; then
+    log "unexpected DB summary model: $summary_model, want $EXPECTED_SUMMARY_MODEL"
     return 1
   fi
 }
