@@ -23,7 +23,7 @@ import (
 	"go.temporal.io/sdk/client"
 )
 
-func TestBuildHandlerInjectsTemporalRecordingProcessor(t *testing.T) {
+func TestBuildHandlerCreatesRecordingSessionWithoutStartingWorkflow(t *testing.T) {
 	temporalClient := &temporalClientSpy{}
 	store := newBuildHandlerRecordingStoreSpy()
 	storeFactory := &recordingStoreFactorySpy{store: store}
@@ -70,31 +70,8 @@ func TestBuildHandlerInjectsTemporalRecordingProcessor(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&recording); err != nil {
 		t.Fatalf("decode response body: %v", err)
 	}
-	if got, want := len(temporalClient.calls), 1; got != want {
+	if got, want := len(temporalClient.calls), 0; got != want {
 		t.Fatalf("ExecuteWorkflow calls = %d, want %d", got, want)
-	}
-	call := temporalClient.calls[0]
-	if call.options.ID != "recording-processing-"+recording.ID {
-		t.Fatalf("workflow ID = %q, want recording-processing-%s", call.options.ID, recording.ID)
-	}
-	if call.options.TaskQueue != "soniq-audio-pipeline" {
-		t.Fatalf("task queue = %q, want soniq-audio-pipeline", call.options.TaskQueue)
-	}
-	if !sameFunction(call.workflow, workflows.RecordingProcessingWorkflow) {
-		t.Fatalf("workflow = %T, want RecordingProcessingWorkflow", call.workflow)
-	}
-	input, ok := call.args[0].(workflows.RecordingProcessingInput)
-	if !ok {
-		t.Fatalf("workflow arg type = %T, want RecordingProcessingInput", call.args[0])
-	}
-	if input.RecordingID != recording.ID {
-		t.Fatalf("input recording ID = %q, want %q", input.RecordingID, recording.ID)
-	}
-	if input.WorkflowType != domain.WorkflowTypeMeeting {
-		t.Fatalf("input workflow_type = %q, want meeting", input.WorkflowType)
-	}
-	if input.Language != "en" {
-		t.Fatalf("input language = %q, want en", input.Language)
 	}
 }
 
@@ -154,6 +131,29 @@ func TestBuildHandlerWiresUploadEndpointToLocalObjectStorage(t *testing.T) {
 	}
 	if got, want := len(temporalClient.calls), 1; got != want {
 		t.Fatalf("ExecuteWorkflow calls = %d, want %d", got, want)
+	}
+	call := temporalClient.calls[0]
+	if call.options.ID != "recording-processing-"+recording.ID {
+		t.Fatalf("workflow ID = %q, want recording-processing-%s", call.options.ID, recording.ID)
+	}
+	if call.options.TaskQueue != "soniq-audio-pipeline" {
+		t.Fatalf("task queue = %q, want soniq-audio-pipeline", call.options.TaskQueue)
+	}
+	if !sameFunction(call.workflow, workflows.RecordingProcessingWorkflow) {
+		t.Fatalf("workflow = %T, want RecordingProcessingWorkflow", call.workflow)
+	}
+	input, ok := call.args[0].(workflows.RecordingProcessingInput)
+	if !ok {
+		t.Fatalf("workflow arg type = %T, want RecordingProcessingInput", call.args[0])
+	}
+	if input.RecordingID != recording.ID {
+		t.Fatalf("input recording ID = %q, want %q", input.RecordingID, recording.ID)
+	}
+	if input.WorkflowType != domain.WorkflowTypeMeeting {
+		t.Fatalf("input workflow_type = %q, want meeting", input.WorkflowType)
+	}
+	if input.Language != "en" {
+		t.Fatalf("input language = %q, want en", input.Language)
 	}
 }
 

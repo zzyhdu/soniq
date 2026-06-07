@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/mock"
 	"github.com/zzyhdu/soniq/backend/internal/activities"
@@ -232,6 +233,15 @@ func TestRecordingProcessingWorkflowMarksFailedWhenSummarizationFails(t *testing
 		t.Fatalf("workflow error = %v, want original summarization error", err)
 	}
 	env.AssertExpectations(t)
+}
+
+func TestRecordingProcessingActivityTimeoutsCoverRealProviders(t *testing.T) {
+	if got, want := longRunningActivityTimeout, 6*time.Minute; got < want {
+		t.Fatalf("longRunningActivityTimeout = %s, want at least %s", got, want)
+	}
+	if got, want := shortActivityTimeout, time.Minute; got != want {
+		t.Fatalf("shortActivityTimeout = %s, want %s", got, want)
+	}
 }
 
 func registerRecordingProcessingActivityNames(env *testsuite.TestWorkflowEnvironment) {

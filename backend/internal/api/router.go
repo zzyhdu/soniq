@@ -23,12 +23,27 @@ type RecordingStore interface {
 	Get(id string) (domain.Recording, bool)
 }
 
+// RecordingDetailsStore is the optional persistence seam for transcript and summary detail reads.
+type RecordingDetailsStore interface {
+	RecordingStore
+	GetTranscript(recordingID string) (recordings.RecordingTranscript, bool)
+	ListTranscriptSegments(recordingID string) []recordings.RecordingTranscriptSegment
+	GetSummary(recordingID string) (recordings.RecordingSummary, bool)
+}
+
 // RecordingProcessor is the enqueue seam invoked after a recording is created.
 type RecordingProcessor interface {
 	Enqueue(recording domain.Recording) error
 }
 
 type noopRecordingProcessor struct{}
+
+type recordingDetailsResponse struct {
+	Recording  domain.Recording                        `json:"recording"`
+	Transcript *recordings.RecordingTranscript         `json:"transcript"`
+	Segments   []recordings.RecordingTranscriptSegment `json:"segments"`
+	Summary    *recordings.RecordingSummary            `json:"summary"`
+}
 
 type unconfiguredRecordingStore struct{}
 
@@ -60,7 +75,7 @@ func NewRouterWithProcessor(store RecordingStore, processor RecordingProcessor) 
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", healthzHandler)
-	mux.HandleFunc("/recordings", createRecordingHandler(store, processor))
+	mux.HandleFunc("/recordings", createRecordingHandler(store))
 	mux.HandleFunc("/recordings/", recordingByIDHandler(store))
 	return mux
 }
@@ -73,13 +88,13 @@ func NewRouterWithStorage(store RecordingStore, processor RecordingProcessor, ob
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", healthzHandler)
-	mux.HandleFunc("/recordings", createRecordingHandler(store, processor))
+	mux.HandleFunc("/recordings", createRecordingHandler(store))
 	mux.HandleFunc("/recordings/upload", uploadRecordingHandler(store, processor, objectStore))
 	mux.HandleFunc("/recordings/", recordingByIDHandler(store))
 	return mux
 }
 
-func createRecordingHandler(store RecordingStore, processor RecordingProcessor) http.HandlerFunc {
+func createRecordingHandler(store RecordingStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.Header().Set("Allow", http.MethodPost)
@@ -104,10 +119,6 @@ func createRecordingHandler(store RecordingStore, processor RecordingProcessor) 
 		})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		if err := processor.Enqueue(recording); err != nil {
-			http.Error(w, "enqueue recording processor", http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -193,7 +204,11 @@ func recordingByIDHandler(store RecordingStore) http.HandlerFunc {
 		}
 
 		path := strings.TrimPrefix(r.URL.Path, "/recordings/")
+		var wantsDetails bool
 		id, wantsStatus := strings.CutSuffix(path, "/status")
+		if !wantsStatus {
+			id, wantsDetails = strings.CutSuffix(path, "/details")
+		}
 		if id == "" || strings.Contains(id, "/") {
 			http.NotFound(w, r)
 			return
@@ -215,6 +230,23 @@ func recordingByIDHandler(store RecordingStore) http.HandlerFunc {
 				ID:     recording.ID,
 				Status: recording.Status,
 			})
+			return
+		}
+		if wantsDetails {
+			detailsStore, ok := store.(RecordingDetailsStore)
+			if !ok {
+				http.Error(w, "recording details are not configured", http.StatusInternalServerError)
+				return
+			}
+			details := recordingDetailsResponse{Recording: recording, Segments: []recordings.RecordingTranscriptSegment{}}
+			if transcript, ok := detailsStore.GetTranscript(id); ok {
+				details.Transcript = &transcript
+				details.Segments = detailsStore.ListTranscriptSegments(id)
+			}
+			if summary, ok := detailsStore.GetSummary(id); ok {
+				details.Summary = &summary
+			}
+			_ = json.NewEncoder(w).Encode(details)
 			return
 		}
 		_ = json.NewEncoder(w).Encode(recording)

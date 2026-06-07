@@ -30,7 +30,16 @@ type recordingProcessorSpy struct {
 type fakeRecordingStore struct {
 	created []recordings.CreateRecordingInput
 	stored  map[string]domain.Recording
+	details map[string]recordingDetailsFixture
 	nextID  int
+}
+
+type recordingDetailsFixture struct {
+	transcript    recordings.RecordingTranscript
+	segments      []recordings.RecordingTranscriptSegment
+	summary       recordings.RecordingSummary
+	hasTranscript bool
+	hasSummary    bool
 }
 
 type objectStoreSpy struct {
@@ -45,7 +54,7 @@ type storedObject struct {
 }
 
 func newFakeRecordingStore() *fakeRecordingStore {
-	return &fakeRecordingStore{stored: make(map[string]domain.Recording)}
+	return &fakeRecordingStore{stored: make(map[string]domain.Recording), details: make(map[string]recordingDetailsFixture)}
 }
 
 func (s *fakeRecordingStore) Create(input recordings.CreateRecordingInput) (domain.Recording, error) {
@@ -75,6 +84,27 @@ func (s *fakeRecordingStore) Get(id string) (domain.Recording, bool) {
 
 func (s *fakeRecordingStore) put(recording domain.Recording) {
 	s.stored[recording.ID] = recording
+}
+
+func (s *fakeRecordingStore) GetTranscript(recordingID string) (recordings.RecordingTranscript, bool) {
+	fixture, ok := s.details[recordingID]
+	if !ok || !fixture.hasTranscript {
+		return recordings.RecordingTranscript{}, false
+	}
+	return fixture.transcript, true
+}
+
+func (s *fakeRecordingStore) ListTranscriptSegments(recordingID string) []recordings.RecordingTranscriptSegment {
+	fixture := s.details[recordingID]
+	return append([]recordings.RecordingTranscriptSegment(nil), fixture.segments...)
+}
+
+func (s *fakeRecordingStore) GetSummary(recordingID string) (recordings.RecordingSummary, bool) {
+	fixture, ok := s.details[recordingID]
+	if !ok || !fixture.hasSummary {
+		return recordings.RecordingSummary{}, false
+	}
+	return fixture.summary, true
 }
 
 func (s *recordingProcessorSpy) Enqueue(recording domain.Recording) error {
@@ -184,7 +214,7 @@ func TestCreateRecordingReturnsCreatedRecording(t *testing.T) {
 	}
 }
 
-func TestCreateRecordingEnqueuesProcessing(t *testing.T) {
+func TestCreateRecordingDoesNotEnqueueProcessingWithoutAudio(t *testing.T) {
 	store := newFakeRecordingStore()
 	processor := &recordingProcessorSpy{}
 	router := NewRouterWithProcessor(store, processor)
@@ -199,14 +229,11 @@ func TestCreateRecordingEnqueuesProcessing(t *testing.T) {
 	if response.Code != http.StatusCreated {
 		t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusCreated, response.Body.String())
 	}
-	if got, want := len(processor.enqueued), 1; got != want {
+	if got, want := len(processor.enqueued), 0; got != want {
 		t.Fatalf("enqueued recordings = %d, want %d", got, want)
 	}
-	if !strings.HasPrefix(processor.enqueued[0].ID, "rec_") {
-		t.Fatalf("enqueued id = %q, want rec_ prefix", processor.enqueued[0].ID)
-	}
-	if processor.enqueued[0].WorkflowType != domain.WorkflowTypeMeeting {
-		t.Fatalf("enqueued workflow_type = %q, want meeting", processor.enqueued[0].WorkflowType)
+	if got, want := len(store.created), 1; got != want {
+		t.Fatalf("created recordings = %d, want %d", got, want)
 	}
 }
 
@@ -225,26 +252,6 @@ func TestCreateRecordingDoesNotEnqueueInvalidRequest(t *testing.T) {
 		t.Fatalf("status code = %d, want %d", response.Code, http.StatusBadRequest)
 	}
 	if got, want := len(processor.enqueued), 0; got != want {
-		t.Fatalf("enqueued recordings = %d, want %d", got, want)
-	}
-}
-
-func TestCreateRecordingReturnsServerErrorWhenEnqueueFails(t *testing.T) {
-	store := newFakeRecordingStore()
-	processor := &recordingProcessorSpy{err: errRecordingProcessorFailed}
-	router := NewRouterWithProcessor(store, processor)
-
-	requestBody := strings.NewReader(`{"title":"Weekly sync","workflow_type":"meeting","language":"en"}`)
-	request := httptest.NewRequest(http.MethodPost, "/recordings", requestBody)
-	request.Header.Set("Content-Type", "application/json")
-	response := httptest.NewRecorder()
-
-	router.ServeHTTP(response, request)
-
-	if response.Code != http.StatusInternalServerError {
-		t.Fatalf("status code = %d, want %d", response.Code, http.StatusInternalServerError)
-	}
-	if got, want := len(processor.enqueued), 1; got != want {
 		t.Fatalf("enqueued recordings = %d, want %d", got, want)
 	}
 }
@@ -415,6 +422,77 @@ func TestGetRecordingReturnsExistingRecording(t *testing.T) {
 	}
 	if body != created {
 		t.Fatalf("body = %+v, want %+v", body, created)
+	}
+}
+
+func TestGetRecordingDetailsReturnsTranscriptSegmentsAndSummary(t *testing.T) {
+	store := newFakeRecordingStore()
+	recording := domain.Recording{
+		ID:           "rec_details",
+		Title:        "Weekly sync",
+		Status:       domain.RecordingStatusCompleted,
+		WorkflowType: domain.WorkflowTypeMeeting,
+		Language:     "zh",
+	}
+	store.put(recording)
+	store.details[recording.ID] = recordingDetailsFixture{
+		transcript: recordings.RecordingTranscript{
+			RecordingID: recording.ID,
+			Provider:    "dashscope_asr",
+			Model:       "paraformer-v2",
+			Language:    "zh",
+			Text:        "大家早上好。",
+		},
+		segments: []recordings.RecordingTranscriptSegment{{
+			RecordingID:  recording.ID,
+			SegmentIndex: 0,
+			StartMS:      90,
+			EndMS:        1200,
+			SpeakerLabel: "0",
+			Text:         "大家早上好。",
+			Confidence:   0.98,
+		}},
+		summary: recordings.RecordingSummary{
+			RecordingID:     recording.ID,
+			Provider:        "openai_compatible_llm",
+			Model:           "qwen3.7-plus",
+			Type:            domain.WorkflowTypeMeeting,
+			Title:           "Weekly sync",
+			Overview:        "同步了测试计划。",
+			ContentMarkdown: "## 概览\n同步了测试计划。",
+		},
+		hasTranscript: true,
+		hasSummary:    true,
+	}
+	router := NewRouterWithStore(store)
+	request := httptest.NewRequest(http.MethodGet, "/recordings/"+recording.ID+"/details", nil)
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusOK, response.Body.String())
+	}
+	var body struct {
+		Recording  domain.Recording                        `json:"recording"`
+		Transcript *recordings.RecordingTranscript         `json:"transcript"`
+		Segments   []recordings.RecordingTranscriptSegment `json:"segments"`
+		Summary    *recordings.RecordingSummary            `json:"summary"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body.Recording.ID != recording.ID {
+		t.Fatalf("recording id = %q, want %q", body.Recording.ID, recording.ID)
+	}
+	if body.Transcript == nil || body.Transcript.Provider != "dashscope_asr" || body.Transcript.Text == "" {
+		t.Fatalf("transcript = %+v, want persisted transcript", body.Transcript)
+	}
+	if got, want := len(body.Segments), 1; got != want {
+		t.Fatalf("segments = %d, want %d", got, want)
+	}
+	if body.Summary == nil || body.Summary.Provider != "openai_compatible_llm" || body.Summary.Overview == "" {
+		t.Fatalf("summary = %+v, want persisted summary", body.Summary)
 	}
 }
 
