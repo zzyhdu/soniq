@@ -5,12 +5,64 @@
     "audio_file": "wav-16k/zh-casual-pauses.wav",
     "content_type": "audio/wav",
     "description": "WAV PCM 16 kHz mono",
-    "tts_model": "mimo-v2-tts",
-    "tts_voice": "default_zh",
-    "response_id": "c5789ea8e9314f52970392c539bda8b2",
-    "audio_id": "ab4c13aef38c45759b71ccd2a5f3b0ec",
-    "audio_transcript": null,
-    "bytes": 798798
+    "tts_model": "mimo-v2.5-tts",
+    "utterance_count": 4,
+    "utterance_gap_seconds": 0.45,
+    "speaker_profiles": {
+      "小李": {
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速"
+      },
+      "小张": {
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚"
+      }
+    },
+    "utterances": [
+      {
+        "speaker": "小李",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：小李。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "嗯，我先说一下今天的进展。整体来说，接口已经跑通了。",
+        "response_id": "e5ffb0a1806c47c5b4b473e1ecf2ee0b",
+        "audio_id": "16e3a2584d774ed382b1b8367994ad09"
+      },
+      {
+        "speaker": "小张",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：小张。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "对，不过我觉得，还需要再测几段真实语音，不能只看一条结果。",
+        "response_id": "71e757f7523748de831b1fdcad848ff9",
+        "audio_id": "aff5e690ed634f6999c960a250c404e9"
+      },
+      {
+        "speaker": "小李",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：小李。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "是的，尤其是停顿、口头语，还有比较快的语速，都要覆盖一下。",
+        "response_id": "667487d0551641358db6030e3d4fedcc",
+        "audio_id": "7f6844f1267c4df7b66b8834fc8efa82"
+      },
+      {
+        "speaker": "小张",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：小张。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "那我们先把测试音频整理好，晚上再看转录质量。",
+        "response_id": "98750936648b4b44a3466b25314d98dd",
+        "audio_id": "8913258f2b71410285bdc6a90c449f28"
+      }
+    ],
+    "bytes": 765198
   },
   {
     "id": "zh-casual-pauses",
@@ -18,12 +70,64 @@
     "audio_file": "wav-24k/zh-casual-pauses.wav",
     "content_type": "audio/wav",
     "description": "WAV PCM 24 kHz mono",
-    "tts_model": "mimo-v2-tts",
-    "tts_voice": "default_zh",
-    "response_id": "c5789ea8e9314f52970392c539bda8b2",
-    "audio_id": "ab4c13aef38c45759b71ccd2a5f3b0ec",
-    "audio_transcript": null,
-    "bytes": 1198158
+    "tts_model": "mimo-v2.5-tts",
+    "utterance_count": 4,
+    "utterance_gap_seconds": 0.45,
+    "speaker_profiles": {
+      "小李": {
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速"
+      },
+      "小张": {
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚"
+      }
+    },
+    "utterances": [
+      {
+        "speaker": "小李",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：小李。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "嗯，我先说一下今天的进展。整体来说，接口已经跑通了。",
+        "response_id": "e5ffb0a1806c47c5b4b473e1ecf2ee0b",
+        "audio_id": "16e3a2584d774ed382b1b8367994ad09"
+      },
+      {
+        "speaker": "小张",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：小张。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "对，不过我觉得，还需要再测几段真实语音，不能只看一条结果。",
+        "response_id": "71e757f7523748de831b1fdcad848ff9",
+        "audio_id": "aff5e690ed634f6999c960a250c404e9"
+      },
+      {
+        "speaker": "小李",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：小李。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "是的，尤其是停顿、口头语，还有比较快的语速，都要覆盖一下。",
+        "response_id": "667487d0551641358db6030e3d4fedcc",
+        "audio_id": "7f6844f1267c4df7b66b8834fc8efa82"
+      },
+      {
+        "speaker": "小张",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：小张。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "那我们先把测试音频整理好，晚上再看转录质量。",
+        "response_id": "98750936648b4b44a3466b25314d98dd",
+        "audio_id": "8913258f2b71410285bdc6a90c449f28"
+      }
+    ],
+    "bytes": 1147758
   },
   {
     "id": "zh-casual-pauses",
@@ -31,12 +135,64 @@
     "audio_file": "mp3/zh-casual-pauses.mp3",
     "content_type": "audio/mpeg",
     "description": "MP3 mono",
-    "tts_model": "mimo-v2-tts",
-    "tts_voice": "default_zh",
-    "response_id": "c5789ea8e9314f52970392c539bda8b2",
-    "audio_id": "ab4c13aef38c45759b71ccd2a5f3b0ec",
-    "audio_transcript": null,
-    "bytes": 207813
+    "tts_model": "mimo-v2.5-tts",
+    "utterance_count": 4,
+    "utterance_gap_seconds": 0.45,
+    "speaker_profiles": {
+      "小李": {
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速"
+      },
+      "小张": {
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚"
+      }
+    },
+    "utterances": [
+      {
+        "speaker": "小李",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：小李。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "嗯，我先说一下今天的进展。整体来说，接口已经跑通了。",
+        "response_id": "e5ffb0a1806c47c5b4b473e1ecf2ee0b",
+        "audio_id": "16e3a2584d774ed382b1b8367994ad09"
+      },
+      {
+        "speaker": "小张",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：小张。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "对，不过我觉得，还需要再测几段真实语音，不能只看一条结果。",
+        "response_id": "71e757f7523748de831b1fdcad848ff9",
+        "audio_id": "aff5e690ed634f6999c960a250c404e9"
+      },
+      {
+        "speaker": "小李",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：小李。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "是的，尤其是停顿、口头语，还有比较快的语速，都要覆盖一下。",
+        "response_id": "667487d0551641358db6030e3d4fedcc",
+        "audio_id": "7f6844f1267c4df7b66b8834fc8efa82"
+      },
+      {
+        "speaker": "小张",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：小张。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "那我们先把测试音频整理好，晚上再看转录质量。",
+        "response_id": "98750936648b4b44a3466b25314d98dd",
+        "audio_id": "8913258f2b71410285bdc6a90c449f28"
+      }
+    ],
+    "bytes": 182205
   },
   {
     "id": "zh-casual-pauses",
@@ -44,12 +200,64 @@
     "audio_file": "flac/zh-casual-pauses.flac",
     "content_type": "audio/flac",
     "description": "FLAC 22.05 kHz mono",
-    "tts_model": "mimo-v2-tts",
-    "tts_voice": "default_zh",
-    "response_id": "c5789ea8e9314f52970392c539bda8b2",
-    "audio_id": "ab4c13aef38c45759b71ccd2a5f3b0ec",
-    "audio_transcript": null,
-    "bytes": 661191
+    "tts_model": "mimo-v2.5-tts",
+    "utterance_count": 4,
+    "utterance_gap_seconds": 0.45,
+    "speaker_profiles": {
+      "小李": {
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速"
+      },
+      "小张": {
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚"
+      }
+    },
+    "utterances": [
+      {
+        "speaker": "小李",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：小李。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "嗯，我先说一下今天的进展。整体来说，接口已经跑通了。",
+        "response_id": "e5ffb0a1806c47c5b4b473e1ecf2ee0b",
+        "audio_id": "16e3a2584d774ed382b1b8367994ad09"
+      },
+      {
+        "speaker": "小张",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：小张。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "对，不过我觉得，还需要再测几段真实语音，不能只看一条结果。",
+        "response_id": "71e757f7523748de831b1fdcad848ff9",
+        "audio_id": "aff5e690ed634f6999c960a250c404e9"
+      },
+      {
+        "speaker": "小李",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：小李。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "是的，尤其是停顿、口头语，还有比较快的语速，都要覆盖一下。",
+        "response_id": "667487d0551641358db6030e3d4fedcc",
+        "audio_id": "7f6844f1267c4df7b66b8834fc8efa82"
+      },
+      {
+        "speaker": "小张",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：小张。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "那我们先把测试音频整理好，晚上再看转录质量。",
+        "response_id": "98750936648b4b44a3466b25314d98dd",
+        "audio_id": "8913258f2b71410285bdc6a90c449f28"
+      }
+    ],
+    "bytes": 520448
   },
   {
     "id": "zh-casual-pauses",
@@ -57,12 +265,64 @@
     "audio_file": "ogg-opus/zh-casual-pauses.ogg",
     "content_type": "audio/ogg",
     "description": "Ogg Opus mono",
-    "tts_model": "mimo-v2-tts",
-    "tts_voice": "default_zh",
-    "response_id": "c5789ea8e9314f52970392c539bda8b2",
-    "audio_id": "ab4c13aef38c45759b71ccd2a5f3b0ec",
-    "audio_transcript": null,
-    "bytes": 100100
+    "tts_model": "mimo-v2.5-tts",
+    "utterance_count": 4,
+    "utterance_gap_seconds": 0.45,
+    "speaker_profiles": {
+      "小李": {
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速"
+      },
+      "小张": {
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚"
+      }
+    },
+    "utterances": [
+      {
+        "speaker": "小李",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：小李。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "嗯，我先说一下今天的进展。整体来说，接口已经跑通了。",
+        "response_id": "e5ffb0a1806c47c5b4b473e1ecf2ee0b",
+        "audio_id": "16e3a2584d774ed382b1b8367994ad09"
+      },
+      {
+        "speaker": "小张",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：小张。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "对，不过我觉得，还需要再测几段真实语音，不能只看一条结果。",
+        "response_id": "71e757f7523748de831b1fdcad848ff9",
+        "audio_id": "aff5e690ed634f6999c960a250c404e9"
+      },
+      {
+        "speaker": "小李",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：小李。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "是的，尤其是停顿、口头语，还有比较快的语速，都要覆盖一下。",
+        "response_id": "667487d0551641358db6030e3d4fedcc",
+        "audio_id": "7f6844f1267c4df7b66b8834fc8efa82"
+      },
+      {
+        "speaker": "小张",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：小张。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "那我们先把测试音频整理好，晚上再看转录质量。",
+        "response_id": "98750936648b4b44a3466b25314d98dd",
+        "audio_id": "8913258f2b71410285bdc6a90c449f28"
+      }
+    ],
+    "bytes": 88189
   },
   {
     "id": "zh-meeting-dialogue",
@@ -70,12 +330,64 @@
     "audio_file": "wav-16k/zh-meeting-dialogue.wav",
     "content_type": "audio/wav",
     "description": "WAV PCM 16 kHz mono",
-    "tts_model": "mimo-v2-tts",
-    "tts_voice": "default_zh",
-    "response_id": "7e43327c8ade417f9761381620ae5e17",
-    "audio_id": "e6c55c41d9af4ea69c602b7c2336117f",
-    "audio_transcript": null,
-    "bytes": 829518
+    "tts_model": "mimo-v2.5-tts",
+    "utterance_count": 4,
+    "utterance_gap_seconds": 0.45,
+    "speaker_profiles": {
+      "小王": {
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速"
+      },
+      "李老师": {
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚"
+      }
+    },
+    "utterances": [
+      {
+        "speaker": "小王",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：小王。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "早上好，李老师。今天的项目会议几点开始？",
+        "response_id": "d3c60fd8b08a45979ca08f0b6a4f3d5b",
+        "audio_id": "7b975c7050824c67b7cc18116ee285a1"
+      },
+      {
+        "speaker": "李老师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：李老师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "早上好，小王。会议十点开始，主要讨论语音转录功能的测试结果。",
+        "response_id": "d5d50259bc45460c98f39b5dbdac7c94",
+        "audio_id": "0aa146e29cf245048dfe7f0ce14cb49a"
+      },
+      {
+        "speaker": "小王",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：小王。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "好的，我已经准备了一段中文对话音频，用来检查转录准确率。",
+        "response_id": "f29ad40cea8e4ac0bed5e770994d55c5",
+        "audio_id": "8fa951becddd42d780028ecec5e2bda3"
+      },
+      {
+        "speaker": "李老师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：李老师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "很好。我们重点看看标点、专有名词，还有说话内容是否完整。",
+        "response_id": "5598b007702543ca95e0cecca9ef8da6",
+        "audio_id": "01351c1325bb4398bd14ed83a7cee19c"
+      }
+    ],
+    "bytes": 754958
   },
   {
     "id": "zh-meeting-dialogue",
@@ -83,12 +395,64 @@
     "audio_file": "wav-24k/zh-meeting-dialogue.wav",
     "content_type": "audio/wav",
     "description": "WAV PCM 24 kHz mono",
-    "tts_model": "mimo-v2-tts",
-    "tts_voice": "default_zh",
-    "response_id": "7e43327c8ade417f9761381620ae5e17",
-    "audio_id": "e6c55c41d9af4ea69c602b7c2336117f",
-    "audio_transcript": null,
-    "bytes": 1244238
+    "tts_model": "mimo-v2.5-tts",
+    "utterance_count": 4,
+    "utterance_gap_seconds": 0.45,
+    "speaker_profiles": {
+      "小王": {
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速"
+      },
+      "李老师": {
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚"
+      }
+    },
+    "utterances": [
+      {
+        "speaker": "小王",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：小王。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "早上好，李老师。今天的项目会议几点开始？",
+        "response_id": "d3c60fd8b08a45979ca08f0b6a4f3d5b",
+        "audio_id": "7b975c7050824c67b7cc18116ee285a1"
+      },
+      {
+        "speaker": "李老师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：李老师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "早上好，小王。会议十点开始，主要讨论语音转录功能的测试结果。",
+        "response_id": "d5d50259bc45460c98f39b5dbdac7c94",
+        "audio_id": "0aa146e29cf245048dfe7f0ce14cb49a"
+      },
+      {
+        "speaker": "小王",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：小王。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "好的，我已经准备了一段中文对话音频，用来检查转录准确率。",
+        "response_id": "f29ad40cea8e4ac0bed5e770994d55c5",
+        "audio_id": "8fa951becddd42d780028ecec5e2bda3"
+      },
+      {
+        "speaker": "李老师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：李老师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "很好。我们重点看看标点、专有名词，还有说话内容是否完整。",
+        "response_id": "5598b007702543ca95e0cecca9ef8da6",
+        "audio_id": "01351c1325bb4398bd14ed83a7cee19c"
+      }
+    ],
+    "bytes": 1132398
   },
   {
     "id": "zh-meeting-dialogue",
@@ -96,12 +460,64 @@
     "audio_file": "mp3/zh-meeting-dialogue.mp3",
     "content_type": "audio/mpeg",
     "description": "MP3 mono",
-    "tts_model": "mimo-v2-tts",
-    "tts_voice": "default_zh",
-    "response_id": "7e43327c8ade417f9761381620ae5e17",
-    "audio_id": "e6c55c41d9af4ea69c602b7c2336117f",
-    "audio_transcript": null,
-    "bytes": 211653
+    "tts_model": "mimo-v2.5-tts",
+    "utterance_count": 4,
+    "utterance_gap_seconds": 0.45,
+    "speaker_profiles": {
+      "小王": {
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速"
+      },
+      "李老师": {
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚"
+      }
+    },
+    "utterances": [
+      {
+        "speaker": "小王",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：小王。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "早上好，李老师。今天的项目会议几点开始？",
+        "response_id": "d3c60fd8b08a45979ca08f0b6a4f3d5b",
+        "audio_id": "7b975c7050824c67b7cc18116ee285a1"
+      },
+      {
+        "speaker": "李老师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：李老师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "早上好，小王。会议十点开始，主要讨论语音转录功能的测试结果。",
+        "response_id": "d5d50259bc45460c98f39b5dbdac7c94",
+        "audio_id": "0aa146e29cf245048dfe7f0ce14cb49a"
+      },
+      {
+        "speaker": "小王",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：小王。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "好的，我已经准备了一段中文对话音频，用来检查转录准确率。",
+        "response_id": "f29ad40cea8e4ac0bed5e770994d55c5",
+        "audio_id": "8fa951becddd42d780028ecec5e2bda3"
+      },
+      {
+        "speaker": "李老师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：李老师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "很好。我们重点看看标点、专有名词，还有说话内容是否完整。",
+        "response_id": "5598b007702543ca95e0cecca9ef8da6",
+        "audio_id": "01351c1325bb4398bd14ed83a7cee19c"
+      }
+    ],
+    "bytes": 175821
   },
   {
     "id": "zh-meeting-dialogue",
@@ -109,12 +525,64 @@
     "audio_file": "flac/zh-meeting-dialogue.flac",
     "content_type": "audio/flac",
     "description": "FLAC 22.05 kHz mono",
-    "tts_model": "mimo-v2-tts",
-    "tts_voice": "default_zh",
-    "response_id": "7e43327c8ade417f9761381620ae5e17",
-    "audio_id": "e6c55c41d9af4ea69c602b7c2336117f",
-    "audio_transcript": null,
-    "bytes": 692149
+    "tts_model": "mimo-v2.5-tts",
+    "utterance_count": 4,
+    "utterance_gap_seconds": 0.45,
+    "speaker_profiles": {
+      "小王": {
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速"
+      },
+      "李老师": {
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚"
+      }
+    },
+    "utterances": [
+      {
+        "speaker": "小王",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：小王。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "早上好，李老师。今天的项目会议几点开始？",
+        "response_id": "d3c60fd8b08a45979ca08f0b6a4f3d5b",
+        "audio_id": "7b975c7050824c67b7cc18116ee285a1"
+      },
+      {
+        "speaker": "李老师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：李老师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "早上好，小王。会议十点开始，主要讨论语音转录功能的测试结果。",
+        "response_id": "d5d50259bc45460c98f39b5dbdac7c94",
+        "audio_id": "0aa146e29cf245048dfe7f0ce14cb49a"
+      },
+      {
+        "speaker": "小王",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：小王。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "好的，我已经准备了一段中文对话音频，用来检查转录准确率。",
+        "response_id": "f29ad40cea8e4ac0bed5e770994d55c5",
+        "audio_id": "8fa951becddd42d780028ecec5e2bda3"
+      },
+      {
+        "speaker": "李老师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：李老师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "很好。我们重点看看标点、专有名词，还有说话内容是否完整。",
+        "response_id": "5598b007702543ca95e0cecca9ef8da6",
+        "audio_id": "01351c1325bb4398bd14ed83a7cee19c"
+      }
+    ],
+    "bytes": 486458
   },
   {
     "id": "zh-meeting-dialogue",
@@ -122,12 +590,64 @@
     "audio_file": "ogg-opus/zh-meeting-dialogue.ogg",
     "content_type": "audio/ogg",
     "description": "Ogg Opus mono",
-    "tts_model": "mimo-v2-tts",
-    "tts_voice": "default_zh",
-    "response_id": "7e43327c8ade417f9761381620ae5e17",
-    "audio_id": "e6c55c41d9af4ea69c602b7c2336117f",
-    "audio_transcript": null,
-    "bytes": 102968
+    "tts_model": "mimo-v2.5-tts",
+    "utterance_count": 4,
+    "utterance_gap_seconds": 0.45,
+    "speaker_profiles": {
+      "小王": {
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速"
+      },
+      "李老师": {
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚"
+      }
+    },
+    "utterances": [
+      {
+        "speaker": "小王",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：小王。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "早上好，李老师。今天的项目会议几点开始？",
+        "response_id": "d3c60fd8b08a45979ca08f0b6a4f3d5b",
+        "audio_id": "7b975c7050824c67b7cc18116ee285a1"
+      },
+      {
+        "speaker": "李老师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：李老师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "早上好，小王。会议十点开始，主要讨论语音转录功能的测试结果。",
+        "response_id": "d5d50259bc45460c98f39b5dbdac7c94",
+        "audio_id": "0aa146e29cf245048dfe7f0ce14cb49a"
+      },
+      {
+        "speaker": "小王",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：小王。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "好的，我已经准备了一段中文对话音频，用来检查转录准确率。",
+        "response_id": "f29ad40cea8e4ac0bed5e770994d55c5",
+        "audio_id": "8fa951becddd42d780028ecec5e2bda3"
+      },
+      {
+        "speaker": "李老师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：李老师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "很好。我们重点看看标点、专有名词，还有说话内容是否完整。",
+        "response_id": "5598b007702543ca95e0cecca9ef8da6",
+        "audio_id": "01351c1325bb4398bd14ed83a7cee19c"
+      }
+    ],
+    "bytes": 85941
   },
   {
     "id": "zh-numbers-dates",
@@ -135,12 +655,64 @@
     "audio_file": "wav-16k/zh-numbers-dates.wav",
     "content_type": "audio/wav",
     "description": "WAV PCM 16 kHz mono",
-    "tts_model": "mimo-v2-tts",
-    "tts_voice": "default_zh",
-    "response_id": "5b592bdb0879473797f30b298f6ce540",
-    "audio_id": "bcf8adac50684295904f172cefecfd64",
-    "audio_transcript": null,
-    "bytes": 727118
+    "tts_model": "mimo-v2.5-tts",
+    "utterance_count": 4,
+    "utterance_gap_seconds": 0.45,
+    "speaker_profiles": {
+      "主持人": {
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速"
+      },
+      "工程师": {
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚"
+      }
+    },
+    "utterances": [
+      {
+        "speaker": "主持人",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：主持人。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "请大家确认一下时间。今天是六月七日，下午两点三十分开始评审。",
+        "response_id": "d54229dcc1a14acebeb700c4ace6ec4d",
+        "audio_id": "87c6ff03c8ff489885f8dfc22eb70e5d"
+      },
+      {
+        "speaker": "工程师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：工程师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "这次测试音频长度大约三十八秒，采样率是一万六千赫兹。",
+        "response_id": "7782073fc0f34b9f967f204cec66fdd5",
+        "audio_id": "24103072f1f14087b57716001a0485ae"
+      },
+      {
+        "speaker": "主持人",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：主持人。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "如果准确率超过百分之九十五，我们就进入下一阶段。",
+        "response_id": "d12237042e2e4f5cb4d0127bc8585fbc",
+        "audio_id": "70bad0183c0f4a49bd73ff5b3d5446f8"
+      },
+      {
+        "speaker": "工程师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：工程师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "好的，我会记录每个错误，包括数字、日期和百分比。",
+        "response_id": "e09332f51d414aad9c2e2482e1ca146e",
+        "audio_id": "9d8a84170a1c4753981f100c65bcdfd0"
+      }
+    ],
+    "bytes": 806158
   },
   {
     "id": "zh-numbers-dates",
@@ -148,12 +720,64 @@
     "audio_file": "wav-24k/zh-numbers-dates.wav",
     "content_type": "audio/wav",
     "description": "WAV PCM 24 kHz mono",
-    "tts_model": "mimo-v2-tts",
-    "tts_voice": "default_zh",
-    "response_id": "5b592bdb0879473797f30b298f6ce540",
-    "audio_id": "bcf8adac50684295904f172cefecfd64",
-    "audio_transcript": null,
-    "bytes": 1090638
+    "tts_model": "mimo-v2.5-tts",
+    "utterance_count": 4,
+    "utterance_gap_seconds": 0.45,
+    "speaker_profiles": {
+      "主持人": {
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速"
+      },
+      "工程师": {
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚"
+      }
+    },
+    "utterances": [
+      {
+        "speaker": "主持人",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：主持人。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "请大家确认一下时间。今天是六月七日，下午两点三十分开始评审。",
+        "response_id": "d54229dcc1a14acebeb700c4ace6ec4d",
+        "audio_id": "87c6ff03c8ff489885f8dfc22eb70e5d"
+      },
+      {
+        "speaker": "工程师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：工程师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "这次测试音频长度大约三十八秒，采样率是一万六千赫兹。",
+        "response_id": "7782073fc0f34b9f967f204cec66fdd5",
+        "audio_id": "24103072f1f14087b57716001a0485ae"
+      },
+      {
+        "speaker": "主持人",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：主持人。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "如果准确率超过百分之九十五，我们就进入下一阶段。",
+        "response_id": "d12237042e2e4f5cb4d0127bc8585fbc",
+        "audio_id": "70bad0183c0f4a49bd73ff5b3d5446f8"
+      },
+      {
+        "speaker": "工程师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：工程师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "好的，我会记录每个错误，包括数字、日期和百分比。",
+        "response_id": "e09332f51d414aad9c2e2482e1ca146e",
+        "audio_id": "9d8a84170a1c4753981f100c65bcdfd0"
+      }
+    ],
+    "bytes": 1209198
   },
   {
     "id": "zh-numbers-dates",
@@ -161,12 +785,64 @@
     "audio_file": "mp3/zh-numbers-dates.mp3",
     "content_type": "audio/mpeg",
     "description": "MP3 mono",
-    "tts_model": "mimo-v2-tts",
-    "tts_voice": "default_zh",
-    "response_id": "5b592bdb0879473797f30b298f6ce540",
-    "audio_id": "bcf8adac50684295904f172cefecfd64",
-    "audio_transcript": null,
-    "bytes": 193797
+    "tts_model": "mimo-v2.5-tts",
+    "utterance_count": 4,
+    "utterance_gap_seconds": 0.45,
+    "speaker_profiles": {
+      "主持人": {
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速"
+      },
+      "工程师": {
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚"
+      }
+    },
+    "utterances": [
+      {
+        "speaker": "主持人",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：主持人。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "请大家确认一下时间。今天是六月七日，下午两点三十分开始评审。",
+        "response_id": "d54229dcc1a14acebeb700c4ace6ec4d",
+        "audio_id": "87c6ff03c8ff489885f8dfc22eb70e5d"
+      },
+      {
+        "speaker": "工程师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：工程师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "这次测试音频长度大约三十八秒，采样率是一万六千赫兹。",
+        "response_id": "7782073fc0f34b9f967f204cec66fdd5",
+        "audio_id": "24103072f1f14087b57716001a0485ae"
+      },
+      {
+        "speaker": "主持人",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：主持人。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "如果准确率超过百分之九十五，我们就进入下一阶段。",
+        "response_id": "d12237042e2e4f5cb4d0127bc8585fbc",
+        "audio_id": "70bad0183c0f4a49bd73ff5b3d5446f8"
+      },
+      {
+        "speaker": "工程师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：工程师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "好的，我会记录每个错误，包括数字、日期和百分比。",
+        "response_id": "e09332f51d414aad9c2e2482e1ca146e",
+        "audio_id": "9d8a84170a1c4753981f100c65bcdfd0"
+      }
+    ],
+    "bytes": 194493
   },
   {
     "id": "zh-numbers-dates",
@@ -174,12 +850,64 @@
     "audio_file": "flac/zh-numbers-dates.flac",
     "content_type": "audio/flac",
     "description": "FLAC 22.05 kHz mono",
-    "tts_model": "mimo-v2-tts",
-    "tts_voice": "default_zh",
-    "response_id": "5b592bdb0879473797f30b298f6ce540",
-    "audio_id": "bcf8adac50684295904f172cefecfd64",
-    "audio_transcript": null,
-    "bytes": 630469
+    "tts_model": "mimo-v2.5-tts",
+    "utterance_count": 4,
+    "utterance_gap_seconds": 0.45,
+    "speaker_profiles": {
+      "主持人": {
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速"
+      },
+      "工程师": {
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚"
+      }
+    },
+    "utterances": [
+      {
+        "speaker": "主持人",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：主持人。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "请大家确认一下时间。今天是六月七日，下午两点三十分开始评审。",
+        "response_id": "d54229dcc1a14acebeb700c4ace6ec4d",
+        "audio_id": "87c6ff03c8ff489885f8dfc22eb70e5d"
+      },
+      {
+        "speaker": "工程师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：工程师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "这次测试音频长度大约三十八秒，采样率是一万六千赫兹。",
+        "response_id": "7782073fc0f34b9f967f204cec66fdd5",
+        "audio_id": "24103072f1f14087b57716001a0485ae"
+      },
+      {
+        "speaker": "主持人",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：主持人。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "如果准确率超过百分之九十五，我们就进入下一阶段。",
+        "response_id": "d12237042e2e4f5cb4d0127bc8585fbc",
+        "audio_id": "70bad0183c0f4a49bd73ff5b3d5446f8"
+      },
+      {
+        "speaker": "工程师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：工程师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "好的，我会记录每个错误，包括数字、日期和百分比。",
+        "response_id": "e09332f51d414aad9c2e2482e1ca146e",
+        "audio_id": "9d8a84170a1c4753981f100c65bcdfd0"
+      }
+    ],
+    "bytes": 552918
   },
   {
     "id": "zh-numbers-dates",
@@ -187,12 +915,64 @@
     "audio_file": "ogg-opus/zh-numbers-dates.ogg",
     "content_type": "audio/ogg",
     "description": "Ogg Opus mono",
-    "tts_model": "mimo-v2-tts",
-    "tts_voice": "default_zh",
-    "response_id": "5b592bdb0879473797f30b298f6ce540",
-    "audio_id": "bcf8adac50684295904f172cefecfd64",
-    "audio_transcript": null,
-    "bytes": 91739
+    "tts_model": "mimo-v2.5-tts",
+    "utterance_count": 4,
+    "utterance_gap_seconds": 0.45,
+    "speaker_profiles": {
+      "主持人": {
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速"
+      },
+      "工程师": {
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚"
+      }
+    },
+    "utterances": [
+      {
+        "speaker": "主持人",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：主持人。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "请大家确认一下时间。今天是六月七日，下午两点三十分开始评审。",
+        "response_id": "d54229dcc1a14acebeb700c4ace6ec4d",
+        "audio_id": "87c6ff03c8ff489885f8dfc22eb70e5d"
+      },
+      {
+        "speaker": "工程师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：工程师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "这次测试音频长度大约三十八秒，采样率是一万六千赫兹。",
+        "response_id": "7782073fc0f34b9f967f204cec66fdd5",
+        "audio_id": "24103072f1f14087b57716001a0485ae"
+      },
+      {
+        "speaker": "主持人",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：主持人。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "如果准确率超过百分之九十五，我们就进入下一阶段。",
+        "response_id": "d12237042e2e4f5cb4d0127bc8585fbc",
+        "audio_id": "70bad0183c0f4a49bd73ff5b3d5446f8"
+      },
+      {
+        "speaker": "工程师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：工程师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "好的，我会记录每个错误，包括数字、日期和百分比。",
+        "response_id": "e09332f51d414aad9c2e2482e1ca146e",
+        "audio_id": "9d8a84170a1c4753981f100c65bcdfd0"
+      }
+    ],
+    "bytes": 92632
   },
   {
     "id": "zh-product-terms",
@@ -200,12 +980,64 @@
     "audio_file": "wav-16k/zh-product-terms.wav",
     "content_type": "audio/wav",
     "description": "WAV PCM 16 kHz mono",
-    "tts_model": "mimo-v2-tts",
-    "tts_voice": "default_zh",
-    "response_id": "5ce7f438bf4741ac89b2de744ac558a4",
-    "audio_id": "973a8301494d4031802e6337f2932e1a",
-    "audio_transcript": null,
-    "bytes": 977998
+    "tts_model": "mimo-v2.5-tts",
+    "utterance_count": 4,
+    "utterance_gap_seconds": 0.45,
+    "speaker_profiles": {
+      "产品经理": {
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速"
+      },
+      "工程师": {
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚"
+      }
+    },
+    "utterances": [
+      {
+        "speaker": "产品经理",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：产品经理。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "Soniq 的后端已经接入 Temporal 工作流，也使用 Postgres 保存转录结果。",
+        "response_id": "3ae350fc5c9543a7b5bf77f96b8670e6",
+        "audio_id": "091baa85123b4c72b56f8142fbbbe192"
+      },
+      {
+        "speaker": "工程师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：工程师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "这次我们会调用小米 MiMo 的 ASR 接口，模型名称是 mimo-v2.5-asr。",
+        "response_id": "a471adf5c5684f2ab09596d68568e3c0",
+        "audio_id": "160caf815ea44d5385a3fddabb87d580"
+      },
+      {
+        "speaker": "产品经理",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：产品经理。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "请特别检查 Soniq、MiMo、Postgres 和 Temporal 这些专有名词。",
+        "response_id": "5eca0ec714564ec7933be91ee83cba34",
+        "audio_id": "16d8fa3f292e4ae191468ffcddd882e0"
+      },
+      {
+        "speaker": "工程师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：工程师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "明白，我会对比原文和转录文本，看看是否需要增加词表或提示词。",
+        "response_id": "a5ba9dfec65b480fbaaeb6ed48251350",
+        "audio_id": "5b9d37e37eb14de499b5eb43b5b0cdce"
+      }
+    ],
+    "bytes": 944398
   },
   {
     "id": "zh-product-terms",
@@ -213,12 +1045,64 @@
     "audio_file": "wav-24k/zh-product-terms.wav",
     "content_type": "audio/wav",
     "description": "WAV PCM 24 kHz mono",
-    "tts_model": "mimo-v2-tts",
-    "tts_voice": "default_zh",
-    "response_id": "5ce7f438bf4741ac89b2de744ac558a4",
-    "audio_id": "973a8301494d4031802e6337f2932e1a",
-    "audio_transcript": null,
-    "bytes": 1466958
+    "tts_model": "mimo-v2.5-tts",
+    "utterance_count": 4,
+    "utterance_gap_seconds": 0.45,
+    "speaker_profiles": {
+      "产品经理": {
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速"
+      },
+      "工程师": {
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚"
+      }
+    },
+    "utterances": [
+      {
+        "speaker": "产品经理",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：产品经理。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "Soniq 的后端已经接入 Temporal 工作流，也使用 Postgres 保存转录结果。",
+        "response_id": "3ae350fc5c9543a7b5bf77f96b8670e6",
+        "audio_id": "091baa85123b4c72b56f8142fbbbe192"
+      },
+      {
+        "speaker": "工程师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：工程师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "这次我们会调用小米 MiMo 的 ASR 接口，模型名称是 mimo-v2.5-asr。",
+        "response_id": "a471adf5c5684f2ab09596d68568e3c0",
+        "audio_id": "160caf815ea44d5385a3fddabb87d580"
+      },
+      {
+        "speaker": "产品经理",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：产品经理。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "请特别检查 Soniq、MiMo、Postgres 和 Temporal 这些专有名词。",
+        "response_id": "5eca0ec714564ec7933be91ee83cba34",
+        "audio_id": "16d8fa3f292e4ae191468ffcddd882e0"
+      },
+      {
+        "speaker": "工程师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：工程师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "明白，我会对比原文和转录文本，看看是否需要增加词表或提示词。",
+        "response_id": "a5ba9dfec65b480fbaaeb6ed48251350",
+        "audio_id": "5b9d37e37eb14de499b5eb43b5b0cdce"
+      }
+    ],
+    "bytes": 1416558
   },
   {
     "id": "zh-product-terms",
@@ -226,12 +1110,64 @@
     "audio_file": "mp3/zh-product-terms.mp3",
     "content_type": "audio/mpeg",
     "description": "MP3 mono",
-    "tts_model": "mimo-v2-tts",
-    "tts_voice": "default_zh",
-    "response_id": "5ce7f438bf4741ac89b2de744ac558a4",
-    "audio_id": "973a8301494d4031802e6337f2932e1a",
-    "audio_transcript": null,
-    "bytes": 253629
+    "tts_model": "mimo-v2.5-tts",
+    "utterance_count": 4,
+    "utterance_gap_seconds": 0.45,
+    "speaker_profiles": {
+      "产品经理": {
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速"
+      },
+      "工程师": {
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚"
+      }
+    },
+    "utterances": [
+      {
+        "speaker": "产品经理",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：产品经理。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "Soniq 的后端已经接入 Temporal 工作流，也使用 Postgres 保存转录结果。",
+        "response_id": "3ae350fc5c9543a7b5bf77f96b8670e6",
+        "audio_id": "091baa85123b4c72b56f8142fbbbe192"
+      },
+      {
+        "speaker": "工程师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：工程师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "这次我们会调用小米 MiMo 的 ASR 接口，模型名称是 mimo-v2.5-asr。",
+        "response_id": "a471adf5c5684f2ab09596d68568e3c0",
+        "audio_id": "160caf815ea44d5385a3fddabb87d580"
+      },
+      {
+        "speaker": "产品经理",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：产品经理。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "请特别检查 Soniq、MiMo、Postgres 和 Temporal 这些专有名词。",
+        "response_id": "5eca0ec714564ec7933be91ee83cba34",
+        "audio_id": "16d8fa3f292e4ae191468ffcddd882e0"
+      },
+      {
+        "speaker": "工程师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：工程师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "明白，我会对比原文和转录文本，看看是否需要增加词表或提示词。",
+        "response_id": "a5ba9dfec65b480fbaaeb6ed48251350",
+        "audio_id": "5b9d37e37eb14de499b5eb43b5b0cdce"
+      }
+    ],
+    "bytes": 225813
   },
   {
     "id": "zh-product-terms",
@@ -239,12 +1175,64 @@
     "audio_file": "flac/zh-product-terms.flac",
     "content_type": "audio/flac",
     "description": "FLAC 22.05 kHz mono",
-    "tts_model": "mimo-v2-tts",
-    "tts_voice": "default_zh",
-    "response_id": "5ce7f438bf4741ac89b2de744ac558a4",
-    "audio_id": "973a8301494d4031802e6337f2932e1a",
-    "audio_transcript": null,
-    "bytes": 821735
+    "tts_model": "mimo-v2.5-tts",
+    "utterance_count": 4,
+    "utterance_gap_seconds": 0.45,
+    "speaker_profiles": {
+      "产品经理": {
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速"
+      },
+      "工程师": {
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚"
+      }
+    },
+    "utterances": [
+      {
+        "speaker": "产品经理",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：产品经理。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "Soniq 的后端已经接入 Temporal 工作流，也使用 Postgres 保存转录结果。",
+        "response_id": "3ae350fc5c9543a7b5bf77f96b8670e6",
+        "audio_id": "091baa85123b4c72b56f8142fbbbe192"
+      },
+      {
+        "speaker": "工程师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：工程师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "这次我们会调用小米 MiMo 的 ASR 接口，模型名称是 mimo-v2.5-asr。",
+        "response_id": "a471adf5c5684f2ab09596d68568e3c0",
+        "audio_id": "160caf815ea44d5385a3fddabb87d580"
+      },
+      {
+        "speaker": "产品经理",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：产品经理。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "请特别检查 Soniq、MiMo、Postgres 和 Temporal 这些专有名词。",
+        "response_id": "5eca0ec714564ec7933be91ee83cba34",
+        "audio_id": "16d8fa3f292e4ae191468ffcddd882e0"
+      },
+      {
+        "speaker": "工程师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：工程师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "明白，我会对比原文和转录文本，看看是否需要增加词表或提示词。",
+        "response_id": "a5ba9dfec65b480fbaaeb6ed48251350",
+        "audio_id": "5b9d37e37eb14de499b5eb43b5b0cdce"
+      }
+    ],
+    "bytes": 615219
   },
   {
     "id": "zh-product-terms",
@@ -252,11 +1240,638 @@
     "audio_file": "ogg-opus/zh-product-terms.ogg",
     "content_type": "audio/ogg",
     "description": "Ogg Opus mono",
-    "tts_model": "mimo-v2-tts",
-    "tts_voice": "default_zh",
-    "response_id": "5ce7f438bf4741ac89b2de744ac558a4",
-    "audio_id": "973a8301494d4031802e6337f2932e1a",
-    "audio_transcript": null,
-    "bytes": 121791
+    "tts_model": "mimo-v2.5-tts",
+    "utterance_count": 4,
+    "utterance_gap_seconds": 0.45,
+    "speaker_profiles": {
+      "产品经理": {
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速"
+      },
+      "工程师": {
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚"
+      }
+    },
+    "utterances": [
+      {
+        "speaker": "产品经理",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：产品经理。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "Soniq 的后端已经接入 Temporal 工作流，也使用 Postgres 保存转录结果。",
+        "response_id": "3ae350fc5c9543a7b5bf77f96b8670e6",
+        "audio_id": "091baa85123b4c72b56f8142fbbbe192"
+      },
+      {
+        "speaker": "工程师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：工程师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "这次我们会调用小米 MiMo 的 ASR 接口，模型名称是 mimo-v2.5-asr。",
+        "response_id": "a471adf5c5684f2ab09596d68568e3c0",
+        "audio_id": "160caf815ea44d5385a3fddabb87d580"
+      },
+      {
+        "speaker": "产品经理",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：产品经理。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "请特别检查 Soniq、MiMo、Postgres 和 Temporal 这些专有名词。",
+        "response_id": "5eca0ec714564ec7933be91ee83cba34",
+        "audio_id": "16d8fa3f292e4ae191468ffcddd882e0"
+      },
+      {
+        "speaker": "工程师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：工程师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "明白，我会对比原文和转录文本，看看是否需要增加词表或提示词。",
+        "response_id": "a5ba9dfec65b480fbaaeb6ed48251350",
+        "audio_id": "5b9d37e37eb14de499b5eb43b5b0cdce"
+      }
+    ],
+    "bytes": 108887
+  },
+  {
+    "id": "zh-four-speaker-standup",
+    "text_file": "zh-four-speaker-standup.txt",
+    "audio_file": "wav-16k/zh-four-speaker-standup.wav",
+    "content_type": "audio/wav",
+    "description": "WAV PCM 16 kHz mono",
+    "tts_model": "mimo-v2.5-tts",
+    "utterance_count": 8,
+    "utterance_gap_seconds": 0.45,
+    "speaker_profiles": {
+      "产品经理": {
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速"
+      },
+      "工程师": {
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚"
+      },
+      "主持人": {
+        "profile": "speaker_c",
+        "voice": "白桦",
+        "style": "成熟男性主持人，会议主持语气，声音厚实稳重，标准自然语速"
+      },
+      "测试同学": {
+        "profile": "speaker_d",
+        "voice": "冰糖",
+        "style": "温和女性同事，口语自然，声音柔和，标准自然语速"
+      }
+    },
+    "utterances": [
+      {
+        "speaker": "产品经理",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：产品经理。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "大家早上好，我们先快速同步一下今天的语音转录测试计划。",
+        "response_id": "2ba41365327545ef997f4c69aad504af",
+        "audio_id": "68ac5d86b4a742388253c5bcac9c3661"
+      },
+      {
+        "speaker": "工程师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：工程师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "我这边会先上传多格式音频，包括 MP3、FLAC 和 Ogg Opus，确认 normalize 链路稳定。",
+        "response_id": "35c64efe71624206b76d28cbb3b14993",
+        "audio_id": "77191d622dd2455fb431eeb18e3c65af"
+      },
+      {
+        "speaker": "主持人",
+        "profile": "speaker_c",
+        "voice": "白桦",
+        "style": "成熟男性主持人，会议主持语气，声音厚实稳重，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：主持人。声音设定：成熟男性主持人，会议主持语气，声音厚实稳重，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "好的，请注意记录每个环节的耗时，尤其是上传、转码、转录和摘要生成。",
+        "response_id": "8ed95c57d53b45c7a5c1b8440d49acf0",
+        "audio_id": "5f70a4dce83c453f8c17ca4840bd34c1"
+      },
+      {
+        "speaker": "测试同学",
+        "profile": "speaker_d",
+        "voice": "冰糖",
+        "style": "温和女性同事，口语自然，声音柔和，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：测试同学。声音设定：温和女性同事，口语自然，声音柔和，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "我会重点检查多人对话里的说话人切换、专有名词，以及数字时间是否识别准确。",
+        "response_id": "f1e74fd7de844ebfa4992fc958820c0c",
+        "audio_id": "cc7084f6c5c34fedaab9e4c47bf6136f"
+      },
+      {
+        "speaker": "产品经理",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：产品经理。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "如果这组测试通过，我们下午就评估真实会议录音的效果。",
+        "response_id": "4cdef2e5b17e4af7891fe89e5ff78786",
+        "audio_id": "ec0ceb22c999412ca2a58dac2a91a343"
+      },
+      {
+        "speaker": "工程师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：工程师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "没问题，我也会确认 Postgres 里的 transcript 和 summary 数据是否完整。",
+        "response_id": "d35df59d52764611b6ef11c5303fbbc0",
+        "audio_id": "a6b7a4c287a74f2883668fd12efeff2e"
+      },
+      {
+        "speaker": "主持人",
+        "profile": "speaker_c",
+        "voice": "白桦",
+        "style": "成熟男性主持人，会议主持语气，声音厚实稳重，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：主持人。声音设定：成熟男性主持人，会议主持语气，声音厚实稳重，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "那我们就按这个顺序执行，十分钟后回来看第一轮结果。",
+        "response_id": "2ea6822dcc094286869cf024994e4cb5",
+        "audio_id": "51e185b525b546a8a0bcb794a383c550"
+      },
+      {
+        "speaker": "测试同学",
+        "profile": "speaker_d",
+        "voice": "冰糖",
+        "style": "温和女性同事，口语自然，声音柔和，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：测试同学。声音设定：温和女性同事，口语自然，声音柔和，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "收到，我会把发现的问题整理成清单，方便后续优化。",
+        "response_id": "2b4a290b04af46f296717daabe0811a5",
+        "audio_id": "1fa1ae15c3d34db3a3b4c60f1f20843b"
+      }
+    ],
+    "bytes": 1836558
+  },
+  {
+    "id": "zh-four-speaker-standup",
+    "text_file": "zh-four-speaker-standup.txt",
+    "audio_file": "wav-24k/zh-four-speaker-standup.wav",
+    "content_type": "audio/wav",
+    "description": "WAV PCM 24 kHz mono",
+    "tts_model": "mimo-v2.5-tts",
+    "utterance_count": 8,
+    "utterance_gap_seconds": 0.45,
+    "speaker_profiles": {
+      "产品经理": {
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速"
+      },
+      "工程师": {
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚"
+      },
+      "主持人": {
+        "profile": "speaker_c",
+        "voice": "白桦",
+        "style": "成熟男性主持人，会议主持语气，声音厚实稳重，标准自然语速"
+      },
+      "测试同学": {
+        "profile": "speaker_d",
+        "voice": "冰糖",
+        "style": "温和女性同事，口语自然，声音柔和，标准自然语速"
+      }
+    },
+    "utterances": [
+      {
+        "speaker": "产品经理",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：产品经理。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "大家早上好，我们先快速同步一下今天的语音转录测试计划。",
+        "response_id": "2ba41365327545ef997f4c69aad504af",
+        "audio_id": "68ac5d86b4a742388253c5bcac9c3661"
+      },
+      {
+        "speaker": "工程师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：工程师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "我这边会先上传多格式音频，包括 MP3、FLAC 和 Ogg Opus，确认 normalize 链路稳定。",
+        "response_id": "35c64efe71624206b76d28cbb3b14993",
+        "audio_id": "77191d622dd2455fb431eeb18e3c65af"
+      },
+      {
+        "speaker": "主持人",
+        "profile": "speaker_c",
+        "voice": "白桦",
+        "style": "成熟男性主持人，会议主持语气，声音厚实稳重，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：主持人。声音设定：成熟男性主持人，会议主持语气，声音厚实稳重，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "好的，请注意记录每个环节的耗时，尤其是上传、转码、转录和摘要生成。",
+        "response_id": "8ed95c57d53b45c7a5c1b8440d49acf0",
+        "audio_id": "5f70a4dce83c453f8c17ca4840bd34c1"
+      },
+      {
+        "speaker": "测试同学",
+        "profile": "speaker_d",
+        "voice": "冰糖",
+        "style": "温和女性同事，口语自然，声音柔和，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：测试同学。声音设定：温和女性同事，口语自然，声音柔和，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "我会重点检查多人对话里的说话人切换、专有名词，以及数字时间是否识别准确。",
+        "response_id": "f1e74fd7de844ebfa4992fc958820c0c",
+        "audio_id": "cc7084f6c5c34fedaab9e4c47bf6136f"
+      },
+      {
+        "speaker": "产品经理",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：产品经理。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "如果这组测试通过，我们下午就评估真实会议录音的效果。",
+        "response_id": "4cdef2e5b17e4af7891fe89e5ff78786",
+        "audio_id": "ec0ceb22c999412ca2a58dac2a91a343"
+      },
+      {
+        "speaker": "工程师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：工程师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "没问题，我也会确认 Postgres 里的 transcript 和 summary 数据是否完整。",
+        "response_id": "d35df59d52764611b6ef11c5303fbbc0",
+        "audio_id": "a6b7a4c287a74f2883668fd12efeff2e"
+      },
+      {
+        "speaker": "主持人",
+        "profile": "speaker_c",
+        "voice": "白桦",
+        "style": "成熟男性主持人，会议主持语气，声音厚实稳重，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：主持人。声音设定：成熟男性主持人，会议主持语气，声音厚实稳重，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "那我们就按这个顺序执行，十分钟后回来看第一轮结果。",
+        "response_id": "2ea6822dcc094286869cf024994e4cb5",
+        "audio_id": "51e185b525b546a8a0bcb794a383c550"
+      },
+      {
+        "speaker": "测试同学",
+        "profile": "speaker_d",
+        "voice": "冰糖",
+        "style": "温和女性同事，口语自然，声音柔和，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：测试同学。声音设定：温和女性同事，口语自然，声音柔和，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "收到，我会把发现的问题整理成清单，方便后续优化。",
+        "response_id": "2b4a290b04af46f296717daabe0811a5",
+        "audio_id": "1fa1ae15c3d34db3a3b4c60f1f20843b"
+      }
+    ],
+    "bytes": 2754798
+  },
+  {
+    "id": "zh-four-speaker-standup",
+    "text_file": "zh-four-speaker-standup.txt",
+    "audio_file": "mp3/zh-four-speaker-standup.mp3",
+    "content_type": "audio/mpeg",
+    "description": "MP3 mono",
+    "tts_model": "mimo-v2.5-tts",
+    "utterance_count": 8,
+    "utterance_gap_seconds": 0.45,
+    "speaker_profiles": {
+      "产品经理": {
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速"
+      },
+      "工程师": {
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚"
+      },
+      "主持人": {
+        "profile": "speaker_c",
+        "voice": "白桦",
+        "style": "成熟男性主持人，会议主持语气，声音厚实稳重，标准自然语速"
+      },
+      "测试同学": {
+        "profile": "speaker_d",
+        "voice": "冰糖",
+        "style": "温和女性同事，口语自然，声音柔和，标准自然语速"
+      }
+    },
+    "utterances": [
+      {
+        "speaker": "产品经理",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：产品经理。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "大家早上好，我们先快速同步一下今天的语音转录测试计划。",
+        "response_id": "2ba41365327545ef997f4c69aad504af",
+        "audio_id": "68ac5d86b4a742388253c5bcac9c3661"
+      },
+      {
+        "speaker": "工程师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：工程师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "我这边会先上传多格式音频，包括 MP3、FLAC 和 Ogg Opus，确认 normalize 链路稳定。",
+        "response_id": "35c64efe71624206b76d28cbb3b14993",
+        "audio_id": "77191d622dd2455fb431eeb18e3c65af"
+      },
+      {
+        "speaker": "主持人",
+        "profile": "speaker_c",
+        "voice": "白桦",
+        "style": "成熟男性主持人，会议主持语气，声音厚实稳重，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：主持人。声音设定：成熟男性主持人，会议主持语气，声音厚实稳重，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "好的，请注意记录每个环节的耗时，尤其是上传、转码、转录和摘要生成。",
+        "response_id": "8ed95c57d53b45c7a5c1b8440d49acf0",
+        "audio_id": "5f70a4dce83c453f8c17ca4840bd34c1"
+      },
+      {
+        "speaker": "测试同学",
+        "profile": "speaker_d",
+        "voice": "冰糖",
+        "style": "温和女性同事，口语自然，声音柔和，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：测试同学。声音设定：温和女性同事，口语自然，声音柔和，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "我会重点检查多人对话里的说话人切换、专有名词，以及数字时间是否识别准确。",
+        "response_id": "f1e74fd7de844ebfa4992fc958820c0c",
+        "audio_id": "cc7084f6c5c34fedaab9e4c47bf6136f"
+      },
+      {
+        "speaker": "产品经理",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：产品经理。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "如果这组测试通过，我们下午就评估真实会议录音的效果。",
+        "response_id": "4cdef2e5b17e4af7891fe89e5ff78786",
+        "audio_id": "ec0ceb22c999412ca2a58dac2a91a343"
+      },
+      {
+        "speaker": "工程师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：工程师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "没问题，我也会确认 Postgres 里的 transcript 和 summary 数据是否完整。",
+        "response_id": "d35df59d52764611b6ef11c5303fbbc0",
+        "audio_id": "a6b7a4c287a74f2883668fd12efeff2e"
+      },
+      {
+        "speaker": "主持人",
+        "profile": "speaker_c",
+        "voice": "白桦",
+        "style": "成熟男性主持人，会议主持语气，声音厚实稳重，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：主持人。声音设定：成熟男性主持人，会议主持语气，声音厚实稳重，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "那我们就按这个顺序执行，十分钟后回来看第一轮结果。",
+        "response_id": "2ea6822dcc094286869cf024994e4cb5",
+        "audio_id": "51e185b525b546a8a0bcb794a383c550"
+      },
+      {
+        "speaker": "测试同学",
+        "profile": "speaker_d",
+        "voice": "冰糖",
+        "style": "温和女性同事，口语自然，声音柔和，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：测试同学。声音设定：温和女性同事，口语自然，声音柔和，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "收到，我会把发现的问题整理成清单，方便后续优化。",
+        "response_id": "2b4a290b04af46f296717daabe0811a5",
+        "audio_id": "1fa1ae15c3d34db3a3b4c60f1f20843b"
+      }
+    ],
+    "bytes": 436989
+  },
+  {
+    "id": "zh-four-speaker-standup",
+    "text_file": "zh-four-speaker-standup.txt",
+    "audio_file": "flac/zh-four-speaker-standup.flac",
+    "content_type": "audio/flac",
+    "description": "FLAC 22.05 kHz mono",
+    "tts_model": "mimo-v2.5-tts",
+    "utterance_count": 8,
+    "utterance_gap_seconds": 0.45,
+    "speaker_profiles": {
+      "产品经理": {
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速"
+      },
+      "工程师": {
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚"
+      },
+      "主持人": {
+        "profile": "speaker_c",
+        "voice": "白桦",
+        "style": "成熟男性主持人，会议主持语气，声音厚实稳重，标准自然语速"
+      },
+      "测试同学": {
+        "profile": "speaker_d",
+        "voice": "冰糖",
+        "style": "温和女性同事，口语自然，声音柔和，标准自然语速"
+      }
+    },
+    "utterances": [
+      {
+        "speaker": "产品经理",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：产品经理。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "大家早上好，我们先快速同步一下今天的语音转录测试计划。",
+        "response_id": "2ba41365327545ef997f4c69aad504af",
+        "audio_id": "68ac5d86b4a742388253c5bcac9c3661"
+      },
+      {
+        "speaker": "工程师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：工程师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "我这边会先上传多格式音频，包括 MP3、FLAC 和 Ogg Opus，确认 normalize 链路稳定。",
+        "response_id": "35c64efe71624206b76d28cbb3b14993",
+        "audio_id": "77191d622dd2455fb431eeb18e3c65af"
+      },
+      {
+        "speaker": "主持人",
+        "profile": "speaker_c",
+        "voice": "白桦",
+        "style": "成熟男性主持人，会议主持语气，声音厚实稳重，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：主持人。声音设定：成熟男性主持人，会议主持语气，声音厚实稳重，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "好的，请注意记录每个环节的耗时，尤其是上传、转码、转录和摘要生成。",
+        "response_id": "8ed95c57d53b45c7a5c1b8440d49acf0",
+        "audio_id": "5f70a4dce83c453f8c17ca4840bd34c1"
+      },
+      {
+        "speaker": "测试同学",
+        "profile": "speaker_d",
+        "voice": "冰糖",
+        "style": "温和女性同事，口语自然，声音柔和，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：测试同学。声音设定：温和女性同事，口语自然，声音柔和，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "我会重点检查多人对话里的说话人切换、专有名词，以及数字时间是否识别准确。",
+        "response_id": "f1e74fd7de844ebfa4992fc958820c0c",
+        "audio_id": "cc7084f6c5c34fedaab9e4c47bf6136f"
+      },
+      {
+        "speaker": "产品经理",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：产品经理。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "如果这组测试通过，我们下午就评估真实会议录音的效果。",
+        "response_id": "4cdef2e5b17e4af7891fe89e5ff78786",
+        "audio_id": "ec0ceb22c999412ca2a58dac2a91a343"
+      },
+      {
+        "speaker": "工程师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：工程师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "没问题，我也会确认 Postgres 里的 transcript 和 summary 数据是否完整。",
+        "response_id": "d35df59d52764611b6ef11c5303fbbc0",
+        "audio_id": "a6b7a4c287a74f2883668fd12efeff2e"
+      },
+      {
+        "speaker": "主持人",
+        "profile": "speaker_c",
+        "voice": "白桦",
+        "style": "成熟男性主持人，会议主持语气，声音厚实稳重，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：主持人。声音设定：成熟男性主持人，会议主持语气，声音厚实稳重，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "那我们就按这个顺序执行，十分钟后回来看第一轮结果。",
+        "response_id": "2ea6822dcc094286869cf024994e4cb5",
+        "audio_id": "51e185b525b546a8a0bcb794a383c550"
+      },
+      {
+        "speaker": "测试同学",
+        "profile": "speaker_d",
+        "voice": "冰糖",
+        "style": "温和女性同事，口语自然，声音柔和，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：测试同学。声音设定：温和女性同事，口语自然，声音柔和，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "收到，我会把发现的问题整理成清单，方便后续优化。",
+        "response_id": "2b4a290b04af46f296717daabe0811a5",
+        "audio_id": "1fa1ae15c3d34db3a3b4c60f1f20843b"
+      }
+    ],
+    "bytes": 1216202
+  },
+  {
+    "id": "zh-four-speaker-standup",
+    "text_file": "zh-four-speaker-standup.txt",
+    "audio_file": "ogg-opus/zh-four-speaker-standup.ogg",
+    "content_type": "audio/ogg",
+    "description": "Ogg Opus mono",
+    "tts_model": "mimo-v2.5-tts",
+    "utterance_count": 8,
+    "utterance_gap_seconds": 0.45,
+    "speaker_profiles": {
+      "产品经理": {
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速"
+      },
+      "工程师": {
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚"
+      },
+      "主持人": {
+        "profile": "speaker_c",
+        "voice": "白桦",
+        "style": "成熟男性主持人，会议主持语气，声音厚实稳重，标准自然语速"
+      },
+      "测试同学": {
+        "profile": "speaker_d",
+        "voice": "冰糖",
+        "style": "温和女性同事，口语自然，声音柔和，标准自然语速"
+      }
+    },
+    "utterances": [
+      {
+        "speaker": "产品经理",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：产品经理。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "大家早上好，我们先快速同步一下今天的语音转录测试计划。",
+        "response_id": "2ba41365327545ef997f4c69aad504af",
+        "audio_id": "68ac5d86b4a742388253c5bcac9c3661"
+      },
+      {
+        "speaker": "工程师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：工程师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "我这边会先上传多格式音频，包括 MP3、FLAC 和 Ogg Opus，确认 normalize 链路稳定。",
+        "response_id": "35c64efe71624206b76d28cbb3b14993",
+        "audio_id": "77191d622dd2455fb431eeb18e3c65af"
+      },
+      {
+        "speaker": "主持人",
+        "profile": "speaker_c",
+        "voice": "白桦",
+        "style": "成熟男性主持人，会议主持语气，声音厚实稳重，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：主持人。声音设定：成熟男性主持人，会议主持语气，声音厚实稳重，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "好的，请注意记录每个环节的耗时，尤其是上传、转码、转录和摘要生成。",
+        "response_id": "8ed95c57d53b45c7a5c1b8440d49acf0",
+        "audio_id": "5f70a4dce83c453f8c17ca4840bd34c1"
+      },
+      {
+        "speaker": "测试同学",
+        "profile": "speaker_d",
+        "voice": "冰糖",
+        "style": "温和女性同事，口语自然，声音柔和，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：测试同学。声音设定：温和女性同事，口语自然，声音柔和，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "我会重点检查多人对话里的说话人切换、专有名词，以及数字时间是否识别准确。",
+        "response_id": "f1e74fd7de844ebfa4992fc958820c0c",
+        "audio_id": "cc7084f6c5c34fedaab9e4c47bf6136f"
+      },
+      {
+        "speaker": "产品经理",
+        "profile": "speaker_a",
+        "voice": "茉莉",
+        "style": "年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：产品经理。声音设定：年轻女性产品经理，会议语气自然，声音明亮清晰，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "如果这组测试通过，我们下午就评估真实会议录音的效果。",
+        "response_id": "4cdef2e5b17e4af7891fe89e5ff78786",
+        "audio_id": "ec0ceb22c999412ca2a58dac2a91a343"
+      },
+      {
+        "speaker": "工程师",
+        "profile": "speaker_b",
+        "voice": "苏打",
+        "style": "年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：工程师。声音设定：年轻男性工程师，技术讨论语气，声音沉稳，标准自然语速，咬字清楚。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "没问题，我也会确认 Postgres 里的 transcript 和 summary 数据是否完整。",
+        "response_id": "d35df59d52764611b6ef11c5303fbbc0",
+        "audio_id": "a6b7a4c287a74f2883668fd12efeff2e"
+      },
+      {
+        "speaker": "主持人",
+        "profile": "speaker_c",
+        "voice": "白桦",
+        "style": "成熟男性主持人，会议主持语气，声音厚实稳重，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：主持人。声音设定：成熟男性主持人，会议主持语气，声音厚实稳重，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "那我们就按这个顺序执行，十分钟后回来看第一轮结果。",
+        "response_id": "2ea6822dcc094286869cf024994e4cb5",
+        "audio_id": "51e185b525b546a8a0bcb794a383c550"
+      },
+      {
+        "speaker": "测试同学",
+        "profile": "speaker_d",
+        "voice": "冰糖",
+        "style": "温和女性同事，口语自然，声音柔和，标准自然语速",
+        "instruction": "请用以下人物音色和表演方式合成语音。角色：测试同学。声音设定：温和女性同事，口语自然，声音柔和，标准自然语速。这是多人会议对话中的一句话，只合成 assistant 消息中的内容，不要朗读角色名。请使用标准自然会议语速，逐字完整读完，不要省略、不要吞掉句尾、不要压缩成短音节。",
+        "text": "收到，我会把发现的问题整理成清单，方便后续优化。",
+        "response_id": "2b4a290b04af46f296717daabe0811a5",
+        "audio_id": "1fa1ae15c3d34db3a3b4c60f1f20843b"
+      }
+    ],
+    "bytes": 211779
   }
 ]

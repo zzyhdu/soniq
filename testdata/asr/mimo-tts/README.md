@@ -1,6 +1,8 @@
 # ASR Audio Test Fixtures from MiMo TTS
 
-Synthetic Chinese speech fixtures for ASR quality review. Each top-level `.txt` file is the expected source text for all sibling audio variants with the same stem.
+Synthetic Chinese dialogue fixtures for ASR quality review. Each top-level `.txt` file is the expected source text for all sibling audio variants with the same stem.
+
+The generator parses speaker-prefixed lines such as `小王：...`, assigns each distinct speaker a stable speaker profile for that fixture, calls MiMo TTS per utterance, then concatenates utterances with short pauses. This better simulates a real conversation than asking one voice to read the entire dialogue transcript.
 
 These fixtures intentionally include multiple **input** audio formats so the Soniq workflow exercises upload metadata, `ffprobe`, `ffmpeg` normalization, normalized metadata persistence, and ASR transcription. Do not treat these files as already-normalized output fixtures.
 
@@ -35,12 +37,12 @@ set +a
 python3 scripts/generate-mimo-tts-fixtures.py
 ```
 
-The generator reads the top-level `.txt` files in this directory, calls MiMo TTS (`mimo-v2-tts`), writes all audio variants, and refreshes `manifest.json`. It reads the API key from `TRANSCRIPTION_API_KEY` or `MIMO_API_KEY` but never writes secrets to the fixture files.
+The generator reads the top-level `.txt` files in this directory, parses speaker-prefixed dialogue lines, calls MiMo TTS (`mimo-v2.5-tts`) per utterance, concatenates utterances with short pauses, writes all audio variants, and refreshes `manifest.json`. It reads the API key from `TRANSCRIPTION_API_KEY` or `MIMO_API_KEY` but never writes secrets to the fixture files.
 
 Optional overrides:
 
 ```bash
-MIMO_TTS_MODEL=mimo-v2-tts MIMO_TTS_VOICE=default_zh python3 scripts/generate-mimo-tts-fixtures.py
+MIMO_TTS_MODEL=mimo-v2.5-tts MIMO_TTS_VOICE=茉莉 python3 scripts/generate-mimo-tts-fixtures.py
 ```
 
 ## Manual ASR Smoke Examples
