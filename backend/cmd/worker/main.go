@@ -115,6 +115,27 @@ func transcriptionProviderForConfig(cfg config.Config) (activities.Transcription
 			Language:       cfg.TranscriptionLanguage,
 			MaxBase64Bytes: cfg.TranscriptionMaxBase64Bytes,
 		}, nil
+	case "dashscope_asr":
+		if !cfg.PrivacyAllowExternalModelProviders {
+			return nil, fmt.Errorf("external transcription provider %q is disabled by privacy settings", provider)
+		}
+		if strings.TrimSpace(cfg.DashScopeAPIKey) == "" {
+			return nil, fmt.Errorf("DASHSCOPE_API_KEY is required for external transcription provider %q", provider)
+		}
+		if strings.TrimSpace(cfg.DashScopeBaseURL) == "" {
+			return nil, fmt.Errorf("DASHSCOPE_BASE_URL is required for external transcription provider %q", provider)
+		}
+		if strings.TrimSpace(cfg.DashScopeASRModel) == "" {
+			return nil, fmt.Errorf("DASHSCOPE_ASR_MODEL is required for external transcription provider %q", provider)
+		}
+		return activities.DashScopeASRProvider{
+			BaseURL:        cfg.DashScopeBaseURL,
+			APIKey:         cfg.DashScopeAPIKey,
+			Model:          cfg.DashScopeASRModel,
+			Language:       cfg.TranscriptionLanguage,
+			Diarization:    true,
+			MaxBase64Bytes: cfg.TranscriptionMaxBase64Bytes,
+		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported transcription provider %q", provider)
 	}

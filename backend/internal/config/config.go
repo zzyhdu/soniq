@@ -24,6 +24,9 @@ type Config struct {
 	TranscriptionAuthHeader                      string
 	TranscriptionLanguage                        string
 	TranscriptionMaxBase64Bytes                  int64
+	DashScopeBaseURL                             string
+	DashScopeAPIKey                              string
+	DashScopeASRModel                            string
 	LLMProvider                                  string
 	LLMBaseURL                                   string
 	LLMAPIKey                                    string
@@ -51,6 +54,9 @@ func LoadFromEnv() Config {
 		TranscriptionAuthHeader:            envString("TRANSCRIPTION_AUTH_HEADER", "api-key"),
 		TranscriptionLanguage:              envString("TRANSCRIPTION_LANGUAGE", "auto"),
 		TranscriptionMaxBase64Bytes:        envInt64("TRANSCRIPTION_MAX_BASE64_BYTES", 10*1024*1024),
+		DashScopeBaseURL:                   envString("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/api/v1"),
+		DashScopeAPIKey:                    envString("DASHSCOPE_API_KEY", ""),
+		DashScopeASRModel:                  envString("DASHSCOPE_ASR_MODEL", "paraformer-v2"),
 		LLMProvider:                        envString("LLM_PROVIDER", "openai_compatible"),
 		LLMBaseURL:                         envString("LLM_BASE_URL", "https://api.openai.com/v1"),
 		LLMAPIKey:                          envString("LLM_API_KEY", ""),
@@ -80,7 +86,17 @@ func (c Config) ValidateForStartup() error {
 	if c.TranscriptionMaxBase64Bytes <= 0 {
 		return fmt.Errorf("TRANSCRIPTION_MAX_BASE64_BYTES must be positive")
 	}
-	if c.isExternalTranscriptionProvider() {
+	if strings.TrimSpace(c.TranscriptionProvider) == "dashscope_asr" {
+		if strings.TrimSpace(c.DashScopeBaseURL) == "" {
+			return fmt.Errorf("DASHSCOPE_BASE_URL is required for external transcription provider")
+		}
+		if strings.TrimSpace(c.DashScopeASRModel) == "" {
+			return fmt.Errorf("DASHSCOPE_ASR_MODEL is required for external transcription provider")
+		}
+		if c.NeedsTranscriptionAPIKeyForExternalProvider() {
+			return fmt.Errorf("DASHSCOPE_API_KEY is required for external transcription provider")
+		}
+	} else if c.isExternalTranscriptionProvider() {
 		if strings.TrimSpace(c.TranscriptionBaseURL) == "" {
 			return fmt.Errorf("TRANSCRIPTION_BASE_URL is required for external transcription provider")
 		}
@@ -99,6 +115,12 @@ func (c Config) ValidateForStartup() error {
 
 // NeedsTranscriptionAPIKeyForExternalProvider reports whether the selected transcription provider needs an API key.
 func (c Config) NeedsTranscriptionAPIKeyForExternalProvider() bool {
+	if strings.TrimSpace(c.TranscriptionProvider) == "dashscope_asr" {
+		if strings.TrimSpace(c.DashScopeAPIKey) != "" {
+			return false
+		}
+		return c.PrivacyAllowExternalModelProviders
+	}
 	if strings.TrimSpace(c.TranscriptionAPIKey) != "" {
 		return false
 	}

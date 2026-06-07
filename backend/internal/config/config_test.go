@@ -53,6 +53,15 @@ func TestLoadFromEnvUsesDevelopmentDefaults(t *testing.T) {
 	if cfg.TranscriptionMaxBase64Bytes != 10*1024*1024 {
 		t.Fatalf("TranscriptionMaxBase64Bytes = %d, want 10MiB", cfg.TranscriptionMaxBase64Bytes)
 	}
+	if cfg.DashScopeBaseURL != "https://dashscope.aliyuncs.com/api/v1" {
+		t.Fatalf("DashScopeBaseURL = %q, want DashScope default", cfg.DashScopeBaseURL)
+	}
+	if cfg.DashScopeAPIKey != "" {
+		t.Fatal("DashScopeAPIKey default should be empty")
+	}
+	if cfg.DashScopeASRModel != "paraformer-v2" {
+		t.Fatalf("DashScopeASRModel = %q, want paraformer-v2", cfg.DashScopeASRModel)
+	}
 	if cfg.LLMProvider != "openai_compatible" {
 		t.Fatalf("LLMProvider = %q, want openai_compatible", cfg.LLMProvider)
 	}
@@ -87,6 +96,9 @@ func TestLoadFromEnvAppliesEnvironmentOverrides(t *testing.T) {
 	t.Setenv("TRANSCRIPTION_AUTH_HEADER", "bearer")
 	t.Setenv("TRANSCRIPTION_LANGUAGE", "zh")
 	t.Setenv("TRANSCRIPTION_MAX_BASE64_BYTES", "12345")
+	t.Setenv("DASHSCOPE_BASE_URL", "http://dashscope.example.test/api/v1")
+	t.Setenv("DASHSCOPE_API_KEY", "dashscope-secret")
+	t.Setenv("DASHSCOPE_ASR_MODEL", "fun-asr")
 	t.Setenv("LLM_PROVIDER", "ollama")
 	t.Setenv("LLM_BASE_URL", "http://localhost:11434/v1")
 	t.Setenv("LLM_API_KEY", "secret-key")
@@ -143,6 +155,15 @@ func TestLoadFromEnvAppliesEnvironmentOverrides(t *testing.T) {
 	}
 	if cfg.TranscriptionMaxBase64Bytes != 12345 {
 		t.Fatalf("TranscriptionMaxBase64Bytes = %d, want 12345", cfg.TranscriptionMaxBase64Bytes)
+	}
+	if cfg.DashScopeBaseURL != "http://dashscope.example.test/api/v1" {
+		t.Fatalf("DashScopeBaseURL = %q, want override", cfg.DashScopeBaseURL)
+	}
+	if cfg.DashScopeAPIKey != "dashscope-secret" {
+		t.Fatal("DashScopeAPIKey override was not loaded")
+	}
+	if cfg.DashScopeASRModel != "fun-asr" {
+		t.Fatalf("DashScopeASRModel = %q, want fun-asr", cfg.DashScopeASRModel)
 	}
 	if cfg.LLMProvider != "ollama" {
 		t.Fatalf("LLMProvider = %q, want ollama", cfg.LLMProvider)
@@ -265,5 +286,31 @@ func TestValidateForStartupRejectsMissingTranscriptionExternalConfig(t *testing.
 	cfg.TranscriptionModel = ""
 	if err := cfg.ValidateForStartup(); err == nil {
 		t.Fatal("ValidateForStartup() error = nil, want missing transcription model error")
+	}
+}
+
+func TestValidateForStartupRejectsMissingDashScopeConfig(t *testing.T) {
+	cfg := LoadFromEnv()
+	cfg.TranscriptionProvider = "dashscope_asr"
+	cfg.DashScopeAPIKey = ""
+	cfg.PrivacyAllowExternalModelProviders = true
+	if err := cfg.ValidateForStartup(); err == nil {
+		t.Fatal("ValidateForStartup() error = nil, want missing DashScope API key error")
+	}
+
+	cfg = LoadFromEnv()
+	cfg.TranscriptionProvider = "dashscope_asr"
+	cfg.DashScopeAPIKey = "secret"
+	cfg.DashScopeBaseURL = ""
+	if err := cfg.ValidateForStartup(); err == nil {
+		t.Fatal("ValidateForStartup() error = nil, want missing DashScope base URL error")
+	}
+
+	cfg = LoadFromEnv()
+	cfg.TranscriptionProvider = "dashscope_asr"
+	cfg.DashScopeAPIKey = "secret"
+	cfg.DashScopeASRModel = ""
+	if err := cfg.ValidateForStartup(); err == nil {
+		t.Fatal("ValidateForStartup() error = nil, want missing DashScope model error")
 	}
 }

@@ -85,6 +85,28 @@ func TestTranscriptionProviderForConfigBuildsOpenAICompatibleASR(t *testing.T) {
 	}
 }
 
+func TestTranscriptionProviderForConfigBuildsDashScopeASR(t *testing.T) {
+	cfg := config.LoadFromEnv()
+	cfg.TranscriptionProvider = "dashscope_asr"
+	cfg.DashScopeBaseURL = "http://dashscope.example.test/api/v1"
+	cfg.DashScopeAPIKey = "dashscope-key"
+	cfg.DashScopeASRModel = "paraformer-v2"
+	cfg.TranscriptionLanguage = "zh"
+	cfg.TranscriptionMaxBase64Bytes = 54321
+
+	provider, err := transcriptionProviderForConfig(cfg)
+	if err != nil {
+		t.Fatalf("transcriptionProviderForConfig returned error: %v", err)
+	}
+	asr, ok := provider.(activities.DashScopeASRProvider)
+	if !ok {
+		t.Fatalf("provider = %T, want DashScopeASRProvider", provider)
+	}
+	if asr.BaseURL != cfg.DashScopeBaseURL || asr.APIKey != cfg.DashScopeAPIKey || asr.Model != cfg.DashScopeASRModel || asr.Language != cfg.TranscriptionLanguage || asr.MaxBase64Bytes != cfg.TranscriptionMaxBase64Bytes {
+		t.Fatalf("asr provider = %+v, want DashScope config-derived fields", asr)
+	}
+}
+
 func TestTranscriptionProviderForConfigRejectsMissingAPIKeyForExternalProvider(t *testing.T) {
 	cfg := config.LoadFromEnv()
 	cfg.TranscriptionProvider = "openai_compatible_asr"
