@@ -23,7 +23,7 @@ Milestone
   ↓
 Implementation Plan
   ↓
-Kanban Task
+Work Item
   ↓
 TDD / CI Gate
   ↓
@@ -52,9 +52,9 @@ A good plan must include:
 
 ### Work Items
 
-Implementation plans are split into concrete work items. A work item can live in any tracker: GitHub Issues, Linear, a plain checklist, or Hermes Kanban.
+Implementation plans are split into concrete work items. A work item can live in any tracker: GitHub Issues, Linear, a plain checklist, or another project-management board.
 
-For this local agent-assisted workflow, we use **Hermes Kanban** as the execution queue because it can dispatch tasks to Hermes profiles and keep task state visible in the Hermes dashboard. Hermes Kanban is not part of the Soniq product architecture; it is a project-management tool for building Soniq.
+For local agent-assisted workflows, use the active external tracker or dashboard as the execution queue. That tracker is not part of the Soniq product architecture; it is project-management tooling for building Soniq.
 
 Work items should be small enough to finish in less than one day, preferably a few focused hours.
 
