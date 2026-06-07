@@ -8,6 +8,7 @@ import (
 
 	"github.com/zzyhdu/soniq/backend/internal/domain"
 	"github.com/zzyhdu/soniq/backend/internal/recordings"
+	"github.com/zzyhdu/soniq/backend/internal/storage"
 )
 
 type transcriptionSummaryStoreSpy struct {
@@ -121,6 +122,23 @@ func (p *summaryProviderSpy) Summarize(ctx context.Context, request SummaryReque
 	return p.result, nil
 }
 
+type objectStoreSpy struct {
+	deleted []string
+	err     error
+}
+
+func (s *objectStoreSpy) PutObject(ctx context.Context, input storage.PutObjectInput) (storage.PutObjectResult, error) {
+	return storage.PutObjectResult{Key: input.Key}, nil
+}
+
+func (s *objectStoreSpy) DeleteObject(ctx context.Context, key string) error {
+	if s.err != nil {
+		return s.err
+	}
+	s.deleted = append(s.deleted, key)
+	return nil
+}
+
 func TestRecordingProcessingActivitiesTranscribeRecordingAudioPersistsTranscript(t *testing.T) {
 	store := &transcriptionSummaryStoreSpy{
 		recordings: map[string]domain.Recording{
@@ -146,7 +164,7 @@ func TestRecordingProcessingActivitiesTranscribeRecordingAudioPersistsTranscript
 			{SegmentIndex: 0, StartMS: 0, EndMS: 1200, SpeakerLabel: "speaker_1", Text: "hello from rec_transcribe", Confidence: 0.99},
 		},
 	}}
-	activities := NewRecordingProcessingActivitiesWithNormalizedAudio(store, resolver, &audioProbeRunnerSpy{}, &audioNormalizeRunnerSpy{}, provider, &summaryProviderSpy{})
+	activities := NewRecordingProcessingActivitiesWithNormalizedAudio(store, resolver, nil, &audioProbeRunnerSpy{}, &audioNormalizeRunnerSpy{}, provider, &summaryProviderSpy{})
 
 	if err := activities.TranscribeRecordingAudio(context.Background(), "rec_transcribe"); err != nil {
 		t.Fatalf("TranscribeRecordingAudio returned error: %v", err)
@@ -199,7 +217,7 @@ func TestRecordingProcessingActivitiesTranscribeRecordingAudioRequiresNormalized
 		"rec_transcribe": {ID: "rec_transcribe", Language: "en", AudioObjectKey: "recordings/rec_transcribe/original.wav"},
 	}}
 	provider := &transcriptionProviderSpy{}
-	activities := NewRecordingProcessingActivitiesWithNormalizedAudio(store, &localPathResolverSpy{path: "/tmp/soniq/recordings/rec_transcribe/normalized.wav"}, &audioProbeRunnerSpy{}, &audioNormalizeRunnerSpy{}, provider, &summaryProviderSpy{})
+	activities := NewRecordingProcessingActivitiesWithNormalizedAudio(store, &localPathResolverSpy{path: "/tmp/soniq/recordings/rec_transcribe/normalized.wav"}, nil, &audioProbeRunnerSpy{}, &audioNormalizeRunnerSpy{}, provider, &summaryProviderSpy{})
 
 	if err := activities.TranscribeRecordingAudio(context.Background(), "rec_transcribe"); err == nil {
 		t.Fatal("TranscribeRecordingAudio returned nil error, want missing normalized audio error")
@@ -220,13 +238,28 @@ func TestRecordingProcessingActivitiesTranscribeRecordingAudioReturnsProviderErr
 		normalizedAudio: recordings.RecordingNormalizedAudio{RecordingID: "rec_transcribe", ObjectKey: "recordings/rec_transcribe/normalized.wav"},
 	}
 	providerErr := errors.New("transcription failed")
-	activities := NewRecordingProcessingActivitiesWithNormalizedAudio(store, &localPathResolverSpy{path: "/tmp/audio.wav"}, &audioProbeRunnerSpy{}, &audioNormalizeRunnerSpy{}, &transcriptionProviderSpy{err: providerErr}, &summaryProviderSpy{})
+	activities := NewRecordingProcessingActivitiesWithNormalizedAudio(store, &localPathResolverSpy{path: "/tmp/audio.wav"}, nil, &audioProbeRunnerSpy{}, &audioNormalizeRunnerSpy{}, &transcriptionProviderSpy{err: providerErr}, &summaryProviderSpy{})
 
 	if err := activities.TranscribeRecordingAudio(context.Background(), "rec_transcribe"); !errors.Is(err, providerErr) {
 		t.Fatalf("TranscribeRecordingAudio error = %v, want provider error", err)
 	}
 	if len(store.transcripts) != 0 {
 		t.Fatalf("stored transcripts = %d, want 0 after provider error", len(store.transcripts))
+	}
+}
+
+func TestRecordingProcessingActivitiesDeleteOriginalRecordingAudioRemovesOriginalObject(t *testing.T) {
+	store := &transcriptionSummaryStoreSpy{recordings: map[string]domain.Recording{
+		"rec_delete_original": {ID: "rec_delete_original", AudioObjectKey: "recordings/rec_delete_original/original.wav"},
+	}}
+	objectStore := &objectStoreSpy{}
+	activities := NewRecordingProcessingActivitiesWithNormalizedAudio(store, &localPathResolverSpy{}, objectStore, &audioProbeRunnerSpy{}, &audioNormalizeRunnerSpy{}, &transcriptionProviderSpy{}, &summaryProviderSpy{})
+
+	if err := activities.DeleteOriginalRecordingAudio(context.Background(), "rec_delete_original"); err != nil {
+		t.Fatalf("DeleteOriginalRecordingAudio returned error: %v", err)
+	}
+	if got, want := objectStore.deleted, []string{"recordings/rec_delete_original/original.wav"}; len(got) != len(want) || got[0] != want[0] {
+		t.Fatalf("deleted keys = %#v, want %#v", got, want)
 	}
 }
 

@@ -19,9 +19,10 @@ import (
 
 // RecordingProcessingInput is the input shared by the recording processing workflow and activities.
 type RecordingProcessingInput struct {
-	RecordingID  string
-	WorkflowType domain.WorkflowType
-	Language     string
+	RecordingID                           string
+	WorkflowType                          domain.WorkflowType
+	Language                              string
+	DeleteOriginalAudioAfterTranscription bool
 }
 
 // RecordingProcessingResult is the result returned after processing completes.
@@ -31,16 +32,17 @@ type RecordingProcessingResult struct {
 }
 
 const (
-	ValidateRecordingActivityName           = "ValidateRecordingActivity"
-	MarkRecordingProcessingActivityName     = "MarkRecordingProcessingActivity"
-	ProbeRecordingAudioActivityName         = "ProbeRecordingAudioActivity"
-	NormalizeRecordingAudioActivityName     = "NormalizeRecordingAudioActivity"
-	MarkRecordingTranscribingActivityName   = "MarkRecordingTranscribingActivity"
-	TranscribeRecordingAudioActivityName    = "TranscribeRecordingAudioActivity"
-	MarkRecordingSummarizingActivityName    = "MarkRecordingSummarizingActivity"
-	SummarizeRecordingActivityName          = "SummarizeRecordingActivity"
-	CompleteRecordingProcessingActivityName = "CompleteRecordingProcessingActivity"
-	FailRecordingProcessingActivityName     = "FailRecordingProcessingActivity"
+	ValidateRecordingActivityName            = "ValidateRecordingActivity"
+	MarkRecordingProcessingActivityName      = "MarkRecordingProcessingActivity"
+	ProbeRecordingAudioActivityName          = "ProbeRecordingAudioActivity"
+	NormalizeRecordingAudioActivityName      = "NormalizeRecordingAudioActivity"
+	MarkRecordingTranscribingActivityName    = "MarkRecordingTranscribingActivity"
+	TranscribeRecordingAudioActivityName     = "TranscribeRecordingAudioActivity"
+	MarkRecordingSummarizingActivityName     = "MarkRecordingSummarizingActivity"
+	SummarizeRecordingActivityName           = "SummarizeRecordingActivity"
+	DeleteOriginalRecordingAudioActivityName = "DeleteOriginalRecordingAudioActivity"
+	CompleteRecordingProcessingActivityName  = "CompleteRecordingProcessingActivity"
+	FailRecordingProcessingActivityName      = "FailRecordingProcessingActivity"
 )
 
 // RecordingStore is the persistence seam used by validation, status, and audio probe activities.
@@ -171,6 +173,7 @@ type RecordingProcessingActivities struct {
 	normalizedAudioStore  NormalizedAudioStore
 	transcriptStore       TranscriptStore
 	summaryStore          SummaryStore
+	objectStore           storage.ObjectStore
 	pathResolver          LocalObjectPathResolver
 	probeRunner           AudioProbeRunner
 	normalizeRunner       AudioNormalizeRunner
@@ -202,9 +205,10 @@ func NewRecordingProcessingActivitiesWithPipeline(store PipelineStore, resolver 
 }
 
 // NewRecordingProcessingActivitiesWithNormalizedAudio creates recording processing activities with normalization dependencies.
-func NewRecordingProcessingActivitiesWithNormalizedAudio(store NormalizingPipelineStore, resolver LocalObjectPathResolver, probeRunner AudioProbeRunner, normalizeRunner AudioNormalizeRunner, transcriptionProvider TranscriptionProvider, summaryProvider SummaryProvider) *RecordingProcessingActivities {
+func NewRecordingProcessingActivitiesWithNormalizedAudio(store NormalizingPipelineStore, resolver LocalObjectPathResolver, objectStore storage.ObjectStore, probeRunner AudioProbeRunner, normalizeRunner AudioNormalizeRunner, transcriptionProvider TranscriptionProvider, summaryProvider SummaryProvider) *RecordingProcessingActivities {
 	activities := NewRecordingProcessingActivitiesWithPipeline(store, resolver, probeRunner, transcriptionProvider, summaryProvider)
 	activities.normalizedAudioStore = store
+	activities.objectStore = objectStore
 	activities.normalizeRunner = normalizeRunner
 	return activities
 }
@@ -451,6 +455,33 @@ func (a *RecordingProcessingActivities) TranscribeRecordingAudio(ctx context.Con
 	})
 	if err != nil {
 		return fmt.Errorf("persist recording transcript: %w", err)
+	}
+	return nil
+}
+
+// DeleteOriginalRecordingAudio removes the original uploaded audio object after transcription.
+func (a *RecordingProcessingActivities) DeleteOriginalRecordingAudio(ctx context.Context, recordingID string) error {
+	if recordingID == "" {
+		return errors.New("recording id is required")
+	}
+	if a == nil || a.store == nil {
+		return errors.New("recording store is required")
+	}
+	if a.objectStore == nil {
+		return errors.New("object store is required")
+	}
+	recording, ok, err := a.store.Get(recordingID)
+	if err != nil {
+		return fmt.Errorf("get recording: %w", err)
+	}
+	if !ok {
+		return fmt.Errorf("recording not found: %s", recordingID)
+	}
+	if strings.TrimSpace(recording.AudioObjectKey) == "" {
+		return errors.New("recording audio object key is required")
+	}
+	if err := a.objectStore.DeleteObject(ctx, recording.AudioObjectKey); err != nil {
+		return fmt.Errorf("delete original recording audio: %w", err)
 	}
 	return nil
 }

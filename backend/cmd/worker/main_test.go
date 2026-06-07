@@ -10,6 +10,7 @@ import (
 	"github.com/zzyhdu/soniq/backend/internal/config"
 	"github.com/zzyhdu/soniq/backend/internal/domain"
 	"github.com/zzyhdu/soniq/backend/internal/recordings"
+	"github.com/zzyhdu/soniq/backend/internal/storage"
 	"github.com/zzyhdu/soniq/backend/internal/workflows"
 	"go.temporal.io/sdk/activity"
 )
@@ -18,7 +19,7 @@ func TestRegisterRecordingProcessingRegistersWorkflowAndActivities(t *testing.T)
 	worker := &recordingWorkerSpy{}
 	store := &workerRecordingStoreSpy{}
 
-	registerRecordingProcessing(worker, store, localPathResolverTestStub{}, audioProbeRunnerTestStub{}, audioNormalizeRunnerTestStub{}, activities.FakeTranscriptionProvider{}, activities.FakeSummaryProvider{})
+	registerRecordingProcessing(worker, store, localPathResolverTestStub{}, objectStoreTestStub{}, audioProbeRunnerTestStub{}, audioNormalizeRunnerTestStub{}, activities.FakeTranscriptionProvider{}, activities.FakeSummaryProvider{})
 
 	if got, want := len(worker.workflows), 1; got != want {
 		t.Fatalf("registered workflows = %d, want %d", got, want)
@@ -36,6 +37,7 @@ func TestRegisterRecordingProcessingRegistersWorkflowAndActivities(t *testing.T)
 		activities.TranscribeRecordingAudioActivityName,
 		activities.MarkRecordingSummarizingActivityName,
 		activities.SummarizeRecordingActivityName,
+		activities.DeleteOriginalRecordingAudioActivityName,
 		activities.CompleteRecordingProcessingActivityName,
 		activities.FailRecordingProcessingActivityName,
 	}
@@ -196,6 +198,16 @@ type localPathResolverTestStub struct{}
 
 func (localPathResolverTestStub) LocalPathForObject(key string) (string, error) {
 	return key, nil
+}
+
+type objectStoreTestStub struct{}
+
+func (objectStoreTestStub) PutObject(ctx context.Context, input storage.PutObjectInput) (storage.PutObjectResult, error) {
+	return storage.PutObjectResult{Key: input.Key}, nil
+}
+
+func (objectStoreTestStub) DeleteObject(ctx context.Context, key string) error {
+	return nil
 }
 
 type audioProbeRunnerTestStub struct{}

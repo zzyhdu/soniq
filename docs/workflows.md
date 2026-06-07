@@ -4,7 +4,7 @@ Soniq uses Temporal for durable audio processing workflows.
 
 ## Current implementation status
 
-The repository currently contains a local end-to-end Temporal processing foundation through original-audio probing, ffmpeg-based audio normalization, deterministic fake transcription, and deterministic fake summarization. The implemented boundary uses the real Temporal Go SDK and Temporal SDK testsuite, wires successful recording creation through a Temporal-backed recording processor, starts `RecordingProcessingWorkflow` asynchronously with workflow ID `recording-processing-<recording_id>`, and registers the workflow on the worker. The API supports metadata-only `POST /recordings` and multipart `POST /recordings/upload`; upload requests store the original audio through the local object-store provider and persist audio metadata before starting the workflow. The worker connects to Soniq application Postgres and registers store-backed recording activities under stable Temporal activity names, so the current workflow persists status transitions through `uploaded -> processing -> transcribing -> summarizing -> completed`, runs `ffprobe` against the uploaded original audio, persists one `recording_audio_probes` row, normalizes audio to a local WAV/PCM artifact (`pcm_s16le`, 16 kHz, mono), persists one `recording_normalized_audios` row, persists `recording_transcripts` and `recording_transcript_segments` using the fake transcription provider against the normalized audio path, and persists `recording_summaries` using the fake summary provider, with a best-effort `failed` transition if probe/normalization/transcription/summarization/completion fails. Real ASR providers, real LLM providers, provider webhooks, and S3-compatible object storage remain future milestones.
+The repository currently contains a local end-to-end Temporal processing foundation through original-audio probing, ffmpeg-based audio normalization, deterministic fake transcription, optional original-audio deletion after successful transcription, and deterministic fake summarization. The implemented boundary uses the real Temporal Go SDK and Temporal SDK testsuite, wires successful audio uploads through a Temporal-backed recording processor, starts `RecordingProcessingWorkflow` asynchronously with workflow ID `recording-processing-<recording_id>`, and registers the workflow on the worker. The API supports metadata-only `POST /recordings` and multipart `POST /recordings/upload`; metadata-only requests only create recording rows, while upload requests store the original audio through the local object-store provider and persist audio metadata before starting the workflow. The worker connects to Soniq application Postgres and registers store-backed recording activities under stable Temporal activity names, so the current workflow persists status transitions through `uploaded -> processing -> transcribing -> summarizing -> completed`, runs `ffprobe` against the uploaded original audio, persists one `recording_audio_probes` row, normalizes audio to a local WAV/PCM artifact (`pcm_s16le`, 16 kHz, mono), persists one `recording_normalized_audios` row, persists `recording_transcripts` and `recording_transcript_segments` using the fake transcription provider against the normalized audio path, optionally deletes the original uploaded audio object when `PRIVACY_DELETE_ORIGINAL_AUDIO_AFTER_TRANSCRIPTION=true`, and persists `recording_summaries` using the fake summary provider, with a best-effort `failed` transition if probe/normalization/transcription/original-audio-deletion/summarization/completion fails. Real ASR providers, real LLM providers, provider webhooks, and S3-compatible object storage remain future milestones.
 
 ## Primary workflow
 
@@ -15,14 +15,9 @@ Input:
 ```go
 type RecordingProcessingInput struct {
     RecordingID string
-    WorkspaceID string
-    AudioObjectKey string
     WorkflowType string // memo, meeting, lecture, interview
     Language string // optional, auto if empty
-    TranscriptionProvider string
-    LLMProvider string
-    EnableDiarization bool
-    GenerateTitle bool
+    DeleteOriginalAudioAfterTranscription bool
 }
 ```
 
@@ -42,6 +37,8 @@ NormalizeRecordingAudio
 MarkRecordingTranscribing
   ↓
 TranscribeRecordingAudio  // deterministic fake provider for now
+  ↓
+DeleteOriginalRecordingAudio  // optional when privacy flag is true
   ↓
 MarkRecordingSummarizing
   ↓
@@ -86,6 +83,8 @@ recording_normalized_audios upsert + local normalized.wav artifact
 fake transcription provider reads normalized audio path
   ↓
 recording_transcripts + recording_transcript_segments upsert
+  ↓
+optional original object delete when PRIVACY_DELETE_ORIGINAL_AUDIO_AFTER_TRANSCRIPTION=true
   ↓
 fake summary provider
   ↓

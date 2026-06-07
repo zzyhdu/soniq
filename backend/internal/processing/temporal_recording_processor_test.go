@@ -15,7 +15,8 @@ import (
 func TestTemporalRecordingProcessorStartsRecordingWorkflow(t *testing.T) {
 	starter := &workflowStarterSpy{}
 	processor := NewTemporalRecordingProcessor(starter, TemporalRecordingProcessorConfig{
-		TaskQueue: "soniq-audio-pipeline",
+		TaskQueue:                             "soniq-audio-pipeline",
+		DeleteOriginalAudioAfterTranscription: true,
 	})
 	recording := domain.Recording{
 		ID:           "rec_123",
@@ -59,6 +60,9 @@ func TestTemporalRecordingProcessorStartsRecordingWorkflow(t *testing.T) {
 	}
 	if input.Language != recording.Language {
 		t.Fatalf("input language = %q, want %q", input.Language, recording.Language)
+	}
+	if !input.DeleteOriginalAudioAfterTranscription {
+		t.Fatal("input DeleteOriginalAudioAfterTranscription = false, want true")
 	}
 }
 

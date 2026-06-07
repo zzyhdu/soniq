@@ -17,7 +17,8 @@ type WorkflowStarter interface {
 
 // TemporalRecordingProcessorConfig contains Temporal workflow start settings.
 type TemporalRecordingProcessorConfig struct {
-	TaskQueue string
+	TaskQueue                             string
+	DeleteOriginalAudioAfterTranscription bool
 }
 
 // TemporalRecordingProcessor starts the recording processing workflow for new recordings.
@@ -51,9 +52,10 @@ func (p TemporalRecordingProcessor) Enqueue(recording domain.Recording) error {
 		},
 		workflows.RecordingProcessingWorkflow,
 		workflows.RecordingProcessingInput{
-			RecordingID:  recording.ID,
-			WorkflowType: recording.WorkflowType,
-			Language:     recording.Language,
+			RecordingID:                           recording.ID,
+			WorkflowType:                          recording.WorkflowType,
+			Language:                              recording.Language,
+			DeleteOriginalAudioAfterTranscription: p.config.DeleteOriginalAudioAfterTranscription,
 		},
 	)
 	return err

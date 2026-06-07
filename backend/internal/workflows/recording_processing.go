@@ -56,6 +56,12 @@ func RecordingProcessingWorkflow(ctx workflow.Context, input RecordingProcessing
 		_ = workflow.ExecuteActivity(shortActivityCtx, activities.FailRecordingProcessingActivityName, input.RecordingID).Get(shortActivityCtx, nil)
 		return RecordingProcessingResult{}, err
 	}
+	if input.DeleteOriginalAudioAfterTranscription {
+		if err := workflow.ExecuteActivity(shortActivityCtx, activities.DeleteOriginalRecordingAudioActivityName, input.RecordingID).Get(shortActivityCtx, nil); err != nil {
+			_ = workflow.ExecuteActivity(shortActivityCtx, activities.FailRecordingProcessingActivityName, input.RecordingID).Get(shortActivityCtx, nil)
+			return RecordingProcessingResult{}, err
+		}
+	}
 	if err := workflow.ExecuteActivity(shortActivityCtx, activities.MarkRecordingSummarizingActivityName, input.RecordingID).Get(shortActivityCtx, nil); err != nil {
 		_ = workflow.ExecuteActivity(shortActivityCtx, activities.FailRecordingProcessingActivityName, input.RecordingID).Get(shortActivityCtx, nil)
 		return RecordingProcessingResult{}, err

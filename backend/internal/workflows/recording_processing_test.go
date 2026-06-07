@@ -60,6 +60,43 @@ func TestRecordingProcessingWorkflowCompletesTranscriptionSummaryPipeline(t *tes
 	env.AssertExpectations(t)
 }
 
+func TestRecordingProcessingWorkflowDeletesOriginalAudioWhenConfigured(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	registerRecordingProcessingActivityNames(env)
+
+	input := RecordingProcessingInput{
+		RecordingID:                           "rec_test",
+		WorkflowType:                          "meeting",
+		Language:                              "en",
+		DeleteOriginalAudioAfterTranscription: true,
+	}
+
+	env.OnActivity(activities.ValidateRecordingActivityName, mock.Anything, input).Return(nil).Once()
+	env.OnActivity(activities.MarkRecordingProcessingActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.ProbeRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.NormalizeRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.MarkRecordingTranscribingActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.TranscribeRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.DeleteOriginalRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.MarkRecordingSummarizingActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.SummarizeRecordingActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.CompleteRecordingProcessingActivityName, mock.Anything, input.RecordingID).Return(RecordingProcessingResult{
+		RecordingID: "rec_test",
+		Status:      "completed",
+	}, nil).Once()
+
+	env.ExecuteWorkflow(RecordingProcessingWorkflow, input)
+
+	if !env.IsWorkflowCompleted() {
+		t.Fatalf("workflow did not complete")
+	}
+	if err := env.GetWorkflowError(); err != nil {
+		t.Fatalf("workflow error = %v, want nil", err)
+	}
+	env.AssertExpectations(t)
+}
+
 func TestRecordingProcessingWorkflowMarksFailedWhenCompletionFails(t *testing.T) {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
@@ -253,6 +290,7 @@ func registerRecordingProcessingActivityNames(env *testsuite.TestWorkflowEnviron
 	env.RegisterActivityWithOptions(func(context.Context, string) error { return nil }, activity.RegisterOptions{Name: activities.TranscribeRecordingAudioActivityName})
 	env.RegisterActivityWithOptions(func(context.Context, string) error { return nil }, activity.RegisterOptions{Name: activities.MarkRecordingSummarizingActivityName})
 	env.RegisterActivityWithOptions(func(context.Context, string) error { return nil }, activity.RegisterOptions{Name: activities.SummarizeRecordingActivityName})
+	env.RegisterActivityWithOptions(func(context.Context, string) error { return nil }, activity.RegisterOptions{Name: activities.DeleteOriginalRecordingAudioActivityName})
 	env.RegisterActivityWithOptions(func(context.Context, string) (RecordingProcessingResult, error) {
 		return RecordingProcessingResult{}, nil
 	}, activity.RegisterOptions{Name: activities.CompleteRecordingProcessingActivityName})

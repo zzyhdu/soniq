@@ -61,7 +61,8 @@ func buildHandler(ctx context.Context, cfg config.Config, temporalFactory tempor
 	}
 
 	processor := processing.NewTemporalRecordingProcessor(temporalClient, processing.TemporalRecordingProcessorConfig{
-		TaskQueue: cfg.TemporalTaskQueue,
+		TaskQueue:                             cfg.TemporalTaskQueue,
+		DeleteOriginalAudioAfterTranscription: cfg.PrivacyDeleteOriginalAudioAfterTranscription,
 	})
 	objectStore, err := buildObjectStore(cfg)
 	if err != nil {
