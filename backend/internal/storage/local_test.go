@@ -104,6 +104,38 @@ func TestLocalStorePutObjectPropagatesReadErrors(t *testing.T) {
 	}
 }
 
+func TestLocalStoreDeleteObjectRemovesStoredFile(t *testing.T) {
+	root := t.TempDir()
+	store := NewLocalStore(root)
+	key := "recordings/rec_123/original.wav"
+
+	if _, err := store.PutObject(context.Background(), PutObjectInput{Key: key, Body: strings.NewReader("audio")}); err != nil {
+		t.Fatalf("PutObject returned error: %v", err)
+	}
+	if err := store.DeleteObject(context.Background(), key); err != nil {
+		t.Fatalf("DeleteObject returned error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "recordings", "rec_123", "original.wav")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stored object still exists or unexpected stat error: %v", err)
+	}
+}
+
+func TestLocalStoreDeleteObjectIgnoresMissingFile(t *testing.T) {
+	store := NewLocalStore(t.TempDir())
+
+	if err := store.DeleteObject(context.Background(), "recordings/rec_123/missing.wav"); err != nil {
+		t.Fatalf("DeleteObject returned error: %v", err)
+	}
+}
+
+func TestLocalStoreDeleteObjectRejectsInvalidKeys(t *testing.T) {
+	store := NewLocalStore(t.TempDir())
+
+	if err := store.DeleteObject(context.Background(), "../secret.wav"); err == nil {
+		t.Fatal("DeleteObject returned nil error, want invalid key error")
+	}
+}
+
 func TestLocalStoreLocalPathForObjectResolvesValidKeyUnderRoot(t *testing.T) {
 	root := t.TempDir()
 	store := NewLocalStore(root)

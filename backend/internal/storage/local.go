@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -63,6 +64,23 @@ func (s *LocalStore) PutObject(ctx context.Context, input PutObjectInput) (PutOb
 	}
 
 	return PutObjectResult{Key: key, SizeBytes: written}, nil
+}
+
+// DeleteObject removes an object from local storage.
+func (s *LocalStore) DeleteObject(ctx context.Context, key string) error {
+	path, err := s.LocalPathForObject(key)
+	if err != nil {
+		return err
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("delete object: %w", err)
+	}
+	return nil
 }
 
 func cleanObjectKey(key string) (string, error) {

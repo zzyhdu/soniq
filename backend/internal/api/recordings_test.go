@@ -28,10 +28,11 @@ type recordingProcessorSpy struct {
 }
 
 type fakeRecordingStore struct {
-	created []recordings.CreateRecordingInput
-	stored  map[string]domain.Recording
-	details map[string]recordingDetailsFixture
-	nextID  int
+	created   []recordings.CreateRecordingInput
+	stored    map[string]domain.Recording
+	details   map[string]recordingDetailsFixture
+	nextID    int
+	createErr error
 }
 
 type recordingDetailsFixture struct {
@@ -47,8 +48,9 @@ type recordingOnlyStore struct {
 }
 
 type objectStoreSpy struct {
-	puts []storedObject
-	err  error
+	puts    []storedObject
+	deletes []string
+	err     error
 }
 
 type storedObject struct {
@@ -64,6 +66,9 @@ func newFakeRecordingStore() *fakeRecordingStore {
 func (s *fakeRecordingStore) Create(input recordings.CreateRecordingInput) (domain.Recording, error) {
 	if !domain.IsValidWorkflowType(string(input.WorkflowType)) {
 		return domain.Recording{}, errors.New("invalid workflow type")
+	}
+	if s.createErr != nil {
+		return domain.Recording{}, s.createErr
 	}
 	s.created = append(s.created, input)
 	s.nextID++
@@ -139,6 +144,11 @@ func (s *objectStoreSpy) PutObject(ctx context.Context, input storage.PutObjectI
 		body:        string(body),
 	})
 	return storage.PutObjectResult{Key: input.Key, SizeBytes: int64(len(body))}, nil
+}
+
+func (s *objectStoreSpy) DeleteObject(_ context.Context, key string) error {
+	s.deletes = append(s.deletes, key)
+	return nil
 }
 
 func TestNewRouterWithStoreAcceptsRecordingStoreInterface(t *testing.T) {
@@ -371,6 +381,79 @@ func TestUploadRecordingReturnsServerErrorWhenStorageFails(t *testing.T) {
 	}
 	if len(store.created) != 0 || len(processor.enqueued) != 0 {
 		t.Fatalf("side effects = created:%d enqueued:%d, want none", len(store.created), len(processor.enqueued))
+	}
+}
+
+func TestUploadRecordingDeletesStoredAudioWhenCreateFails(t *testing.T) {
+	store := newFakeRecordingStore()
+	store.createErr = errors.New("create recording failed")
+	objectStore := &objectStoreSpy{}
+	processor := &recordingProcessorSpy{}
+	router := NewRouterWithStorage(store, processor, objectStore)
+
+	request := newMultipartUploadRequest(t, "/recordings/upload", map[string]string{
+		"title":         "Weekly sync",
+		"workflow_type": "meeting",
+		"language":      "en",
+	}, "audio", "weekly.wav", "audio/wav", "audio-bytes")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status code = %d, want %d", response.Code, http.StatusBadRequest)
+	}
+	if got, want := len(objectStore.puts), 1; got != want {
+		t.Fatalf("object store puts = %d, want %d", got, want)
+	}
+	if got, want := len(objectStore.deletes), 1; got != want {
+		t.Fatalf("object store deletes = %d, want %d", got, want)
+	}
+	if objectStore.deletes[0] != objectStore.puts[0].key {
+		t.Fatalf("deleted key = %q, want stored key %q", objectStore.deletes[0], objectStore.puts[0].key)
+	}
+	if len(processor.enqueued) != 0 {
+		t.Fatalf("enqueued recordings = %d, want none", len(processor.enqueued))
+	}
+}
+
+func TestUploadRecordingReturnsCreatedWhenEnqueueFails(t *testing.T) {
+	store := newFakeRecordingStore()
+	objectStore := &objectStoreSpy{}
+	processor := &recordingProcessorSpy{err: errRecordingProcessorFailed}
+	router := NewRouterWithStorage(store, processor, objectStore)
+
+	request := newMultipartUploadRequest(t, "/recordings/upload", map[string]string{
+		"title":         "Weekly sync",
+		"workflow_type": "meeting",
+		"language":      "en",
+	}, "audio", "weekly.wav", "audio/wav", "audio-bytes")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusCreated, response.Body.String())
+	}
+	if got, want := len(objectStore.puts), 1; got != want {
+		t.Fatalf("object store puts = %d, want %d", got, want)
+	}
+	if len(objectStore.deletes) != 0 {
+		t.Fatalf("object store deletes = %d, want none", len(objectStore.deletes))
+	}
+	if got, want := len(store.created), 1; got != want {
+		t.Fatalf("store created calls = %d, want %d", got, want)
+	}
+	if got, want := len(processor.enqueued), 1; got != want {
+		t.Fatalf("enqueued recordings = %d, want %d", got, want)
+	}
+
+	var body domain.Recording
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body.ID == "" || body.AudioObjectKey == "" {
+		t.Fatalf("body = %+v, want created recording with audio metadata", body)
 	}
 }
 

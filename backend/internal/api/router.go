@@ -217,13 +217,11 @@ func uploadRecordingHandler(store RecordingStore, processor RecordingProcessor, 
 			AudioSizeBytes:   putResult.SizeBytes,
 		})
 		if err != nil {
+			_ = objectStore.DeleteObject(r.Context(), putResult.Key)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if err := processor.Enqueue(recording); err != nil {
-			http.Error(w, "enqueue recording processor", http.StatusInternalServerError)
-			return
-		}
+		_ = processor.Enqueue(recording)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)

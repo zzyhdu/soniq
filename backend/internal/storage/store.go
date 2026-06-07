@@ -21,4 +21,5 @@ type PutObjectResult struct {
 // ObjectStore persists binary objects such as original recording audio.
 type ObjectStore interface {
 	PutObject(ctx context.Context, input PutObjectInput) (PutObjectResult, error)
+	DeleteObject(ctx context.Context, key string) error
 }
