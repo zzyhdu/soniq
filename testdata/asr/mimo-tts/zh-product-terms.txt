@@ -1,0 +1,4 @@
+产品经理：Soniq 的后端已经接入 Temporal 工作流，也使用 Postgres 保存转录结果。
+工程师：这次我们会调用小米 MiMo 的 ASR 接口，模型名称是 mimo-v2.5-asr。
+产品经理：请特别检查 Soniq、MiMo、Postgres 和 Temporal 这些专有名词。
+工程师：明白，我会对比原文和转录文本，看看是否需要增加词表或提示词。

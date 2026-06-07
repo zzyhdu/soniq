@@ -141,6 +141,18 @@ stop_api() {
   API_PID=""
 }
 
+content_type_for_file() {
+  local path="$1"
+  case "${path##*.}" in
+    wav|WAV) printf 'audio/wav' ;;
+    mp3|MP3) printf 'audio/mpeg' ;;
+    flac|FLAC) printf 'audio/flac' ;;
+    ogg|OGA|opus|OPUS) printf 'audio/ogg' ;;
+    m4a|M4A) printf 'audio/mp4' ;;
+    *) printf 'application/octet-stream' ;;
+  esac
+}
+
 extract_recording_id() {
   python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])'
 }
@@ -380,30 +392,45 @@ main() {
   start_api
 
   log "uploading recording audio via POST /recordings/upload"
-  local response recording_id workflow_id audio_object_key audio_size audio_file
+  local response recording_id workflow_id audio_object_key audio_size audio_file upload_title upload_language upload_filename upload_content_type
   audio_file="$LOG_DIR/weekly.wav"
-  ffmpeg -hide_banner -loglevel error -f lavfi -i sine=frequency=1000:duration=1 -ac 1 -ar 16000 -c:a pcm_s16le "$audio_file"
+  upload_title="${SMOKE_TITLE:-Weekly sync}"
+  upload_language="${SMOKE_LANGUAGE:-en}"
+  upload_filename="weekly.wav"
+  upload_content_type="audio/wav"
+  if [[ -n "${SMOKE_AUDIO_FILE:-}" ]]; then
+    if [[ ! -f "$SMOKE_AUDIO_FILE" ]]; then
+      log "SMOKE_AUDIO_FILE does not exist: $SMOKE_AUDIO_FILE"
+      return 1
+    fi
+    log "using SMOKE_AUDIO_FILE=$SMOKE_AUDIO_FILE"
+    audio_file="$SMOKE_AUDIO_FILE"
+    upload_filename="${SMOKE_AUDIO_FILENAME:-$(basename "$SMOKE_AUDIO_FILE")}"
+    upload_content_type="${SMOKE_AUDIO_CONTENT_TYPE:-$(content_type_for_file "$SMOKE_AUDIO_FILE")}"
+  else
+    ffmpeg -hide_banner -loglevel error -f lavfi -i sine=frequency=1000:duration=1 -ac 1 -ar 16000 -c:a pcm_s16le "$audio_file"
+  fi
   audio_size="$(wc -c <"$audio_file" | tr -d ' ')"
   response="$(curl -fsS -X POST "$API_URL/recordings/upload" \
-    -F 'title=Weekly sync' \
+    -F "title=$upload_title" \
     -F 'workflow_type=meeting' \
-    -F 'language=en' \
-    -F "audio=@$audio_file;filename=weekly.wav;type=audio/wav")"
+    -F "language=$upload_language" \
+    -F "audio=@$audio_file;filename=$upload_filename;type=$upload_content_type")"
   printf '%s\n' "$response"
   recording_id="$(printf '%s\n' "$response" | extract_recording_id)"
   audio_object_key="$(printf '%s\n' "$response" | extract_json_field audio_object_key)"
   workflow_id="recording-processing-$recording_id"
   log "expected Temporal workflow ID: $workflow_id"
 
-  assert_json_field_equals "$response" audio_content_type audio/wav
+  assert_json_field_equals "$response" audio_content_type "$upload_content_type"
   assert_json_field_equals "$response" audio_size_bytes "$audio_size"
   assert_uploaded_object "$audio_object_key" "$audio_size"
-  assert_recording_audio_metadata_in_db "$recording_id" "$audio_object_key" audio/wav "$audio_size"
+  assert_recording_audio_metadata_in_db "$recording_id" "$audio_object_key" "$upload_content_type" "$audio_size"
 
   log "verifying GET /recordings/$recording_id before API restart"
   response="$(curl -fsS "$API_URL/recordings/$recording_id")"
   assert_json_field_equals "$response" audio_object_key "$audio_object_key"
-  assert_json_field_equals "$response" audio_content_type audio/wav
+  assert_json_field_equals "$response" audio_content_type "$upload_content_type"
   assert_json_field_equals "$response" audio_size_bytes "$audio_size"
 
   log "restarting only API to verify Postgres persistence"
@@ -413,7 +440,7 @@ main() {
   log "verifying GET /recordings/$recording_id after API restart"
   response="$(curl -fsS "$API_URL/recordings/$recording_id")"
   assert_json_field_equals "$response" audio_object_key "$audio_object_key"
-  assert_json_field_equals "$response" audio_content_type audio/wav
+  assert_json_field_equals "$response" audio_content_type "$upload_content_type"
   assert_json_field_equals "$response" audio_size_bytes "$audio_size"
   assert_uploaded_object "$audio_object_key" "$audio_size"
   curl -fsS "$API_URL/recordings/$recording_id/status" >/dev/null
