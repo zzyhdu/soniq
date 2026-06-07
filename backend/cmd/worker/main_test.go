@@ -234,8 +234,8 @@ func (s *recordingWorkerSpy) RegisterActivityWithOptions(activityFn interface{},
 
 type workerRecordingStoreSpy struct{}
 
-func (s *workerRecordingStoreSpy) Get(id string) (domain.Recording, bool) {
-	return domain.Recording{ID: id}, true
+func (s *workerRecordingStoreSpy) Get(id string) (domain.Recording, bool, error) {
+	return domain.Recording{ID: id}, true, nil
 }
 
 func (s *workerRecordingStoreSpy) UpdateStatus(input recordings.UpdateRecordingStatusInput) (domain.Recording, error) {

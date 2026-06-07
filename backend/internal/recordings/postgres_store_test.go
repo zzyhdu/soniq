@@ -3,6 +3,7 @@ package recordings
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -200,7 +201,10 @@ func TestPostgresStoreGetReturnsExistingRecording(t *testing.T) {
 	))
 	store := NewPostgresStore(db)
 
-	recording, ok := store.Get("rec_pg")
+	recording, ok, err := store.Get("rec_pg")
+	if err != nil {
+		t.Fatalf("Get(rec_pg) returned error: %v", err)
+	}
 	if !ok {
 		t.Fatal("Get(rec_pg) ok = false, want true")
 	}
@@ -222,9 +226,26 @@ func TestPostgresStoreGetReturnsFalseForMissingRecording(t *testing.T) {
 	db := newPostgresExecutorSpy(postgresErrorRow(sql.ErrNoRows))
 	store := NewPostgresStore(db)
 
-	_, ok := store.Get("rec_missing")
+	_, ok, err := store.Get("rec_missing")
+	if err != nil {
+		t.Fatalf("Get(rec_missing) returned error: %v", err)
+	}
 	if ok {
 		t.Fatal("Get(rec_missing) ok = true, want false")
+	}
+}
+
+func TestPostgresStoreGetReturnsDatabaseErrors(t *testing.T) {
+	dbErr := errors.New("database unavailable")
+	db := newPostgresExecutorSpy(postgresErrorRow(dbErr))
+	store := NewPostgresStore(db)
+
+	_, ok, err := store.Get("rec_db_error")
+	if ok {
+		t.Fatal("Get(rec_db_error) ok = true, want false")
+	}
+	if !errors.Is(err, dbErr) {
+		t.Fatalf("Get error = %v, want wrapped database error", err)
 	}
 }
 

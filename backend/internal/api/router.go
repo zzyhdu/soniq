@@ -20,7 +20,7 @@ var errRecordingStoreNotConfigured = errors.New("recording store is not configur
 // RecordingStore is the persistence seam required by the recording HTTP handlers.
 type RecordingStore interface {
 	Create(recordings.CreateRecordingInput) (domain.Recording, error)
-	Get(id string) (domain.Recording, bool)
+	Get(id string) (domain.Recording, bool, error)
 }
 
 // RecordingDetailsStore is the optional persistence seam for transcript and summary detail reads.
@@ -97,8 +97,8 @@ func (unconfiguredRecordingStore) Create(recordings.CreateRecordingInput) (domai
 	return domain.Recording{}, errRecordingStoreNotConfigured
 }
 
-func (unconfiguredRecordingStore) Get(string) (domain.Recording, bool) {
-	return domain.Recording{}, false
+func (unconfiguredRecordingStore) Get(string) (domain.Recording, bool, error) {
+	return domain.Recording{}, false, errRecordingStoreNotConfigured
 }
 
 // NewRouter builds the HTTP handler for the Soniq API.
@@ -256,7 +256,11 @@ func recordingByIDHandler(store RecordingStore) http.HandlerFunc {
 			return
 		}
 
-		recording, ok := store.Get(id)
+		recording, ok, err := store.Get(id)
+		if err != nil {
+			http.Error(w, "get recording", http.StatusInternalServerError)
+			return
+		}
 		if !ok {
 			http.NotFound(w, r)
 			return

@@ -99,6 +99,10 @@ func openPostgresRecordingStore(ctx context.Context, dsn string) (recordingStore
 	if err != nil {
 		return nil, err
 	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("ping postgres: %w", err)
+	}
 	return &postgresRecordingStoreClient{
 		PostgresStore: recordings.NewPostgresStore(postgresExecutor{pool: pool}),
 		pool:          pool,

@@ -251,9 +251,9 @@ func (s *buildHandlerRecordingStoreSpy) Create(input recordings.CreateRecordingI
 	return recording, nil
 }
 
-func (s *buildHandlerRecordingStoreSpy) Get(id string) (domain.Recording, bool) {
+func (s *buildHandlerRecordingStoreSpy) Get(id string) (domain.Recording, bool, error) {
 	recording, ok := s.stored[id]
-	return recording, ok
+	return recording, ok, nil
 }
 
 func (s *buildHandlerRecordingStoreSpy) Close() {

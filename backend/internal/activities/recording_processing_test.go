@@ -15,12 +15,12 @@ type recordingStoreSpy struct {
 	updateErr  error
 }
 
-func (s *recordingStoreSpy) Get(id string) (domain.Recording, bool) {
+func (s *recordingStoreSpy) Get(id string) (domain.Recording, bool, error) {
 	if s.recordings == nil {
-		return domain.Recording{}, false
+		return domain.Recording{}, false, nil
 	}
 	recording, ok := s.recordings[id]
-	return recording, ok
+	return recording, ok, nil
 }
 
 func (s *recordingStoreSpy) UpdateStatus(input recordings.UpdateRecordingStatusInput) (domain.Recording, error) {
@@ -28,7 +28,10 @@ func (s *recordingStoreSpy) UpdateStatus(input recordings.UpdateRecordingStatusI
 	if s.updateErr != nil {
 		return domain.Recording{}, s.updateErr
 	}
-	recording, ok := s.Get(input.ID)
+	recording, ok, err := s.Get(input.ID)
+	if err != nil {
+		return domain.Recording{}, err
+	}
 	if !ok {
 		return domain.Recording{}, errors.New("recording not found")
 	}

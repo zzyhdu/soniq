@@ -77,9 +77,9 @@ RETURNING id, title, status, workflow_type, language, audio_object_key, audio_co
 }
 
 // Get returns a recording by id.
-func (s *PostgresStore) Get(id string) (domain.Recording, bool) {
+func (s *PostgresStore) Get(id string) (domain.Recording, bool, error) {
 	if s == nil || s.db == nil {
-		return domain.Recording{}, false
+		return domain.Recording{}, false, fmt.Errorf("postgres recording store requires database executor")
 	}
 
 	var recording domain.Recording
@@ -92,11 +92,11 @@ WHERE id = $1`,
 	)
 	if err := scanRecording(row, &recording); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return domain.Recording{}, false
+			return domain.Recording{}, false, nil
 		}
-		return domain.Recording{}, false
+		return domain.Recording{}, false, fmt.Errorf("get recording: %w", err)
 	}
-	return recording, true
+	return recording, true, nil
 }
 
 // UpdateStatus persists a recording status transition and returns the updated row.

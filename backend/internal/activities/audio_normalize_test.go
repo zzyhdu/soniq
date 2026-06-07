@@ -136,13 +136,16 @@ type normalizeRecordingStoreSpy struct {
 	normalizedAudios []recordings.UpsertNormalizedAudioInput
 }
 
-func (s *normalizeRecordingStoreSpy) Get(id string) (domain.Recording, bool) {
+func (s *normalizeRecordingStoreSpy) Get(id string) (domain.Recording, bool, error) {
 	recording, ok := s.recordings[id]
-	return recording, ok
+	return recording, ok, nil
 }
 
 func (s *normalizeRecordingStoreSpy) UpdateStatus(input recordings.UpdateRecordingStatusInput) (domain.Recording, error) {
-	recording, ok := s.Get(input.ID)
+	recording, ok, err := s.Get(input.ID)
+	if err != nil {
+		return domain.Recording{}, err
+	}
 	if !ok {
 		return domain.Recording{}, errors.New("recording not found")
 	}

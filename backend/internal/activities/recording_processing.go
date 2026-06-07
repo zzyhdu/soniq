@@ -45,7 +45,7 @@ const (
 
 // RecordingStore is the persistence seam used by validation, status, and audio probe activities.
 type RecordingStore interface {
-	Get(id string) (domain.Recording, bool)
+	Get(id string) (domain.Recording, bool, error)
 	UpdateStatus(input recordings.UpdateRecordingStatusInput) (domain.Recording, error)
 	UpsertAudioProbe(input recordings.UpsertAudioProbeInput) (recordings.RecordingAudioProbe, error)
 }
@@ -220,7 +220,11 @@ func (a *RecordingProcessingActivities) ValidateRecording(ctx context.Context, i
 	if a == nil || a.store == nil {
 		return errors.New("recording store is required")
 	}
-	if _, ok := a.store.Get(input.RecordingID); !ok {
+	_, ok, err := a.store.Get(input.RecordingID)
+	if err != nil {
+		return fmt.Errorf("get recording: %w", err)
+	}
+	if !ok {
 		return fmt.Errorf("recording not found: %s", input.RecordingID)
 	}
 	return nil
@@ -277,7 +281,10 @@ func (a *RecordingProcessingActivities) ProbeRecordingAudio(ctx context.Context,
 		return errors.New("audio probe runner is required")
 	}
 
-	recording, ok := a.store.Get(recordingID)
+	recording, ok, err := a.store.Get(recordingID)
+	if err != nil {
+		return fmt.Errorf("get recording: %w", err)
+	}
 	if !ok {
 		return fmt.Errorf("recording not found: %s", recordingID)
 	}
@@ -328,7 +335,10 @@ func (a *RecordingProcessingActivities) NormalizeRecordingAudio(ctx context.Cont
 		return errors.New("audio normalize runner is required")
 	}
 
-	recording, ok := a.store.Get(recordingID)
+	recording, ok, err := a.store.Get(recordingID)
+	if err != nil {
+		return fmt.Errorf("get recording: %w", err)
+	}
 	if !ok {
 		return fmt.Errorf("recording not found: %s", recordingID)
 	}
@@ -392,7 +402,10 @@ func (a *RecordingProcessingActivities) TranscribeRecordingAudio(ctx context.Con
 	if a.transcriptionProvider == nil {
 		return errors.New("transcription provider is required")
 	}
-	recording, ok := a.store.Get(recordingID)
+	recording, ok, err := a.store.Get(recordingID)
+	if err != nil {
+		return fmt.Errorf("get recording: %w", err)
+	}
 	if !ok {
 		return fmt.Errorf("recording not found: %s", recordingID)
 	}
@@ -459,7 +472,10 @@ func (a *RecordingProcessingActivities) SummarizeRecording(ctx context.Context, 
 	if a.summaryProvider == nil {
 		return errors.New("summary provider is required")
 	}
-	recording, ok := a.store.Get(recordingID)
+	recording, ok, err := a.store.Get(recordingID)
+	if err != nil {
+		return fmt.Errorf("get recording: %w", err)
+	}
 	if !ok {
 		return fmt.Errorf("recording not found: %s", recordingID)
 	}

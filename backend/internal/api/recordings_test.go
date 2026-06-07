@@ -21,6 +21,7 @@ import (
 
 var errRecordingProcessorFailed = errors.New("recording processor failed")
 var errObjectStoreFailed = errors.New("object store failed")
+var errRecordingGetFailed = errors.New("recording get failed")
 
 type recordingProcessorSpy struct {
 	enqueued []domain.Recording
@@ -45,6 +46,10 @@ type recordingDetailsFixture struct {
 
 type recordingOnlyStore struct {
 	stored map[string]domain.Recording
+}
+
+type getErrRecordingStore struct {
+	err error
 }
 
 type objectStoreSpy struct {
@@ -86,9 +91,9 @@ func (s *fakeRecordingStore) Create(input recordings.CreateRecordingInput) (doma
 	return recording, nil
 }
 
-func (s *fakeRecordingStore) Get(id string) (domain.Recording, bool) {
+func (s *fakeRecordingStore) Get(id string) (domain.Recording, bool, error) {
 	recording, ok := s.stored[id]
-	return recording, ok
+	return recording, ok, nil
 }
 
 func (s *fakeRecordingStore) put(recording domain.Recording) {
@@ -120,9 +125,17 @@ func (s recordingOnlyStore) Create(recordings.CreateRecordingInput) (domain.Reco
 	return domain.Recording{}, errors.New("create should not be called")
 }
 
-func (s recordingOnlyStore) Get(id string) (domain.Recording, bool) {
+func (s recordingOnlyStore) Get(id string) (domain.Recording, bool, error) {
 	recording, ok := s.stored[id]
-	return recording, ok
+	return recording, ok, nil
+}
+
+func (s getErrRecordingStore) Create(recordings.CreateRecordingInput) (domain.Recording, error) {
+	return domain.Recording{}, errors.New("create should not be called")
+}
+
+func (s getErrRecordingStore) Get(string) (domain.Recording, bool, error) {
+	return domain.Recording{}, false, s.err
 }
 
 func (s *recordingProcessorSpy) Enqueue(recording domain.Recording) error {
@@ -228,7 +241,10 @@ func TestCreateRecordingReturnsCreatedRecording(t *testing.T) {
 		t.Fatalf("language = %q, want en", body.Language)
 	}
 
-	stored, ok := store.Get(body.ID)
+	stored, ok, err := store.Get(body.ID)
+	if err != nil {
+		t.Fatalf("store.Get(%q) error: %v", body.ID, err)
+	}
 	if !ok {
 		t.Fatalf("store.Get(%q) ok = false, want true", body.ID)
 	}
@@ -640,6 +656,18 @@ func TestGetRecordingReturnsNotFoundForUnknownRecording(t *testing.T) {
 
 	if response.Code != http.StatusNotFound {
 		t.Fatalf("status code = %d, want %d", response.Code, http.StatusNotFound)
+	}
+}
+
+func TestGetRecordingReturnsServerErrorWhenStoreGetFails(t *testing.T) {
+	router := NewRouterWithStore(getErrRecordingStore{err: errRecordingGetFailed})
+	request := httptest.NewRequest(http.MethodGet, "/recordings/rec_db_error", nil)
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusInternalServerError, response.Body.String())
 	}
 }
 
