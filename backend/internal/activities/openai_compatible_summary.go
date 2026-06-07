@@ -168,10 +168,7 @@ func firstNonHeadingParagraph(lines []string) string {
 	if overview == "" {
 		return "No summary content available."
 	}
-	if len(overview) > 240 {
-		return overview[:240]
-	}
-	return overview
+	return truncateRunes(overview, 240)
 }
 
 func redactSecret(value, secret string) string {

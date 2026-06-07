@@ -540,9 +540,7 @@ type FakeSummaryProvider struct{}
 
 func (p FakeSummaryProvider) Summarize(ctx context.Context, request SummaryRequest) (SummaryResult, error) {
 	overview := strings.TrimSpace(request.TranscriptText)
-	if len(overview) > 120 {
-		overview = overview[:120]
-	}
+	overview = truncateRunes(overview, 120)
 	if overview == "" {
 		overview = "No transcript text available."
 	}

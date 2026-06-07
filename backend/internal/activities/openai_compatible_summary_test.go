@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/zzyhdu/soniq/backend/internal/domain"
 )
@@ -72,6 +73,40 @@ func TestOpenAICompatibleSummaryProviderPostsChatCompletionAndParsesMarkdown(t *
 	}
 	if len(result.RawResultJSON) == 0 {
 		t.Fatal("RawResultJSON is empty")
+	}
+}
+
+func TestOpenAICompatibleSummaryProviderTruncatesChineseOverviewWithoutBreakingUTF8(t *testing.T) {
+	longOverview := strings.Repeat("界", 241)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		response := openAICompatibleSummaryResponse{
+			ID:    "chatcmpl-test",
+			Model: "qwen-plus",
+			Choices: []openAICompatibleSummaryChoice{{
+				Message: openAICompatibleSummaryMessage{Role: "assistant", Content: "# 摘要\n\n" + longOverview},
+			}},
+		}
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			t.Fatalf("encode response: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	provider := OpenAICompatibleSummaryProvider{
+		BaseURL: server.URL + "/v1",
+		APIKey:  "summary-secret",
+		Model:   "qwen-plus",
+	}
+	result, err := provider.Summarize(context.Background(), SummaryRequest{RecordingID: "rec_zh", TranscriptText: "中文转写"})
+	if err != nil {
+		t.Fatalf("Summarize returned error: %v", err)
+	}
+	if !utf8.ValidString(result.Overview) {
+		t.Fatalf("overview contains invalid UTF-8: %q", result.Overview)
+	}
+	if got, want := len([]rune(result.Overview)), 240; got != want {
+		t.Fatalf("overview runes = %d, want %d", got, want)
 	}
 }
 

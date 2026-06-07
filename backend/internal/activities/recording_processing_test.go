@@ -3,7 +3,9 @@ package activities
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/zzyhdu/soniq/backend/internal/domain"
 	"github.com/zzyhdu/soniq/backend/internal/recordings"
@@ -41,6 +43,23 @@ func (s *recordingStoreSpy) UpdateStatus(input recordings.UpdateRecordingStatusI
 
 func (s *recordingStoreSpy) UpsertAudioProbe(input recordings.UpsertAudioProbeInput) (recordings.RecordingAudioProbe, error) {
 	return recordings.RecordingAudioProbe{RecordingID: input.RecordingID}, nil
+}
+
+func TestFakeSummaryProviderTruncatesChineseOverviewWithoutBreakingUTF8(t *testing.T) {
+	result, err := FakeSummaryProvider{}.Summarize(context.Background(), SummaryRequest{
+		RecordingID:    "rec_zh",
+		Title:          "中文摘要",
+		TranscriptText: strings.Repeat("界", 121),
+	})
+	if err != nil {
+		t.Fatalf("Summarize returned error: %v", err)
+	}
+	if !utf8.ValidString(result.Overview) {
+		t.Fatalf("overview contains invalid UTF-8: %q", result.Overview)
+	}
+	if got, want := len([]rune(result.Overview)), 120; got != want {
+		t.Fatalf("overview runes = %d, want %d", got, want)
+	}
 }
 
 func TestRecordingProcessingActivitiesValidateRecordingAcceptsExistingRecording(t *testing.T) {
