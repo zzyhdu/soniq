@@ -4,7 +4,7 @@
 
 **Goal:** Add a local API console so developers can inspect Soniq API docs, upload audio, poll processing status, and read transcript/summary results from a browser.
 
-**Architecture:** Keep OpenAPI as the API contract source of truth in `docs/openapi.yaml`. Serve a static Scalar API Reference page from the Go API so `Try it` requests are same-origin and avoid CORS setup. Keep this as a developer console, not the final product web UI.
+**Architecture:** Keep OpenAPI as the backend-owned API contract source of truth in `backend/doc/openapi.yaml`. Serve a static Scalar API Reference page from the Go API so `Try it` requests are same-origin and avoid CORS setup. Keep this as a developer console, not the final product web UI.
 
 **Tech Stack:** OpenAPI 3.1 YAML, Scalar API Reference via CDN, Go `net/http`, existing Soniq API handlers/tests.
 
@@ -14,8 +14,8 @@
 
 ### In scope
 
-- Add `docs/openapi.yaml` for the currently implemented API.
-- Add `web/api.html` that embeds Scalar and points to `/openapi.yaml`.
+- Add `backend/doc/openapi.yaml` for the currently implemented API.
+- Add `backend/doc/api.html` that embeds Scalar and points to `/openapi.yaml`.
 - Serve `/openapi.yaml` and `/api-console` from the existing Go API router.
 - Add tests proving both static endpoints are reachable and load the expected content.
 - Manually verify Scalar can exercise upload/status/details against the local API service.
@@ -51,7 +51,7 @@ The current backend already supports:
 
 **Files:**
 
-- Create: `docs/openapi.yaml`
+- Create: `backend/doc/openapi.yaml`
 
 **Implementation details:**
 
@@ -119,11 +119,11 @@ requestBody:
 Run:
 
 ```bash
-test -f docs/openapi.yaml
-grep -q 'openapi: 3.1.0' docs/openapi.yaml
-grep -q '/recordings/upload:' docs/openapi.yaml
-grep -q 'format: binary' docs/openapi.yaml
-grep -q '/recordings/{id}/details:' docs/openapi.yaml
+test -f backend/doc/openapi.yaml
+grep -q 'openapi: 3.1.0' backend/doc/openapi.yaml
+grep -q '/recordings/upload:' backend/doc/openapi.yaml
+grep -q 'format: binary' backend/doc/openapi.yaml
+grep -q '/recordings/{id}/details:' backend/doc/openapi.yaml
 ```
 
 Expected: all commands exit `0`.
@@ -136,7 +136,7 @@ Expected: all commands exit `0`.
 
 **Files:**
 
-- Create: `web/api.html`
+- Create: `backend/doc/api.html`
 
 **Implementation details:**
 
@@ -167,9 +167,9 @@ Keep it intentionally minimal. This is a developer console, not the final Soniq 
 Run:
 
 ```bash
-test -f web/api.html
-grep -q '@scalar/api-reference' web/api.html
-grep -q '/openapi.yaml' web/api.html
+test -f backend/doc/api.html
+grep -q '@scalar/api-reference' backend/doc/api.html
+grep -q '/openapi.yaml' backend/doc/api.html
 ```
 
 Expected: all commands exit `0`.
@@ -196,10 +196,10 @@ mux.HandleFunc("/api-console", apiConsoleHandler)
 
 Implement simple handlers first:
 
-- `openAPIHandler`: reads `docs/openapi.yaml`, returns YAML.
-- `apiConsoleHandler`: reads `web/api.html`, returns HTML.
+- `openAPIHandler`: reads `backend/doc/openapi.yaml`, returns YAML.
+- `apiConsoleHandler`: reads `backend/doc/api.html`, returns HTML.
 
-Use simple filesystem reads for the first version. Do not introduce `go:embed` yet unless tests reveal path problems. The current local development flow runs `make api` from the repository root, so relative paths are acceptable for this milestone.
+Use simple filesystem reads for the first version. Do not introduce `go:embed` yet unless packaging path problems require it. The current local development flow runs `make api` from the repository root, and that target runs the API from `backend/`, so backend-owned `doc/` assets are available at runtime.
 
 Suggested response content types:
 
@@ -324,7 +324,7 @@ git diff --check
 Optional OpenAPI lint if Node is available:
 
 ```bash
-npx @redocly/cli lint docs/openapi.yaml
+npx @redocly/cli lint backend/doc/openapi.yaml
 ```
 
 **Expected:**
@@ -347,8 +347,8 @@ git commit -m "Add OpenAPI Scalar API console"
 
 Files expected in the commit:
 
-- `docs/openapi.yaml`
-- `web/api.html`
+- `backend/doc/openapi.yaml`
+- `backend/doc/api.html`
 - `backend/internal/api/router.go`
 - `backend/internal/api/router_test.go` or `backend/internal/api/recordings_test.go`
 

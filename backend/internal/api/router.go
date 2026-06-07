@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	apidocs "github.com/zzyhdu/soniq/backend/doc"
 	"github.com/zzyhdu/soniq/backend/internal/domain"
 	"github.com/zzyhdu/soniq/backend/internal/recordings"
 	"github.com/zzyhdu/soniq/backend/internal/storage"
@@ -124,6 +125,8 @@ func NewRouterWithProcessor(store RecordingStore, processor RecordingProcessor) 
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", healthzHandler)
+	mux.HandleFunc("/openapi.yaml", openAPIHandler)
+	mux.HandleFunc("/api-console", apiConsoleHandler)
 	mux.HandleFunc("/recordings", createRecordingHandler(store))
 	mux.HandleFunc("/recordings/", recordingByIDHandler(store))
 	return mux
@@ -137,10 +140,35 @@ func NewRouterWithStorage(store RecordingStore, processor RecordingProcessor, ob
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", healthzHandler)
+	mux.HandleFunc("/openapi.yaml", openAPIHandler)
+	mux.HandleFunc("/api-console", apiConsoleHandler)
 	mux.HandleFunc("/recordings", createRecordingHandler(store))
 	mux.HandleFunc("/recordings/upload", uploadRecordingHandler(store, processor, objectStore))
 	mux.HandleFunc("/recordings/", recordingByIDHandler(store))
 	return mux
+}
+
+func openAPIHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	serveEmbeddedFile(w, apidocs.OpenAPI, "application/yaml; charset=utf-8")
+}
+
+func apiConsoleHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	serveEmbeddedFile(w, apidocs.APIConsole, "text/html; charset=utf-8")
+}
+
+func serveEmbeddedFile(w http.ResponseWriter, body []byte, contentType string) {
+	w.Header().Set("Content-Type", contentType)
+	_, _ = w.Write(body)
 }
 
 func createRecordingHandler(store RecordingStore) http.HandlerFunc {

@@ -1,0 +1,300 @@
+openapi: 3.1.0
+info:
+  title: Soniq API
+  version: 0.1.0
+  description: Local-first API for uploading recordings, tracking processing, and reading transcript/summary results.
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+servers:
+  - url: /
+    description: Same-origin local API server.
+security: []
+paths:
+  /healthz:
+    get:
+      summary: Check API health
+      operationId: getHealthz
+      responses:
+        '200':
+          description: API health status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthzResponse'
+        '405':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+  /recordings:
+    post:
+      summary: Create recording metadata
+      description: Creates a recording session without uploading audio or starting processing.
+      operationId: createRecording
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRecordingRequest'
+      responses:
+        '201':
+          description: Recording created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Recording'
+        '400':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+  /recordings/upload:
+    post:
+      summary: Upload recording audio
+      description: Uploads audio, creates a recording, and starts processing.
+      operationId: uploadRecording
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [workflow_type, audio]
+              properties:
+                title:
+                  type: string
+                workflow_type:
+                  $ref: '#/components/schemas/WorkflowType'
+                language:
+                  type: string
+                  example: zh
+                audio:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Recording created and processing enqueue attempted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [recording, processing_enqueued]
+                properties:
+                  recording:
+                    $ref: '#/components/schemas/Recording'
+                  processing_enqueued:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+  /recordings/{id}:
+    get:
+      summary: Get recording
+      operationId: getRecording
+      parameters:
+        - $ref: '#/components/parameters/RecordingID'
+      responses:
+        '200':
+          description: Recording found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Recording'
+        '404':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+  /recordings/{id}/status:
+    get:
+      summary: Get recording status
+      operationId: getRecordingStatus
+      parameters:
+        - $ref: '#/components/parameters/RecordingID'
+      responses:
+        '200':
+          description: Recording status found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingStatusResponse'
+        '404':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+  /recordings/{id}/details:
+    get:
+      summary: Get recording details
+      description: Returns recording metadata with transcript, transcript segments, and summary when available.
+      operationId: getRecordingDetails
+      parameters:
+        - $ref: '#/components/parameters/RecordingID'
+      responses:
+        '200':
+          description: Recording details found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingDetails'
+        '404':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+components:
+  parameters:
+    RecordingID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Recording identifier.
+  responses:
+    Error:
+      description: Error response.
+      content:
+        text/plain:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    WorkflowType:
+      type: string
+      enum: [meeting, lecture, interview, memo]
+    RecordingStatus:
+      type: string
+      enum: [uploaded, processing, transcribing, summarizing, completed, failed, cancelled]
+    Recording:
+      type: object
+      required: [id, title, status, workflow_type, language, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        status:
+          $ref: '#/components/schemas/RecordingStatus'
+        workflow_type:
+          $ref: '#/components/schemas/WorkflowType'
+        language:
+          type: string
+        audio_object_key:
+          type: string
+        audio_content_type:
+          type: string
+        audio_size_bytes:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CreateRecordingRequest:
+      type: object
+      required: [workflow_type]
+      properties:
+        title:
+          type: string
+        workflow_type:
+          $ref: '#/components/schemas/WorkflowType'
+        language:
+          type: string
+          example: en
+    RecordingStatusResponse:
+      type: object
+      required: [id, status]
+      properties:
+        id:
+          type: string
+        status:
+          $ref: '#/components/schemas/RecordingStatus'
+    RecordingTranscript:
+      type: object
+      required: [recording_id, provider, model, language, text, transcribed_at]
+      properties:
+        recording_id:
+          type: string
+        provider:
+          type: string
+        model:
+          type: string
+        language:
+          type: string
+        text:
+          type: string
+        transcribed_at:
+          type: string
+          format: date-time
+    RecordingTranscriptSegment:
+      type: object
+      required: [id, recording_id, segment_index, start_ms, end_ms, speaker_label, text, confidence]
+      properties:
+        id:
+          type: string
+        recording_id:
+          type: string
+        segment_index:
+          type: integer
+        start_ms:
+          type: integer
+        end_ms:
+          type: integer
+        speaker_label:
+          type: string
+        text:
+          type: string
+        confidence:
+          type: number
+          format: double
+    RecordingSummary:
+      type: object
+      required: [recording_id, provider, model, type, title, overview, content_markdown, summarized_at]
+      properties:
+        recording_id:
+          type: string
+        provider:
+          type: string
+        model:
+          type: string
+        type:
+          $ref: '#/components/schemas/WorkflowType'
+        title:
+          type: string
+        overview:
+          type: string
+        content_markdown:
+          type: string
+        summarized_at:
+          type: string
+          format: date-time
+    RecordingDetails:
+      type: object
+      required: [recording, segments]
+      properties:
+        recording:
+          $ref: '#/components/schemas/Recording'
+        transcript:
+          anyOf:
+            - $ref: '#/components/schemas/RecordingTranscript'
+            - type: 'null'
+        segments:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecordingTranscriptSegment'
+        summary:
+          anyOf:
+            - $ref: '#/components/schemas/RecordingSummary'
+            - type: 'null'
+    HealthzResponse:
+      type: object
+      required: [status, service]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        service:
+          type: string
+          enum: [soniq-api]
+    ErrorResponse:
+      type: string
