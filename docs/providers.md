@@ -41,7 +41,7 @@ type TranscriptionProvider interface {
 
 Provider categories:
 
-- Synchronous: OpenAI, Groq Whisper, local faster-whisper.
+- Synchronous: Xiaomi MiMo `mimo-v2.5-asr` via OpenAI-compatible chat-completions audio input, OpenAI/Groq Whisper-style providers, local faster-whisper.
 - Asynchronous: AssemblyAI, Deepgram batch, Aliyun ASR, Tencent ASR, Volcengine ASR, iFlytek long audio.
 
 Current implementation:
@@ -115,3 +115,8 @@ transcription:
 ```
 
 Fallback must be explicit because compliance-sensitive deployments may forbid external providers.
+
+
+## Xiaomi MiMo ASR configuration target
+
+The next real transcription provider target is Xiaomi MiMo ASR (`mimo-v2.5-asr`). It uses `POST /chat/completions` at `https://api.xiaomimimo.com/v1` with a Base64 `input_audio` content part, not multipart `/audio/transcriptions`. Runtime API keys must come from local environment variables such as `TRANSCRIPTION_API_KEY` or `MIMO_API_KEY`; repository files must contain placeholders only.

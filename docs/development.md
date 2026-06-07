@@ -485,7 +485,14 @@ The current backend reads environment variables directly. Important local settin
 | `TEMPORAL_TASK_QUEUE` | `soniq-audio-pipeline` | Task queue used when the API starts workflows and the worker polls work. |
 | `STORAGE_PROVIDER` | `local` | Object storage provider selector. The implemented local development provider is `local`; S3-compatible storage is future-facing. |
 | `LOCAL_STORAGE_PATH` | `var/uploads` | Local object storage root used when `STORAGE_PROVIDER=local`. |
-| `TRANSCRIPTION_PROVIDER` | `faster_whisper` | Future transcription provider selector. |
+| `TRANSCRIPTION_PROVIDER` | `fake_transcription` | Transcription provider selector. Use `openai_compatible_asr` for Xiaomi MiMo/OpenAI-compatible ASR. |
+| `TRANSCRIPTION_BASE_URL` | `https://api.xiaomimimo.com/v1` | OpenAI-compatible ASR base URL. |
+| `TRANSCRIPTION_API_KEY` | empty | External ASR API key loaded from local `.env`; never commit real values. |
+| `MIMO_API_KEY` | empty | Optional Xiaomi MiMo API key alias; `TRANSCRIPTION_API_KEY` takes precedence. |
+| `TRANSCRIPTION_MODEL` | `mimo-v2.5-asr` | External ASR model name. |
+| `TRANSCRIPTION_AUTH_HEADER` | `api-key` | ASR auth mode: `api-key` for Xiaomi MiMo or `bearer` for Bearer-compatible providers. |
+| `TRANSCRIPTION_LANGUAGE` | `auto` | ASR language hint: `auto`, `zh`, or `en` for Xiaomi MiMo. |
+| `TRANSCRIPTION_MAX_BASE64_BYTES` | `10485760` | Maximum Base64 audio payload size for chat-completions audio-input ASR. |
 | `LLM_PROVIDER` | `openai_compatible` | Future LLM provider selector. |
 | `LLM_BASE_URL` | `https://api.openai.com/v1` | Future OpenAI-compatible endpoint. |
 | `LLM_MODEL` | `gpt-4o-mini` | Future default LLM model name. |

@@ -651,7 +651,7 @@ Checklist:
 **Verification:**
 
 ```bash
-! grep -RIn "real-secret-value" . --exclude-dir=.git --exclude=.env --exclude=.env.*
+! grep -RIn "replace-with-real-secret" . --exclude-dir=.git --exclude=.env --exclude=.env.*
 cd backend && go test ./...
 git diff --check
 git status --short

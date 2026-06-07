@@ -32,8 +32,26 @@ func TestLoadFromEnvUsesDevelopmentDefaults(t *testing.T) {
 	if cfg.LocalStoragePath != "var/uploads" {
 		t.Fatalf("LocalStoragePath = %q, want var/uploads", cfg.LocalStoragePath)
 	}
-	if cfg.TranscriptionProvider != "faster_whisper" {
-		t.Fatalf("TranscriptionProvider = %q, want faster_whisper", cfg.TranscriptionProvider)
+	if cfg.TranscriptionProvider != "fake_transcription" {
+		t.Fatalf("TranscriptionProvider = %q, want fake_transcription", cfg.TranscriptionProvider)
+	}
+	if cfg.TranscriptionBaseURL != "https://api.xiaomimimo.com/v1" {
+		t.Fatalf("TranscriptionBaseURL = %q, want Xiaomi MiMo default", cfg.TranscriptionBaseURL)
+	}
+	if cfg.TranscriptionAPIKey != "" {
+		t.Fatal("TranscriptionAPIKey default should be empty")
+	}
+	if cfg.TranscriptionModel != "mimo-v2.5-asr" {
+		t.Fatalf("TranscriptionModel = %q, want mimo-v2.5-asr", cfg.TranscriptionModel)
+	}
+	if cfg.TranscriptionAuthHeader != "api-key" {
+		t.Fatalf("TranscriptionAuthHeader = %q, want api-key", cfg.TranscriptionAuthHeader)
+	}
+	if cfg.TranscriptionLanguage != "auto" {
+		t.Fatalf("TranscriptionLanguage = %q, want auto", cfg.TranscriptionLanguage)
+	}
+	if cfg.TranscriptionMaxBase64Bytes != 10*1024*1024 {
+		t.Fatalf("TranscriptionMaxBase64Bytes = %d, want 10MiB", cfg.TranscriptionMaxBase64Bytes)
 	}
 	if cfg.LLMProvider != "openai_compatible" {
 		t.Fatalf("LLMProvider = %q, want openai_compatible", cfg.LLMProvider)
@@ -62,7 +80,13 @@ func TestLoadFromEnvAppliesEnvironmentOverrides(t *testing.T) {
 	t.Setenv("TEMPORAL_TASK_QUEUE", "custom-queue")
 	t.Setenv("STORAGE_PROVIDER", "local_fs")
 	t.Setenv("LOCAL_STORAGE_PATH", "/tmp/soniq-uploads")
-	t.Setenv("TRANSCRIPTION_PROVIDER", "openai_compatible_transcription")
+	t.Setenv("TRANSCRIPTION_PROVIDER", "openai_compatible_asr")
+	t.Setenv("TRANSCRIPTION_BASE_URL", "http://asr.example.test/v1")
+	t.Setenv("TRANSCRIPTION_API_KEY", "transcription-secret")
+	t.Setenv("TRANSCRIPTION_MODEL", "mimo-v2.5-asr")
+	t.Setenv("TRANSCRIPTION_AUTH_HEADER", "bearer")
+	t.Setenv("TRANSCRIPTION_LANGUAGE", "zh")
+	t.Setenv("TRANSCRIPTION_MAX_BASE64_BYTES", "12345")
 	t.Setenv("LLM_PROVIDER", "ollama")
 	t.Setenv("LLM_BASE_URL", "http://localhost:11434/v1")
 	t.Setenv("LLM_API_KEY", "secret-key")
@@ -99,8 +123,26 @@ func TestLoadFromEnvAppliesEnvironmentOverrides(t *testing.T) {
 	if cfg.LocalStoragePath != "/tmp/soniq-uploads" {
 		t.Fatalf("LocalStoragePath = %q, want override", cfg.LocalStoragePath)
 	}
-	if cfg.TranscriptionProvider != "openai_compatible_transcription" {
+	if cfg.TranscriptionProvider != "openai_compatible_asr" {
 		t.Fatalf("TranscriptionProvider = %q, want override", cfg.TranscriptionProvider)
+	}
+	if cfg.TranscriptionBaseURL != "http://asr.example.test/v1" {
+		t.Fatalf("TranscriptionBaseURL = %q, want override", cfg.TranscriptionBaseURL)
+	}
+	if cfg.TranscriptionAPIKey != "transcription-secret" {
+		t.Fatal("TranscriptionAPIKey override was not loaded")
+	}
+	if cfg.TranscriptionModel != "mimo-v2.5-asr" {
+		t.Fatalf("TranscriptionModel = %q, want mimo-v2.5-asr", cfg.TranscriptionModel)
+	}
+	if cfg.TranscriptionAuthHeader != "bearer" {
+		t.Fatalf("TranscriptionAuthHeader = %q, want bearer", cfg.TranscriptionAuthHeader)
+	}
+	if cfg.TranscriptionLanguage != "zh" {
+		t.Fatalf("TranscriptionLanguage = %q, want zh", cfg.TranscriptionLanguage)
+	}
+	if cfg.TranscriptionMaxBase64Bytes != 12345 {
+		t.Fatalf("TranscriptionMaxBase64Bytes = %d, want 12345", cfg.TranscriptionMaxBase64Bytes)
 	}
 	if cfg.LLMProvider != "ollama" {
 		t.Fatalf("LLMProvider = %q, want ollama", cfg.LLMProvider)
@@ -159,5 +201,69 @@ func TestValidateForStartupAllowsMissingLLMAPIKeyInDevelopment(t *testing.T) {
 	}
 	if !cfg.NeedsLLMAPIKeyForExternalProvider() {
 		t.Fatal("NeedsLLMAPIKeyForExternalProvider() = false, want true")
+	}
+}
+
+func TestLoadFromEnvFallsBackToMIMOAPIKeyForTranscription(t *testing.T) {
+	t.Setenv("TRANSCRIPTION_API_KEY", "")
+	t.Setenv("MIMO_API_KEY", "mimo-secret")
+
+	cfg := LoadFromEnv()
+
+	if cfg.TranscriptionAPIKey != "mimo-secret" {
+		t.Fatal("TranscriptionAPIKey did not fall back to MIMO_API_KEY")
+	}
+}
+
+func TestNeedsTranscriptionAPIKeyForExternalProvider(t *testing.T) {
+	cfg := LoadFromEnv()
+	cfg.TranscriptionProvider = "openai_compatible_asr"
+	cfg.TranscriptionAPIKey = ""
+	cfg.PrivacyAllowExternalModelProviders = true
+
+	if !cfg.NeedsTranscriptionAPIKeyForExternalProvider() {
+		t.Fatal("NeedsTranscriptionAPIKeyForExternalProvider() = false, want true")
+	}
+
+	cfg.TranscriptionAPIKey = "secret"
+	if cfg.NeedsTranscriptionAPIKeyForExternalProvider() {
+		t.Fatal("NeedsTranscriptionAPIKeyForExternalProvider() = true with key set, want false")
+	}
+
+	cfg.TranscriptionAPIKey = ""
+	cfg.TranscriptionProvider = "fake_transcription"
+	if cfg.NeedsTranscriptionAPIKeyForExternalProvider() {
+		t.Fatal("NeedsTranscriptionAPIKeyForExternalProvider() = true for fake provider, want false")
+	}
+
+	cfg.TranscriptionProvider = "openai_compatible_asr"
+	cfg.PrivacyAllowExternalModelProviders = false
+	if cfg.NeedsTranscriptionAPIKeyForExternalProvider() {
+		t.Fatal("NeedsTranscriptionAPIKeyForExternalProvider() = true in private mode, want false")
+	}
+}
+
+func TestValidateForStartupRejectsMissingTranscriptionExternalConfig(t *testing.T) {
+	cfg := LoadFromEnv()
+	cfg.TranscriptionProvider = "openai_compatible_asr"
+	cfg.TranscriptionBaseURL = ""
+	if err := cfg.ValidateForStartup(); err == nil {
+		t.Fatal("ValidateForStartup() error = nil, want missing transcription base URL error")
+	}
+
+	cfg = LoadFromEnv()
+	cfg.TranscriptionProvider = "openai_compatible_asr"
+	cfg.TranscriptionAPIKey = ""
+	cfg.PrivacyAllowExternalModelProviders = true
+	if err := cfg.ValidateForStartup(); err == nil {
+		t.Fatal("ValidateForStartup() error = nil, want missing transcription API key error")
+	}
+
+	cfg = LoadFromEnv()
+	cfg.TranscriptionProvider = "openai_compatible_asr"
+	cfg.TranscriptionAPIKey = "secret"
+	cfg.TranscriptionModel = ""
+	if err := cfg.ValidateForStartup(); err == nil {
+		t.Fatal("ValidateForStartup() error = nil, want missing transcription model error")
 	}
 }

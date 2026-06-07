@@ -18,6 +18,12 @@ type Config struct {
 	StorageProvider                              string
 	LocalStoragePath                             string
 	TranscriptionProvider                        string
+	TranscriptionBaseURL                         string
+	TranscriptionAPIKey                          string
+	TranscriptionModel                           string
+	TranscriptionAuthHeader                      string
+	TranscriptionLanguage                        string
+	TranscriptionMaxBase64Bytes                  int64
 	LLMProvider                                  string
 	LLMBaseURL                                   string
 	LLMAPIKey                                    string
@@ -38,7 +44,13 @@ func LoadFromEnv() Config {
 		TemporalTaskQueue:                  envString("TEMPORAL_TASK_QUEUE", "soniq-audio-pipeline"),
 		StorageProvider:                    envString("STORAGE_PROVIDER", "local"),
 		LocalStoragePath:                   envString("LOCAL_STORAGE_PATH", "var/uploads"),
-		TranscriptionProvider:              envString("TRANSCRIPTION_PROVIDER", "faster_whisper"),
+		TranscriptionProvider:              envString("TRANSCRIPTION_PROVIDER", "fake_transcription"),
+		TranscriptionBaseURL:               envString("TRANSCRIPTION_BASE_URL", "https://api.xiaomimimo.com/v1"),
+		TranscriptionAPIKey:                envStringWithFallback("TRANSCRIPTION_API_KEY", "MIMO_API_KEY", ""),
+		TranscriptionModel:                 envString("TRANSCRIPTION_MODEL", "mimo-v2.5-asr"),
+		TranscriptionAuthHeader:            envString("TRANSCRIPTION_AUTH_HEADER", "api-key"),
+		TranscriptionLanguage:              envString("TRANSCRIPTION_LANGUAGE", "auto"),
+		TranscriptionMaxBase64Bytes:        envInt64("TRANSCRIPTION_MAX_BASE64_BYTES", 10*1024*1024),
 		LLMProvider:                        envString("LLM_PROVIDER", "openai_compatible"),
 		LLMBaseURL:                         envString("LLM_BASE_URL", "https://api.openai.com/v1"),
 		LLMAPIKey:                          envString("LLM_API_KEY", ""),
@@ -65,10 +77,37 @@ func (c Config) ValidateForStartup() error {
 	if strings.TrimSpace(c.TranscriptionProvider) == "" {
 		return fmt.Errorf("TRANSCRIPTION_PROVIDER is required")
 	}
+	if c.TranscriptionMaxBase64Bytes <= 0 {
+		return fmt.Errorf("TRANSCRIPTION_MAX_BASE64_BYTES must be positive")
+	}
+	if c.isExternalTranscriptionProvider() {
+		if strings.TrimSpace(c.TranscriptionBaseURL) == "" {
+			return fmt.Errorf("TRANSCRIPTION_BASE_URL is required for external transcription provider")
+		}
+		if strings.TrimSpace(c.TranscriptionModel) == "" {
+			return fmt.Errorf("TRANSCRIPTION_MODEL is required for external transcription provider")
+		}
+		if c.NeedsTranscriptionAPIKeyForExternalProvider() {
+			return fmt.Errorf("TRANSCRIPTION_API_KEY is required for external transcription provider")
+		}
+	}
 	if strings.TrimSpace(c.LLMProvider) == "" {
 		return fmt.Errorf("LLM_PROVIDER is required")
 	}
 	return nil
+}
+
+// NeedsTranscriptionAPIKeyForExternalProvider reports whether the selected transcription provider needs an API key.
+func (c Config) NeedsTranscriptionAPIKeyForExternalProvider() bool {
+	if strings.TrimSpace(c.TranscriptionAPIKey) != "" {
+		return false
+	}
+	return c.isExternalTranscriptionProvider() && c.PrivacyAllowExternalModelProviders
+}
+
+func (c Config) isExternalTranscriptionProvider() bool {
+	provider := strings.TrimSpace(c.TranscriptionProvider)
+	return provider != "" && provider != "fake_transcription"
 }
 
 // NeedsLLMAPIKeyForExternalProvider reports whether the selected LLM provider usually needs an API key.
@@ -91,6 +130,18 @@ func envString(key, fallback string) string {
 	return value
 }
 
+func envStringWithFallback(primaryKey, fallbackKey, fallback string) string {
+	value, ok := os.LookupEnv(primaryKey)
+	if ok && strings.TrimSpace(value) != "" {
+		return value
+	}
+	value, ok = os.LookupEnv(fallbackKey)
+	if ok {
+		return value
+	}
+	return fallback
+}
+
 func envBool(key string, fallback bool) bool {
 	value, ok := os.LookupEnv(key)
 	if !ok {
@@ -104,4 +155,16 @@ func envBool(key string, fallback bool) bool {
 	default:
 		return fallback
 	}
+}
+
+func envInt64(key string, fallback int64) int64 {
+	value, ok := os.LookupEnv(key)
+	if !ok {
+		return fallback
+	}
+	var parsed int64
+	if _, err := fmt.Sscanf(strings.TrimSpace(value), "%d", &parsed); err != nil || parsed <= 0 {
+		return fallback
+	}
+	return parsed
 }
