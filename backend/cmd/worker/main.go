@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/zzyhdu/soniq/backend/internal/activities"
@@ -47,8 +49,13 @@ func run(ctx context.Context, cfg config.Config) error {
 	}
 	defer recordingStore.Close()
 
+	transcriptionProvider, err := transcriptionProviderForConfig(cfg)
+	if err != nil {
+		return err
+	}
+
 	worker := temporalworker.New(temporalClient, cfg.TemporalTaskQueue, temporalworker.Options{})
-	registerRecordingProcessing(worker, recordingStore, storage.NewLocalStore(cfg.LocalStoragePath), activities.FFProbeRunner{}, activities.FFmpegNormalizeRunner{})
+	registerRecordingProcessing(worker, recordingStore, storage.NewLocalStore(cfg.LocalStoragePath), activities.FFProbeRunner{}, activities.FFmpegNormalizeRunner{}, transcriptionProvider)
 
 	return worker.Run(temporalworker.InterruptCh())
 }
@@ -59,13 +66,13 @@ type recordingProcessingRegistry interface {
 	RegisterActivityWithOptions(interface{}, activity.RegisterOptions)
 }
 
-func registerRecordingProcessing(registry recordingProcessingRegistry, store activities.NormalizingPipelineStore, resolver activities.LocalObjectPathResolver, probeRunner activities.AudioProbeRunner, normalizeRunner activities.AudioNormalizeRunner) {
+func registerRecordingProcessing(registry recordingProcessingRegistry, store activities.NormalizingPipelineStore, resolver activities.LocalObjectPathResolver, probeRunner activities.AudioProbeRunner, normalizeRunner activities.AudioNormalizeRunner, transcriptionProvider activities.TranscriptionProvider) {
 	activitySet := activities.NewRecordingProcessingActivitiesWithNormalizedAudio(
 		store,
 		resolver,
 		probeRunner,
 		normalizeRunner,
-		activities.FakeTranscriptionProvider{},
+		transcriptionProvider,
 		activities.FakeSummaryProvider{},
 	)
 
@@ -80,6 +87,37 @@ func registerRecordingProcessing(registry recordingProcessingRegistry, store act
 	registry.RegisterActivityWithOptions(activitySet.SummarizeRecording, activity.RegisterOptions{Name: activities.SummarizeRecordingActivityName})
 	registry.RegisterActivityWithOptions(activitySet.CompleteRecordingProcessing, activity.RegisterOptions{Name: activities.CompleteRecordingProcessingActivityName})
 	registry.RegisterActivityWithOptions(activitySet.FailRecordingProcessing, activity.RegisterOptions{Name: activities.FailRecordingProcessingActivityName})
+}
+
+func transcriptionProviderForConfig(cfg config.Config) (activities.TranscriptionProvider, error) {
+	provider := strings.TrimSpace(cfg.TranscriptionProvider)
+	switch provider {
+	case "", "fake_transcription":
+		return activities.FakeTranscriptionProvider{}, nil
+	case "openai_compatible_asr":
+		if !cfg.PrivacyAllowExternalModelProviders {
+			return nil, fmt.Errorf("external transcription provider %q is disabled by privacy settings", provider)
+		}
+		if strings.TrimSpace(cfg.TranscriptionAPIKey) == "" {
+			return nil, fmt.Errorf("TRANSCRIPTION_API_KEY is required for external transcription provider %q", provider)
+		}
+		if strings.TrimSpace(cfg.TranscriptionBaseURL) == "" {
+			return nil, fmt.Errorf("TRANSCRIPTION_BASE_URL is required for external transcription provider %q", provider)
+		}
+		if strings.TrimSpace(cfg.TranscriptionModel) == "" {
+			return nil, fmt.Errorf("TRANSCRIPTION_MODEL is required for external transcription provider %q", provider)
+		}
+		return activities.OpenAICompatibleASRProvider{
+			BaseURL:        cfg.TranscriptionBaseURL,
+			APIKey:         cfg.TranscriptionAPIKey,
+			Model:          cfg.TranscriptionModel,
+			AuthHeader:     cfg.TranscriptionAuthHeader,
+			Language:       cfg.TranscriptionLanguage,
+			MaxBase64Bytes: cfg.TranscriptionMaxBase64Bytes,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported transcription provider %q", provider)
+	}
 }
 
 type recordingStoreClient interface {

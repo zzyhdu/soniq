@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/zzyhdu/soniq/backend/internal/activities"
+	"github.com/zzyhdu/soniq/backend/internal/config"
 	"github.com/zzyhdu/soniq/backend/internal/domain"
 	"github.com/zzyhdu/soniq/backend/internal/recordings"
 	"github.com/zzyhdu/soniq/backend/internal/workflows"
@@ -16,7 +18,7 @@ func TestRegisterRecordingProcessingRegistersWorkflowAndActivities(t *testing.T)
 	worker := &recordingWorkerSpy{}
 	store := &workerRecordingStoreSpy{}
 
-	registerRecordingProcessing(worker, store, localPathResolverTestStub{}, audioProbeRunnerTestStub{}, audioNormalizeRunnerTestStub{})
+	registerRecordingProcessing(worker, store, localPathResolverTestStub{}, audioProbeRunnerTestStub{}, audioNormalizeRunnerTestStub{}, activities.FakeTranscriptionProvider{})
 
 	if got, want := len(worker.workflows), 1; got != want {
 		t.Fatalf("registered workflows = %d, want %d", got, want)
@@ -44,6 +46,66 @@ func TestRegisterRecordingProcessingRegistersWorkflowAndActivities(t *testing.T)
 		if got := worker.activities[i].options.Name; got != wantName {
 			t.Fatalf("activity %d name = %q, want %q", i, got, wantName)
 		}
+	}
+}
+
+func TestTranscriptionProviderForConfigDefaultsToFakeProvider(t *testing.T) {
+	cfg := config.LoadFromEnv()
+	cfg.TranscriptionProvider = "fake_transcription"
+
+	provider, err := transcriptionProviderForConfig(cfg)
+	if err != nil {
+		t.Fatalf("transcriptionProviderForConfig returned error: %v", err)
+	}
+	if _, ok := provider.(activities.FakeTranscriptionProvider); !ok {
+		t.Fatalf("provider = %T, want FakeTranscriptionProvider", provider)
+	}
+}
+
+func TestTranscriptionProviderForConfigBuildsOpenAICompatibleASR(t *testing.T) {
+	cfg := config.LoadFromEnv()
+	cfg.TranscriptionProvider = "openai_compatible_asr"
+	cfg.TranscriptionBaseURL = "http://asr.example.test/v1"
+	cfg.TranscriptionAPIKey = "test-asr-key"
+	cfg.TranscriptionModel = "mimo-v2.5-asr"
+	cfg.TranscriptionAuthHeader = "bearer"
+	cfg.TranscriptionLanguage = "zh"
+	cfg.TranscriptionMaxBase64Bytes = 12345
+
+	provider, err := transcriptionProviderForConfig(cfg)
+	if err != nil {
+		t.Fatalf("transcriptionProviderForConfig returned error: %v", err)
+	}
+	asr, ok := provider.(activities.OpenAICompatibleASRProvider)
+	if !ok {
+		t.Fatalf("provider = %T, want OpenAICompatibleASRProvider", provider)
+	}
+	if asr.BaseURL != cfg.TranscriptionBaseURL || asr.APIKey != cfg.TranscriptionAPIKey || asr.Model != cfg.TranscriptionModel || asr.AuthHeader != cfg.TranscriptionAuthHeader || asr.Language != cfg.TranscriptionLanguage || asr.MaxBase64Bytes != cfg.TranscriptionMaxBase64Bytes {
+		t.Fatalf("asr provider = %+v, want config-derived fields", asr)
+	}
+}
+
+func TestTranscriptionProviderForConfigRejectsMissingAPIKeyForExternalProvider(t *testing.T) {
+	cfg := config.LoadFromEnv()
+	cfg.TranscriptionProvider = "openai_compatible_asr"
+	cfg.TranscriptionAPIKey = ""
+	cfg.PrivacyAllowExternalModelProviders = true
+
+	_, err := transcriptionProviderForConfig(cfg)
+	if err == nil || !strings.Contains(err.Error(), "TRANSCRIPTION_API_KEY") {
+		t.Fatalf("error = %v, want missing TRANSCRIPTION_API_KEY error", err)
+	}
+}
+
+func TestTranscriptionProviderForConfigRejectsExternalProviderInPrivateMode(t *testing.T) {
+	cfg := config.LoadFromEnv()
+	cfg.TranscriptionProvider = "openai_compatible_asr"
+	cfg.TranscriptionAPIKey = "test-asr-key"
+	cfg.PrivacyAllowExternalModelProviders = false
+
+	_, err := transcriptionProviderForConfig(cfg)
+	if err == nil || !strings.Contains(err.Error(), "external transcription provider") {
+		t.Fatalf("error = %v, want private-mode external provider error", err)
 	}
 }
 
