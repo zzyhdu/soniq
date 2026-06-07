@@ -109,10 +109,17 @@ func TestBuildHandlerWiresUploadEndpointToLocalObjectStorage(t *testing.T) {
 	if response.Code != http.StatusCreated {
 		t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusCreated, response.Body.String())
 	}
-	var recording domain.Recording
-	if err := json.NewDecoder(response.Body).Decode(&recording); err != nil {
+	var body struct {
+		Recording          domain.Recording `json:"recording"`
+		ProcessingEnqueued bool             `json:"processing_enqueued"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
 		t.Fatalf("decode response body: %v", err)
 	}
+	if !body.ProcessingEnqueued {
+		t.Fatal("processing_enqueued = false, want true")
+	}
+	recording := body.Recording
 	if recording.AudioObjectKey == "" {
 		t.Fatal("AudioObjectKey is empty, want stored local object key")
 	}

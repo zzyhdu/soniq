@@ -45,6 +45,11 @@ type recordingDetailsResponse struct {
 	Summary    *recordingSummaryResponse    `json:"summary"`
 }
 
+type uploadRecordingResponse struct {
+	Recording          domain.Recording `json:"recording"`
+	ProcessingEnqueued bool             `json:"processing_enqueued"`
+}
+
 type recordingResponse struct {
 	ID               string                 `json:"id"`
 	Title            string                 `json:"title"`
@@ -221,11 +226,14 @@ func uploadRecordingHandler(store RecordingStore, processor RecordingProcessor, 
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		_ = processor.Enqueue(recording)
+		processingEnqueued := processor.Enqueue(recording) == nil
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		_ = json.NewEncoder(w).Encode(recording)
+		_ = json.NewEncoder(w).Encode(uploadRecordingResponse{
+			Recording:          recording,
+			ProcessingEnqueued: processingEnqueued,
+		})
 	}
 }
 

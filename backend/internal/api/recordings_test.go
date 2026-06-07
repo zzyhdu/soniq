@@ -345,12 +345,18 @@ func TestUploadRecordingStoresAudioCreatesRecordingAndEnqueues(t *testing.T) {
 		t.Fatalf("enqueued AudioObjectKey = %q, want %q", processor.enqueued[0].AudioObjectKey, created.AudioObjectKey)
 	}
 
-	var body domain.Recording
+	var body struct {
+		Recording          domain.Recording `json:"recording"`
+		ProcessingEnqueued bool             `json:"processing_enqueued"`
+	}
 	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
 		t.Fatalf("decode response body: %v", err)
 	}
-	if body.AudioObjectKey != created.AudioObjectKey || body.AudioContentType != "audio/wav" || body.AudioSizeBytes != int64(len("audio-bytes")) {
-		t.Fatalf("response audio metadata = %+v, want created audio metadata %+v", body, created)
+	if !body.ProcessingEnqueued {
+		t.Fatal("processing_enqueued = false, want true")
+	}
+	if body.Recording.AudioObjectKey != created.AudioObjectKey || body.Recording.AudioContentType != "audio/wav" || body.Recording.AudioSizeBytes != int64(len("audio-bytes")) {
+		t.Fatalf("response audio metadata = %+v, want created audio metadata %+v", body.Recording, created)
 	}
 }
 
@@ -464,11 +470,17 @@ func TestUploadRecordingReturnsCreatedWhenEnqueueFails(t *testing.T) {
 		t.Fatalf("enqueued recordings = %d, want %d", got, want)
 	}
 
-	var body domain.Recording
+	var body struct {
+		Recording          domain.Recording `json:"recording"`
+		ProcessingEnqueued bool             `json:"processing_enqueued"`
+	}
 	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
 		t.Fatalf("decode response body: %v", err)
 	}
-	if body.ID == "" || body.AudioObjectKey == "" {
+	if body.ProcessingEnqueued {
+		t.Fatal("processing_enqueued = true, want false")
+	}
+	if body.Recording.ID == "" || body.Recording.AudioObjectKey == "" {
 		t.Fatalf("body = %+v, want created recording with audio metadata", body)
 	}
 }
