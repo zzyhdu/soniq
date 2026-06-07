@@ -22,6 +22,7 @@ import (
 var errRecordingProcessorFailed = errors.New("recording processor failed")
 var errObjectStoreFailed = errors.New("object store failed")
 var errRecordingGetFailed = errors.New("recording get failed")
+var errRecordingDetailsFailed = errors.New("recording details failed")
 
 type recordingProcessorSpy struct {
 	enqueued []domain.Recording
@@ -42,6 +43,9 @@ type recordingDetailsFixture struct {
 	summary       recordings.RecordingSummary
 	hasTranscript bool
 	hasSummary    bool
+	transcriptErr error
+	segmentsErr   error
+	summaryErr    error
 }
 
 type recordingOnlyStore struct {
@@ -100,25 +104,34 @@ func (s *fakeRecordingStore) put(recording domain.Recording) {
 	s.stored[recording.ID] = recording
 }
 
-func (s *fakeRecordingStore) GetTranscript(recordingID string) (recordings.RecordingTranscript, bool) {
+func (s *fakeRecordingStore) GetTranscript(recordingID string) (recordings.RecordingTranscript, bool, error) {
 	fixture, ok := s.details[recordingID]
+	if fixture.transcriptErr != nil {
+		return recordings.RecordingTranscript{}, false, fixture.transcriptErr
+	}
 	if !ok || !fixture.hasTranscript {
-		return recordings.RecordingTranscript{}, false
+		return recordings.RecordingTranscript{}, false, nil
 	}
-	return fixture.transcript, true
+	return fixture.transcript, true, nil
 }
 
-func (s *fakeRecordingStore) ListTranscriptSegments(recordingID string) []recordings.RecordingTranscriptSegment {
+func (s *fakeRecordingStore) ListTranscriptSegments(recordingID string) ([]recordings.RecordingTranscriptSegment, error) {
 	fixture := s.details[recordingID]
-	return append([]recordings.RecordingTranscriptSegment(nil), fixture.segments...)
+	if fixture.segmentsErr != nil {
+		return nil, fixture.segmentsErr
+	}
+	return append([]recordings.RecordingTranscriptSegment(nil), fixture.segments...), nil
 }
 
-func (s *fakeRecordingStore) GetSummary(recordingID string) (recordings.RecordingSummary, bool) {
+func (s *fakeRecordingStore) GetSummary(recordingID string) (recordings.RecordingSummary, bool, error) {
 	fixture, ok := s.details[recordingID]
-	if !ok || !fixture.hasSummary {
-		return recordings.RecordingSummary{}, false
+	if fixture.summaryErr != nil {
+		return recordings.RecordingSummary{}, false, fixture.summaryErr
 	}
-	return fixture.summary, true
+	if !ok || !fixture.hasSummary {
+		return recordings.RecordingSummary{}, false, nil
+	}
+	return fixture.summary, true, nil
 }
 
 func (s recordingOnlyStore) Create(recordings.CreateRecordingInput) (domain.Recording, error) {
@@ -656,6 +669,54 @@ func TestGetRecordingDetailsReturnsInternalServerErrorWhenDetailsStoreMissing(t 
 
 	if response.Code != http.StatusInternalServerError {
 		t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusInternalServerError, response.Body.String())
+	}
+}
+
+func TestGetRecordingDetailsReturnsInternalServerErrorWhenDetailsReadFails(t *testing.T) {
+	tests := []struct {
+		name    string
+		details recordingDetailsFixture
+	}{
+		{
+			name:    "transcript read fails",
+			details: recordingDetailsFixture{transcriptErr: errRecordingDetailsFailed},
+		},
+		{
+			name: "segments read fails",
+			details: recordingDetailsFixture{
+				transcript:    recordings.RecordingTranscript{RecordingID: "rec_details_error", Text: "hello"},
+				hasTranscript: true,
+				segmentsErr:   errRecordingDetailsFailed,
+			},
+		},
+		{
+			name:    "summary read fails",
+			details: recordingDetailsFixture{summaryErr: errRecordingDetailsFailed},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newFakeRecordingStore()
+			recording := domain.Recording{
+				ID:           "rec_details_error",
+				Title:        "Stored recording",
+				Status:       domain.RecordingStatusUploaded,
+				WorkflowType: domain.WorkflowTypeMeeting,
+				Language:     "zh",
+			}
+			store.put(recording)
+			store.details[recording.ID] = tt.details
+			router := NewRouterWithStore(store)
+			request := httptest.NewRequest(http.MethodGet, "/recordings/"+recording.ID+"/details", nil)
+			response := httptest.NewRecorder()
+
+			router.ServeHTTP(response, request)
+
+			if response.Code != http.StatusInternalServerError {
+				t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusInternalServerError, response.Body.String())
+			}
+		})
 	}
 }
 

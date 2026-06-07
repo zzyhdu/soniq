@@ -258,8 +258,8 @@ func (s *workerRecordingStoreSpy) UpsertTranscript(input recordings.UpsertTransc
 	return recordings.RecordingTranscript{RecordingID: input.RecordingID}, nil
 }
 
-func (s *workerRecordingStoreSpy) GetTranscript(recordingID string) (recordings.RecordingTranscript, bool) {
-	return recordings.RecordingTranscript{RecordingID: recordingID}, true
+func (s *workerRecordingStoreSpy) GetTranscript(recordingID string) (recordings.RecordingTranscript, bool, error) {
+	return recordings.RecordingTranscript{RecordingID: recordingID}, true, nil
 }
 
 func (s *workerRecordingStoreSpy) UpsertSummary(input recordings.UpsertSummaryInput) (recordings.RecordingSummary, error) {

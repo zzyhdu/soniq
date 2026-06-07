@@ -17,8 +17,9 @@ type postgresQueryCall struct {
 }
 
 type postgresExecutorSpy struct {
-	calls []postgresQueryCall
-	rows  []*postgresRowStub
+	calls    []postgresQueryCall
+	rows     []*postgresRowStub
+	queryErr error
 }
 
 func newPostgresExecutorSpy(rows ...*postgresRowStub) *postgresExecutorSpy {
@@ -37,6 +38,9 @@ func (s *postgresExecutorSpy) QueryRow(ctx context.Context, query string, args .
 
 func (s *postgresExecutorSpy) Query(ctx context.Context, query string, args ...any) (PostgresRows, error) {
 	s.calls = append(s.calls, postgresQueryCall{query: query, args: append([]any(nil), args...)})
+	if s.queryErr != nil {
+		return nil, s.queryErr
+	}
 	rows := s.rows
 	s.rows = nil
 	return &postgresRowsStub{rows: rows}, nil
@@ -557,7 +561,10 @@ func TestPostgresStoreGetTranscriptReturnsExistingTranscript(t *testing.T) {
 	))
 	store := NewPostgresStore(db)
 
-	transcript, ok := store.GetTranscript("rec_transcript")
+	transcript, ok, err := store.GetTranscript("rec_transcript")
+	if err != nil {
+		t.Fatalf("GetTranscript returned error: %v", err)
+	}
 	if !ok {
 		t.Fatal("GetTranscript(rec_transcript) ok = false, want true")
 	}
@@ -573,7 +580,10 @@ func TestPostgresStoreGetTranscriptReturnsExistingTranscript(t *testing.T) {
 func TestPostgresStoreGetTranscriptReturnsFalseForMissingRecording(t *testing.T) {
 	db := newPostgresExecutorSpy(postgresErrorRow(sql.ErrNoRows))
 	store := NewPostgresStore(db)
-	_, ok := store.GetTranscript("rec_missing")
+	_, ok, err := store.GetTranscript("rec_missing")
+	if err != nil {
+		t.Fatalf("GetTranscript returned error: %v", err)
+	}
 	if ok {
 		t.Fatal("GetTranscript(rec_missing) ok = true, want false")
 	}
@@ -587,7 +597,10 @@ func TestPostgresStoreListTranscriptSegmentsReturnsExistingSegments(t *testing.T
 	)
 	store := NewPostgresStore(db)
 
-	segments := store.ListTranscriptSegments("rec_transcript")
+	segments, err := store.ListTranscriptSegments("rec_transcript")
+	if err != nil {
+		t.Fatalf("ListTranscriptSegments returned error: %v", err)
+	}
 	if got, want := len(segments), 2; got != want {
 		t.Fatalf("segments = %d, want %d", got, want)
 	}
@@ -606,6 +619,33 @@ func TestPostgresStoreListTranscriptSegmentsReturnsExistingSegments(t *testing.T
 	}
 	if strings.Contains(query, "segment_index = $2") {
 		t.Fatalf("query = %q, want no contiguous segment_index lookup", db.calls[0].query)
+	}
+}
+
+func TestPostgresStoreGetTranscriptReturnsErrorForDatabaseFailure(t *testing.T) {
+	dbErr := errors.New("database unavailable")
+	db := newPostgresExecutorSpy(postgresErrorRow(dbErr))
+	store := NewPostgresStore(db)
+	_, ok, err := store.GetTranscript("rec_error")
+	if err == nil {
+		t.Fatal("GetTranscript returned nil error, want database error")
+	}
+	if ok {
+		t.Fatal("GetTranscript(rec_error) ok = true, want false")
+	}
+}
+
+func TestPostgresStoreListTranscriptSegmentsReturnsErrorForDatabaseFailure(t *testing.T) {
+	dbErr := errors.New("database unavailable")
+	db := newPostgresExecutorSpy()
+	db.queryErr = dbErr
+	store := NewPostgresStore(db)
+	segments, err := store.ListTranscriptSegments("rec_error")
+	if err == nil {
+		t.Fatal("ListTranscriptSegments returned nil error, want database error")
+	}
+	if segments != nil {
+		t.Fatalf("segments = %#v, want nil", segments)
 	}
 }
 
@@ -681,7 +721,10 @@ func TestPostgresStoreGetSummaryReturnsExistingSummary(t *testing.T) {
 	))
 	store := NewPostgresStore(db)
 
-	summary, ok := store.GetSummary("rec_summary")
+	summary, ok, err := store.GetSummary("rec_summary")
+	if err != nil {
+		t.Fatalf("GetSummary returned error: %v", err)
+	}
 	if !ok {
 		t.Fatal("GetSummary(rec_summary) ok = false, want true")
 	}
@@ -697,9 +740,25 @@ func TestPostgresStoreGetSummaryReturnsExistingSummary(t *testing.T) {
 func TestPostgresStoreGetSummaryReturnsFalseForMissingRecording(t *testing.T) {
 	db := newPostgresExecutorSpy(postgresErrorRow(sql.ErrNoRows))
 	store := NewPostgresStore(db)
-	_, ok := store.GetSummary("rec_missing")
+	_, ok, err := store.GetSummary("rec_missing")
+	if err != nil {
+		t.Fatalf("GetSummary returned error: %v", err)
+	}
 	if ok {
 		t.Fatal("GetSummary(rec_missing) ok = true, want false")
+	}
+}
+
+func TestPostgresStoreGetSummaryReturnsErrorForDatabaseFailure(t *testing.T) {
+	dbErr := errors.New("database unavailable")
+	db := newPostgresExecutorSpy(postgresErrorRow(dbErr))
+	store := NewPostgresStore(db)
+	_, ok, err := store.GetSummary("rec_error")
+	if err == nil {
+		t.Fatal("GetSummary returned nil error, want database error")
+	}
+	if ok {
+		t.Fatal("GetSummary(rec_error) ok = true, want false")
 	}
 }
 

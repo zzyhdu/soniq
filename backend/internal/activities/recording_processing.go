@@ -59,7 +59,7 @@ type NormalizedAudioStore interface {
 // TranscriptStore is the transcript persistence seam used by transcription and summarization activities.
 type TranscriptStore interface {
 	UpsertTranscript(input recordings.UpsertTranscriptInput) (recordings.RecordingTranscript, error)
-	GetTranscript(recordingID string) (recordings.RecordingTranscript, bool)
+	GetTranscript(recordingID string) (recordings.RecordingTranscript, bool, error)
 }
 
 // SummaryStore is the summary persistence seam used by summarization activities.
@@ -479,7 +479,10 @@ func (a *RecordingProcessingActivities) SummarizeRecording(ctx context.Context, 
 	if !ok {
 		return fmt.Errorf("recording not found: %s", recordingID)
 	}
-	transcript, ok := a.transcriptStore.GetTranscript(recordingID)
+	transcript, ok, err := a.transcriptStore.GetTranscript(recordingID)
+	if err != nil {
+		return fmt.Errorf("get recording transcript: %w", err)
+	}
 	if !ok {
 		return fmt.Errorf("recording transcript not found: %s", recordingID)
 	}

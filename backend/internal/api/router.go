@@ -26,9 +26,9 @@ type RecordingStore interface {
 // RecordingDetailsStore is the optional persistence seam for transcript and summary detail reads.
 type RecordingDetailsStore interface {
 	RecordingStore
-	GetTranscript(recordingID string) (recordings.RecordingTranscript, bool)
-	ListTranscriptSegments(recordingID string) []recordings.RecordingTranscriptSegment
-	GetSummary(recordingID string) (recordings.RecordingSummary, bool)
+	GetTranscript(recordingID string) (recordings.RecordingTranscript, bool, error)
+	ListTranscriptSegments(recordingID string) ([]recordings.RecordingTranscriptSegment, error)
+	GetSummary(recordingID string) (recordings.RecordingSummary, bool, error)
 }
 
 // RecordingProcessor is the enqueue seam invoked after a recording is created.
@@ -292,11 +292,26 @@ func recordingByIDHandler(store RecordingStore) http.HandlerFunc {
 				return
 			}
 			details := recordingDetailsResponse{Recording: toRecordingResponse(recording), Segments: []recordingSegmentResponse{}}
-			if transcript, ok := detailsStore.GetTranscript(id); ok {
-				details.Transcript = toRecordingTranscriptResponse(transcript)
-				details.Segments = toRecordingSegmentResponses(detailsStore.ListTranscriptSegments(id))
+			transcript, hasTranscript, err := detailsStore.GetTranscript(id)
+			if err != nil {
+				http.Error(w, "get recording transcript", http.StatusInternalServerError)
+				return
 			}
-			if summary, ok := detailsStore.GetSummary(id); ok {
+			if hasTranscript {
+				details.Transcript = toRecordingTranscriptResponse(transcript)
+				segments, err := detailsStore.ListTranscriptSegments(id)
+				if err != nil {
+					http.Error(w, "list recording transcript segments", http.StatusInternalServerError)
+					return
+				}
+				details.Segments = toRecordingSegmentResponses(segments)
+			}
+			summary, hasSummary, err := detailsStore.GetSummary(id)
+			if err != nil {
+				http.Error(w, "get recording summary", http.StatusInternalServerError)
+				return
+			}
+			if hasSummary {
 				details.Summary = toRecordingSummaryResponse(summary)
 			}
 			w.Header().Set("Content-Type", "application/json")

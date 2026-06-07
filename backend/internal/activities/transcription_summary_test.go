@@ -14,6 +14,7 @@ type transcriptionSummaryStoreSpy struct {
 	recordings      map[string]domain.Recording
 	normalizedAudio recordings.RecordingNormalizedAudio
 	transcript      recordings.RecordingTranscript
+	transcriptErr   error
 	transcripts     []recordings.UpsertTranscriptInput
 	summaries       []recordings.UpsertSummaryInput
 }
@@ -67,11 +68,14 @@ func (s *transcriptionSummaryStoreSpy) UpsertTranscript(input recordings.UpsertT
 	}, nil
 }
 
-func (s *transcriptionSummaryStoreSpy) GetTranscript(recordingID string) (recordings.RecordingTranscript, bool) {
-	if s.transcript.RecordingID == "" || s.transcript.RecordingID != recordingID {
-		return recordings.RecordingTranscript{}, false
+func (s *transcriptionSummaryStoreSpy) GetTranscript(recordingID string) (recordings.RecordingTranscript, bool, error) {
+	if s.transcriptErr != nil {
+		return recordings.RecordingTranscript{}, false, s.transcriptErr
 	}
-	return s.transcript, true
+	if s.transcript.RecordingID == "" || s.transcript.RecordingID != recordingID {
+		return recordings.RecordingTranscript{}, false, nil
+	}
+	return s.transcript, true, nil
 }
 
 func (s *transcriptionSummaryStoreSpy) UpsertSummary(input recordings.UpsertSummaryInput) (recordings.RecordingSummary, error) {

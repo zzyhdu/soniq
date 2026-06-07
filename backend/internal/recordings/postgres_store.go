@@ -273,9 +273,9 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
 }
 
 // GetTranscript returns the latest transcript by recording id.
-func (s *PostgresStore) GetTranscript(recordingID string) (RecordingTranscript, bool) {
+func (s *PostgresStore) GetTranscript(recordingID string) (RecordingTranscript, bool, error) {
 	if s == nil || s.db == nil {
-		return RecordingTranscript{}, false
+		return RecordingTranscript{}, false, fmt.Errorf("postgres recording store requires database executor")
 	}
 	var transcript RecordingTranscript
 	row := s.db.QueryRow(
@@ -286,18 +286,18 @@ WHERE recording_id = $1`,
 		recordingID,
 	)
 	if err := scanTranscript(row, &transcript); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return RecordingTranscript{}, false
+		if errors.Is(err, sql.ErrNoRows) || errors.Is(err, pgx.ErrNoRows) {
+			return RecordingTranscript{}, false, nil
 		}
-		return RecordingTranscript{}, false
+		return RecordingTranscript{}, false, fmt.Errorf("get recording transcript: %w", err)
 	}
-	return transcript, true
+	return transcript, true, nil
 }
 
 // ListTranscriptSegments returns transcript segments by recording id ordered by segment_index.
-func (s *PostgresStore) ListTranscriptSegments(recordingID string) []RecordingTranscriptSegment {
+func (s *PostgresStore) ListTranscriptSegments(recordingID string) ([]RecordingTranscriptSegment, error) {
 	if s == nil || s.db == nil {
-		return nil
+		return nil, fmt.Errorf("postgres recording store requires database executor")
 	}
 	rows, err := s.db.Query(
 		context.Background(),
@@ -308,7 +308,7 @@ ORDER BY segment_index`,
 		recordingID,
 	)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("list recording transcript segments: %w", err)
 	}
 	defer rows.Close()
 
@@ -316,14 +316,14 @@ ORDER BY segment_index`,
 	for rows.Next() {
 		var segment RecordingTranscriptSegment
 		if err := scanTranscriptSegment(rows, &segment); err != nil {
-			return nil
+			return nil, fmt.Errorf("scan recording transcript segment: %w", err)
 		}
 		segments = append(segments, segment)
 	}
-	if rows.Err() != nil {
-		return nil
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate recording transcript segments: %w", err)
 	}
-	return segments
+	return segments, nil
 }
 
 // UpsertSummary stores or replaces the latest summary for a recording.
@@ -370,9 +370,9 @@ RETURNING recording_id, provider, model, type, title, overview, content_markdown
 }
 
 // GetSummary returns the latest summary by recording id.
-func (s *PostgresStore) GetSummary(recordingID string) (RecordingSummary, bool) {
+func (s *PostgresStore) GetSummary(recordingID string) (RecordingSummary, bool, error) {
 	if s == nil || s.db == nil {
-		return RecordingSummary{}, false
+		return RecordingSummary{}, false, fmt.Errorf("postgres recording store requires database executor")
 	}
 	var summary RecordingSummary
 	row := s.db.QueryRow(
@@ -383,12 +383,12 @@ WHERE recording_id = $1`,
 		recordingID,
 	)
 	if err := scanSummary(row, &summary); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return RecordingSummary{}, false
+		if errors.Is(err, sql.ErrNoRows) || errors.Is(err, pgx.ErrNoRows) {
+			return RecordingSummary{}, false, nil
 		}
-		return RecordingSummary{}, false
+		return RecordingSummary{}, false, fmt.Errorf("get recording summary: %w", err)
 	}
-	return summary, true
+	return summary, true, nil
 }
 
 func scanNormalizedAudio(row PostgresRow, normalized *RecordingNormalizedAudio) error {
