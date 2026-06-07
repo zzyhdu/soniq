@@ -11,7 +11,7 @@ Completed foundation milestones:
 - Local filesystem object storage for uploaded recording audio.
 - Temporal workflow with Postgres-backed recording status, audio-probe, audio-normalization, fake transcription, and fake summarization activities.
 - Temporal worker registration with Soniq Postgres-backed activities.
-- API-to-Temporal workflow start: successful recording creation/upload starts `RecordingProcessingWorkflow` asynchronously.
+- API-to-Temporal workflow start: successful audio uploads start `RecordingProcessingWorkflow` asynchronously; metadata-only recording creation does not enqueue processing.
 - Local Temporal development environment: Docker Compose services, Makefile targets, docs, and a full smoke helper.
 - Verified local smoke path: API → local object store → Soniq Postgres → Temporal → worker → `ffprobe` → `recording_audio_probes` → `ffmpeg` → `recording_normalized_audios` + local `normalized.wav` → fake transcription → `recording_transcripts`/segments → fake summary → `recording_summaries` → `recordings.status=completed`.
 
@@ -44,7 +44,7 @@ Status: complete.
 
 - Temporal worker and `RecordingProcessingWorkflow` skeleton.
 - Activity stubs for validation and status transitions.
-- API starts workflow after successful recording creation.
+- API starts workflow after successful audio upload.
 - Local Temporal Compose runtime.
 - Manual smoke helper for API → Temporal → worker verification.
 

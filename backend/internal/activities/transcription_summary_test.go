@@ -12,12 +12,13 @@ import (
 )
 
 type transcriptionSummaryStoreSpy struct {
-	recordings      map[string]domain.Recording
-	normalizedAudio recordings.RecordingNormalizedAudio
-	transcript      recordings.RecordingTranscript
-	transcriptErr   error
-	transcripts     []recordings.UpsertTranscriptInput
-	summaries       []recordings.UpsertSummaryInput
+	recordings         map[string]domain.Recording
+	normalizedAudio    recordings.RecordingNormalizedAudio
+	normalizedAudioErr error
+	transcript         recordings.RecordingTranscript
+	transcriptErr      error
+	transcripts        []recordings.UpsertTranscriptInput
+	summaries          []recordings.UpsertSummaryInput
 }
 
 func (s *transcriptionSummaryStoreSpy) Get(id string) (domain.Recording, bool, error) {
@@ -49,11 +50,14 @@ func (s *transcriptionSummaryStoreSpy) UpsertNormalizedAudio(input recordings.Up
 	return s.normalizedAudio, nil
 }
 
-func (s *transcriptionSummaryStoreSpy) GetNormalizedAudio(recordingID string) (recordings.RecordingNormalizedAudio, bool) {
-	if s.normalizedAudio.RecordingID == "" || s.normalizedAudio.RecordingID != recordingID {
-		return recordings.RecordingNormalizedAudio{}, false
+func (s *transcriptionSummaryStoreSpy) GetNormalizedAudio(recordingID string) (recordings.RecordingNormalizedAudio, bool, error) {
+	if s.normalizedAudioErr != nil {
+		return recordings.RecordingNormalizedAudio{}, false, s.normalizedAudioErr
 	}
-	return s.normalizedAudio, true
+	if s.normalizedAudio.RecordingID == "" || s.normalizedAudio.RecordingID != recordingID {
+		return recordings.RecordingNormalizedAudio{}, false, nil
+	}
+	return s.normalizedAudio, true, nil
 }
 
 func (s *transcriptionSummaryStoreSpy) UpsertTranscript(input recordings.UpsertTranscriptInput) (recordings.RecordingTranscript, error) {
@@ -227,6 +231,28 @@ func TestRecordingProcessingActivitiesTranscribeRecordingAudioRequiresNormalized
 	}
 	if len(store.transcripts) != 0 {
 		t.Fatalf("stored transcripts = %d, want 0 when normalized audio is missing", len(store.transcripts))
+	}
+}
+
+func TestRecordingProcessingActivitiesTranscribeRecordingAudioPropagatesNormalizedAudioReadError(t *testing.T) {
+	readErr := errors.New("normalized audio read failed")
+	store := &transcriptionSummaryStoreSpy{
+		recordings: map[string]domain.Recording{
+			"rec_transcribe": {ID: "rec_transcribe", Language: "en", AudioObjectKey: "recordings/rec_transcribe/original.wav"},
+		},
+		normalizedAudioErr: readErr,
+	}
+	provider := &transcriptionProviderSpy{}
+	activities := NewRecordingProcessingActivitiesWithNormalizedAudio(store, &localPathResolverSpy{path: "/tmp/soniq/recordings/rec_transcribe/normalized.wav"}, nil, &audioProbeRunnerSpy{}, &audioNormalizeRunnerSpy{}, provider, &summaryProviderSpy{})
+
+	if err := activities.TranscribeRecordingAudio(context.Background(), "rec_transcribe"); !errors.Is(err, readErr) {
+		t.Fatalf("TranscribeRecordingAudio error = %v, want normalized audio read error", err)
+	}
+	if len(provider.requests) != 0 {
+		t.Fatalf("provider requests = %d, want 0 when normalized audio read fails", len(provider.requests))
+	}
+	if len(store.transcripts) != 0 {
+		t.Fatalf("stored transcripts = %d, want 0 when normalized audio read fails", len(store.transcripts))
 	}
 }
 

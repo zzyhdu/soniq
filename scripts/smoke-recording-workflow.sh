@@ -2,12 +2,25 @@
 set -euo pipefail
 
 API_URL="${API_URL:-http://localhost:8080}"
+TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/soniq-workflow-smoke.XXXXXX")"
+AUDIO_FILE="$TMP_DIR/weekly.wav"
 
-response="$(curl -fsS -X POST "${API_URL}/recordings" \
-  -H 'Content-Type: application/json' \
-  -d '{"title":"Weekly sync","workflow_type":"meeting","language":"en"}')"
+cleanup() {
+  rm -rf "$TMP_DIR"
+}
+trap cleanup EXIT
+
+ffmpeg -hide_banner -loglevel error -f lavfi -i sine=frequency=1000:duration=1 -ac 1 -ar 16000 -c:a pcm_s16le "$AUDIO_FILE"
+
+response="$(curl -fsS -X POST "${API_URL}/recordings/upload" \
+  -F title='Weekly sync' \
+  -F workflow_type=meeting \
+  -F language=en \
+  -F "audio=@${AUDIO_FILE};filename=weekly.wav;type=audio/wav")"
 
 printf '%s\n' "$response"
 
-recording_id="$(printf '%s\n' "$response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
+recording_id="$(printf '%s\n' "$response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["recording"]["id"])')"
+processing_enqueued="$(printf '%s\n' "$response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["processing_enqueued"])')"
+printf 'Processing enqueued: %s\n' "$processing_enqueued"
 printf 'Expected Temporal workflow ID: recording-processing-%s\n' "$recording_id"

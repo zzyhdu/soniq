@@ -456,7 +456,10 @@ func TestPostgresStoreGetAudioProbeReturnsExistingProbe(t *testing.T) {
 	))
 	store := NewPostgresStore(db)
 
-	probe, ok := store.GetAudioProbe("rec_probe")
+	probe, ok, err := store.GetAudioProbe("rec_probe")
+	if err != nil {
+		t.Fatalf("GetAudioProbe returned error: %v", err)
+	}
 	if !ok {
 		t.Fatal("GetAudioProbe(rec_probe) ok = false, want true")
 	}
@@ -479,9 +482,26 @@ func TestPostgresStoreGetAudioProbeReturnsFalseForMissingRecording(t *testing.T)
 	db := newPostgresExecutorSpy(postgresErrorRow(sql.ErrNoRows))
 	store := NewPostgresStore(db)
 
-	_, ok := store.GetAudioProbe("rec_missing")
+	_, ok, err := store.GetAudioProbe("rec_missing")
+	if err != nil {
+		t.Fatalf("GetAudioProbe returned error: %v", err)
+	}
 	if ok {
 		t.Fatal("GetAudioProbe(rec_missing) ok = true, want false")
+	}
+}
+
+func TestPostgresStoreGetAudioProbeReturnsErrorForDatabaseFailure(t *testing.T) {
+	dbErr := errors.New("database unavailable")
+	db := newPostgresExecutorSpy(postgresErrorRow(dbErr))
+	store := NewPostgresStore(db)
+
+	_, ok, err := store.GetAudioProbe("rec_error")
+	if err == nil {
+		t.Fatal("GetAudioProbe returned nil error, want database error")
+	}
+	if ok {
+		t.Fatal("GetAudioProbe(rec_error) ok = true, want false")
 	}
 }
 
@@ -876,7 +896,10 @@ func TestPostgresStoreGetNormalizedAudioReturnsExistingMetadata(t *testing.T) {
 	))
 	store := NewPostgresStore(db)
 
-	normalized, ok := store.GetNormalizedAudio("rec_normalized")
+	normalized, ok, err := store.GetNormalizedAudio("rec_normalized")
+	if err != nil {
+		t.Fatalf("GetNormalizedAudio returned error: %v", err)
+	}
 	if !ok {
 		t.Fatal("GetNormalizedAudio(rec_normalized) ok = false, want true")
 	}
@@ -901,8 +924,24 @@ func TestPostgresStoreGetNormalizedAudioReturnsExistingMetadata(t *testing.T) {
 func TestPostgresStoreGetNormalizedAudioReturnsFalseForMissingRecording(t *testing.T) {
 	db := newPostgresExecutorSpy(postgresErrorRow(sql.ErrNoRows))
 	store := NewPostgresStore(db)
-	_, ok := store.GetNormalizedAudio("rec_missing")
+	_, ok, err := store.GetNormalizedAudio("rec_missing")
+	if err != nil {
+		t.Fatalf("GetNormalizedAudio returned error: %v", err)
+	}
 	if ok {
 		t.Fatal("GetNormalizedAudio(rec_missing) ok = true, want false")
+	}
+}
+
+func TestPostgresStoreGetNormalizedAudioReturnsErrorForDatabaseFailure(t *testing.T) {
+	dbErr := errors.New("database unavailable")
+	db := newPostgresExecutorSpy(postgresErrorRow(dbErr))
+	store := NewPostgresStore(db)
+	_, ok, err := store.GetNormalizedAudio("rec_error")
+	if err == nil {
+		t.Fatal("GetNormalizedAudio returned nil error, want database error")
+	}
+	if ok {
+		t.Fatal("GetNormalizedAudio(rec_error) ok = true, want false")
 	}
 }

@@ -42,7 +42,7 @@ case "$LOCAL_STORAGE_PATH" in
   /*) EFFECTIVE_LOCAL_STORAGE_PATH="$LOCAL_STORAGE_PATH" ;;
   *) EFFECTIVE_LOCAL_STORAGE_PATH="$ROOT_DIR/$LOCAL_STORAGE_PATH" ;;
 esac
-EXPECTED_TRANSCRIPT_LANGUAGE="${EXPECTED_TRANSCRIPT_LANGUAGE:-$TRANSCRIPTION_LANGUAGE}"
+EXPECTED_TRANSCRIPT_LANGUAGE="${EXPECTED_TRANSCRIPT_LANGUAGE:-}"
 
 log() {
   printf '[smoke] %s\n' "$*"
@@ -170,12 +170,16 @@ content_type_for_file() {
 }
 
 extract_recording_id() {
-  python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])'
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["recording"]["id"])'
 }
 
 extract_json_field() {
   local field="$1"
-  python3 -c 'import json,sys; print(json.load(sys.stdin)[sys.argv[1]])' "$field"
+  python3 -c 'import json,sys
+value = json.load(sys.stdin)
+for part in sys.argv[1].split("."):
+    value = value[part]
+print(value)' "$field"
 }
 
 assert_json_field_equals() {
@@ -420,6 +424,7 @@ main() {
   audio_file="$LOG_DIR/weekly.wav"
   upload_title="${SMOKE_TITLE:-Weekly sync}"
   upload_language="${SMOKE_LANGUAGE:-en}"
+  EXPECTED_TRANSCRIPT_LANGUAGE="${EXPECTED_TRANSCRIPT_LANGUAGE:-$upload_language}"
   upload_filename="weekly.wav"
   upload_content_type="audio/wav"
   if [[ -n "${SMOKE_AUDIO_FILE:-}" ]]; then
@@ -442,12 +447,13 @@ main() {
     -F "audio=@$audio_file;filename=$upload_filename;type=$upload_content_type")"
   printf '%s\n' "$response"
   recording_id="$(printf '%s\n' "$response" | extract_recording_id)"
-  audio_object_key="$(printf '%s\n' "$response" | extract_json_field audio_object_key)"
+  audio_object_key="$(printf '%s\n' "$response" | extract_json_field recording.audio_object_key)"
   workflow_id="recording-processing-$recording_id"
   log "expected Temporal workflow ID: $workflow_id"
 
-  assert_json_field_equals "$response" audio_content_type "$upload_content_type"
-  assert_json_field_equals "$response" audio_size_bytes "$audio_size"
+  assert_json_field_equals "$response" processing_enqueued True
+  assert_json_field_equals "$response" recording.audio_content_type "$upload_content_type"
+  assert_json_field_equals "$response" recording.audio_size_bytes "$audio_size"
   assert_uploaded_object "$audio_object_key" "$audio_size"
   assert_recording_audio_metadata_in_db "$recording_id" "$audio_object_key" "$upload_content_type" "$audio_size"
 

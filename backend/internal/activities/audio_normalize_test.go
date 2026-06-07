@@ -162,13 +162,13 @@ func (s *normalizeRecordingStoreSpy) UpsertNormalizedAudio(input recordings.Upse
 	return recordings.RecordingNormalizedAudio{RecordingID: input.RecordingID, ObjectKey: input.ObjectKey}, nil
 }
 
-func (s *normalizeRecordingStoreSpy) GetNormalizedAudio(recordingID string) (recordings.RecordingNormalizedAudio, bool) {
+func (s *normalizeRecordingStoreSpy) GetNormalizedAudio(recordingID string) (recordings.RecordingNormalizedAudio, bool, error) {
 	for _, input := range s.normalizedAudios {
 		if input.RecordingID == recordingID {
-			return recordings.RecordingNormalizedAudio{RecordingID: input.RecordingID, ObjectKey: input.ObjectKey}, true
+			return recordings.RecordingNormalizedAudio{RecordingID: input.RecordingID, ObjectKey: input.ObjectKey}, true, nil
 		}
 	}
-	return recordings.RecordingNormalizedAudio{}, false
+	return recordings.RecordingNormalizedAudio{}, false, nil
 }
 
 type normalizePathResolverSpy struct {

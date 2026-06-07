@@ -202,16 +202,19 @@ Content-Type: application/json
 
 ```json
 {
-  "id": "rec_...",
-  "title": "Weekly sync",
-  "status": "uploaded",
-  "workflow_type": "meeting",
-  "language": "en",
-  "audio_object_key": "recordings/.../soniq-demo.wav",
-  "audio_content_type": "audio/wav",
-  "audio_size_bytes": 32078,
-  "created_at": "...",
-  "updated_at": "..."
+  "recording": {
+    "id": "rec_...",
+    "title": "Weekly sync",
+    "status": "uploaded",
+    "workflow_type": "meeting",
+    "language": "en",
+    "audio_object_key": "recordings/.../soniq-demo.wav",
+    "audio_content_type": "audio/wav",
+    "audio_size_bytes": 32078,
+    "created_at": "...",
+    "updated_at": "..."
+  },
+  "processing_enqueued": true
 }
 ```
 

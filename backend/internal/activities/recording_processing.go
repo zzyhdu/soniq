@@ -55,7 +55,7 @@ type RecordingStore interface {
 // NormalizedAudioStore is the normalized audio persistence seam used by normalization activities.
 type NormalizedAudioStore interface {
 	UpsertNormalizedAudio(input recordings.UpsertNormalizedAudioInput) (recordings.RecordingNormalizedAudio, error)
-	GetNormalizedAudio(recordingID string) (recordings.RecordingNormalizedAudio, bool)
+	GetNormalizedAudio(recordingID string) (recordings.RecordingNormalizedAudio, bool, error)
 }
 
 // TranscriptStore is the transcript persistence seam used by transcription and summarization activities.
@@ -413,7 +413,10 @@ func (a *RecordingProcessingActivities) TranscribeRecordingAudio(ctx context.Con
 	if !ok {
 		return fmt.Errorf("recording not found: %s", recordingID)
 	}
-	normalizedAudio, ok := a.normalizedAudioStore.GetNormalizedAudio(recordingID)
+	normalizedAudio, ok, err := a.normalizedAudioStore.GetNormalizedAudio(recordingID)
+	if err != nil {
+		return fmt.Errorf("get recording normalized audio: %w", err)
+	}
 	if !ok {
 		return fmt.Errorf("recording normalized audio not found: %s", recordingID)
 	}

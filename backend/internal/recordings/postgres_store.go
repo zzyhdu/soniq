@@ -185,9 +185,9 @@ RETURNING recording_id, object_key, content_type, size_bytes, format_name, codec
 }
 
 // GetNormalizedAudio returns normalized audio metadata by recording id.
-func (s *PostgresStore) GetNormalizedAudio(recordingID string) (RecordingNormalizedAudio, bool) {
+func (s *PostgresStore) GetNormalizedAudio(recordingID string) (RecordingNormalizedAudio, bool, error) {
 	if s == nil || s.db == nil {
-		return RecordingNormalizedAudio{}, false
+		return RecordingNormalizedAudio{}, false, fmt.Errorf("postgres recording store requires database executor")
 	}
 	var normalized RecordingNormalizedAudio
 	row := s.db.QueryRow(
@@ -198,12 +198,12 @@ WHERE recording_id = $1`,
 		recordingID,
 	)
 	if err := scanNormalizedAudio(row, &normalized); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return RecordingNormalizedAudio{}, false
+		if errors.Is(err, sql.ErrNoRows) || errors.Is(err, pgx.ErrNoRows) {
+			return RecordingNormalizedAudio{}, false, nil
 		}
-		return RecordingNormalizedAudio{}, false
+		return RecordingNormalizedAudio{}, false, fmt.Errorf("get recording normalized audio: %w", err)
 	}
-	return normalized, true
+	return normalized, true, nil
 }
 
 // UpsertTranscript stores or replaces the latest transcript and its segments for a recording.
@@ -480,9 +480,9 @@ RETURNING recording_id, duration_seconds, format_name, codec_name, sample_rate, 
 }
 
 // GetAudioProbe returns persisted ffprobe metadata by recording id.
-func (s *PostgresStore) GetAudioProbe(recordingID string) (RecordingAudioProbe, bool) {
+func (s *PostgresStore) GetAudioProbe(recordingID string) (RecordingAudioProbe, bool, error) {
 	if s == nil || s.db == nil {
-		return RecordingAudioProbe{}, false
+		return RecordingAudioProbe{}, false, fmt.Errorf("postgres recording store requires database executor")
 	}
 
 	var probe RecordingAudioProbe
@@ -494,12 +494,12 @@ WHERE recording_id = $1`,
 		recordingID,
 	)
 	if err := scanAudioProbe(row, &probe); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return RecordingAudioProbe{}, false
+		if errors.Is(err, sql.ErrNoRows) || errors.Is(err, pgx.ErrNoRows) {
+			return RecordingAudioProbe{}, false, nil
 		}
-		return RecordingAudioProbe{}, false
+		return RecordingAudioProbe{}, false, fmt.Errorf("get recording audio probe: %w", err)
 	}
-	return probe, true
+	return probe, true, nil
 }
 
 func scanAudioProbe(row PostgresRow, probe *RecordingAudioProbe) error {
