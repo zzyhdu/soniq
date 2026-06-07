@@ -83,7 +83,7 @@ To avoid opening several terminals manually, run the full smoke target from the 
 make smoke-postgres-temporal
 ```
 
-This target runs `scripts/smoke-postgres-temporal.sh`. The script starts the Compose infrastructure, applies the recording migrations if needed, starts the API and worker as temporary local background processes, generates and uploads a small valid WAV file through `POST /recordings/upload`, verifies the local object file and Postgres audio metadata, verifies the recording can be read from Postgres before and after an API restart, confirms the Temporal workflow reaches `COMPLETED`, verifies `recordings.status=completed`, verifies a `recording_audio_probes` row was persisted from real `ffprobe` output, verifies a `recording_normalized_audios` row and local `normalized.wav` artifact were persisted from real `ffmpeg` normalization, verifies fake-provider transcript/segment/summary rows were persisted, and then stops the API/worker processes it started.
+This target runs `scripts/smoke-postgres-temporal.sh`. The script starts the Compose infrastructure, applies the recording migrations if needed, starts the API and worker as temporary local background processes, generates and uploads a small valid WAV file through `POST /recordings/upload`, verifies the local object file and Postgres audio metadata, verifies the recording can be read from Postgres before and after an API restart, confirms the Temporal workflow reaches `COMPLETED`, verifies `recordings.status=completed`, verifies a `recording_audio_probes` row was persisted from real `ffprobe` output, verifies a `recording_normalized_audios` row and local `normalized.wav` artifact were persisted from real `ffmpeg` normalization, verifies configured transcription provider transcript/segment rows and summary rows were persisted, and then stops the API/worker processes it started.
 
 The script intentionally leaves the Compose infrastructure running by default so local Postgres and Temporal state remain available for follow-up debugging. To stop Compose services after the smoke run, set:
 
@@ -458,11 +458,11 @@ The current Temporal implementation is intentionally narrow but no longer statel
 
 - The workflow is implemented with the real Temporal Go SDK and covered by the Temporal SDK testsuite.
 - Workflow code stays deterministic and delegates Soniq Postgres writes to activities.
-- Worker-registered activities validate that the recording exists, persist `processing`, probe original audio with `ffprobe`, persist one `recording_audio_probes` row, normalize audio with `ffmpeg`, persist one `recording_normalized_audios` row, persist `transcribing`, persist fake-provider transcript and segment rows from the normalized audio path, persist `summarizing`, persist a fake-provider summary row, persist `completed`, and can persist `failed` on probe/normalization/transcription/summarization/completion failure paths.
+- Worker-registered activities validate that the recording exists, persist `processing`, probe original audio with `ffprobe`, persist one `recording_audio_probes` row, normalize audio with `ffmpeg`, persist one `recording_normalized_audios` row, persist `transcribing`, persist configured transcription provider transcript and segment rows from the normalized audio path, persist `summarizing`, persist a fake-provider summary row, persist `completed`, and can persist `failed` on probe/normalization/transcription/summarization/completion failure paths.
 - The API calls an injectable recording processor seam after `POST /recordings` and `POST /recordings/upload`; the production API command wires that seam to a Temporal client and starts `RecordingProcessingWorkflow` asynchronously.
 - Worker startup is the boundary where the code leaves in-process tests and requires a real Temporal server plus Soniq application Postgres.
 
-Real ASR providers, real LLM summarization providers, provider webhooks, and S3-compatible object storage remain future milestones. Those integrations should be added separately with explicit local service configuration.
+The default transcription provider remains local-safe `fake_transcription`. `openai_compatible_asr` can be enabled manually for Xiaomi MiMo ASR or a compatible endpoint. Real LLM summarization providers, provider webhooks, and S3-compatible object storage remain future milestones. Those integrations should be added separately with explicit local service configuration.
 
 ## Configuration
 
