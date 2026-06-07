@@ -201,6 +201,10 @@ func (e postgresExecutor) QueryRow(ctx context.Context, query string, args ...an
 	return e.pool.QueryRow(ctx, query, args...)
 }
 
+func (e postgresExecutor) Query(ctx context.Context, query string, args ...any) (recordings.PostgresRows, error) {
+	return e.pool.Query(ctx, query, args...)
+}
+
 type postgresRecordingStoreClient struct {
 	*recordings.PostgresStore
 	pool *pgxpool.Pool

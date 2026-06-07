@@ -35,6 +35,13 @@ func (s *postgresExecutorSpy) QueryRow(ctx context.Context, query string, args .
 	return row
 }
 
+func (s *postgresExecutorSpy) Query(ctx context.Context, query string, args ...any) (PostgresRows, error) {
+	s.calls = append(s.calls, postgresQueryCall{query: query, args: append([]any(nil), args...)})
+	rows := s.rows
+	s.rows = nil
+	return &postgresRowsStub{rows: rows}, nil
+}
+
 type postgresRowStub struct {
 	values []any
 	err    error
@@ -77,6 +84,33 @@ func (r *postgresRowStub) Scan(dest ...any) error {
 			return sql.ErrNoRows
 		}
 	}
+	return nil
+}
+
+type postgresRowsStub struct {
+	rows   []*postgresRowStub
+	index  int
+	closed bool
+}
+
+func (r *postgresRowsStub) Close() {
+	r.closed = true
+}
+
+func (r *postgresRowsStub) Next() bool {
+	return r.index < len(r.rows)
+}
+
+func (r *postgresRowsStub) Scan(dest ...any) error {
+	if r.index >= len(r.rows) {
+		return sql.ErrNoRows
+	}
+	row := r.rows[r.index]
+	r.index++
+	return row.Scan(dest...)
+}
+
+func (r *postgresRowsStub) Err() error {
 	return nil
 }
 
@@ -549,8 +583,7 @@ func TestPostgresStoreListTranscriptSegmentsReturnsExistingSegments(t *testing.T
 	createdAt := time.Date(2026, 6, 6, 2, 3, 4, 0, time.UTC)
 	db := newPostgresExecutorSpy(
 		postgresRow("rec_transcript-seg-000000", "rec_transcript", 0, 0, 1200, "speaker_1", "hello", 0.95, createdAt),
-		postgresRow("rec_transcript-seg-000001", "rec_transcript", 1, 1200, 2400, "speaker_1", "world", 0.96, createdAt),
-		postgresErrorRow(sql.ErrNoRows),
+		postgresRow("rec_transcript-seg-000002", "rec_transcript", 2, 2400, 3600, "speaker_2", "again", 0.97, createdAt),
 	)
 	store := NewPostgresStore(db)
 
@@ -558,12 +591,21 @@ func TestPostgresStoreListTranscriptSegmentsReturnsExistingSegments(t *testing.T
 	if got, want := len(segments), 2; got != want {
 		t.Fatalf("segments = %d, want %d", got, want)
 	}
-	if segments[0].ID != "rec_transcript-seg-000000" || segments[0].Text != "hello" {
+	if segments[0].ID != "rec_transcript-seg-000000" || segments[0].SegmentIndex != 0 || segments[0].Text != "hello" {
 		t.Fatalf("first segment = %+v, want persisted first segment", segments[0])
 	}
+	if segments[1].ID != "rec_transcript-seg-000002" || segments[1].SegmentIndex != 2 || segments[1].Text != "again" {
+		t.Fatalf("second segment = %+v, want non-contiguous persisted segment", segments[1])
+	}
+	if got, want := len(db.calls), 1; got != want {
+		t.Fatalf("query calls = %d, want %d", got, want)
+	}
 	query := strings.ToLower(db.calls[0].query)
-	if !strings.Contains(query, "from recording_transcript_segments") || !strings.Contains(query, "segment_index") {
-		t.Fatalf("query = %q, want select transcript segments ordered by segment_index", db.calls[0].query)
+	if !strings.Contains(query, "from recording_transcript_segments") || !strings.Contains(query, "where recording_id = $1") || !strings.Contains(query, "order by segment_index") {
+		t.Fatalf("query = %q, want select transcript segments by recording_id ordered by segment_index", db.calls[0].query)
+	}
+	if strings.Contains(query, "segment_index = $2") {
+		t.Fatalf("query = %q, want no contiguous segment_index lookup", db.calls[0].query)
 	}
 }
 

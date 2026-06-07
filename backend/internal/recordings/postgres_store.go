@@ -16,9 +16,18 @@ type PostgresRow interface {
 	Scan(dest ...any) error
 }
 
+// PostgresRows is the subset of database rows behavior used by PostgresStore.
+type PostgresRows interface {
+	Close()
+	Next() bool
+	Scan(dest ...any) error
+	Err() error
+}
+
 // PostgresExecutor is the subset of database behavior used by PostgresStore.
 type PostgresExecutor interface {
 	QueryRow(ctx context.Context, query string, args ...any) interface{ Scan(dest ...any) error }
+	Query(ctx context.Context, query string, args ...any) (PostgresRows, error)
 }
 
 // PostgresStore persists recordings in a Postgres recordings table.
@@ -290,22 +299,29 @@ func (s *PostgresStore) ListTranscriptSegments(recordingID string) []RecordingTr
 	if s == nil || s.db == nil {
 		return nil
 	}
-	segments := make([]RecordingTranscriptSegment, 0)
-	for index := 0; ; index++ {
-		var segment RecordingTranscriptSegment
-		row := s.db.QueryRow(
-			context.Background(),
-			`SELECT id, recording_id, segment_index, start_ms, end_ms, speaker_label, text, confidence, created_at
+	rows, err := s.db.Query(
+		context.Background(),
+		`SELECT id, recording_id, segment_index, start_ms, end_ms, speaker_label, text, confidence, created_at
 FROM recording_transcript_segments
-WHERE recording_id = $1 AND segment_index = $2
+WHERE recording_id = $1
 ORDER BY segment_index`,
-			recordingID,
-			index,
-		)
-		if err := scanTranscriptSegment(row, &segment); err != nil {
-			break
+		recordingID,
+	)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	segments := make([]RecordingTranscriptSegment, 0)
+	for rows.Next() {
+		var segment RecordingTranscriptSegment
+		if err := scanTranscriptSegment(rows, &segment); err != nil {
+			return nil
 		}
 		segments = append(segments, segment)
+	}
+	if rows.Err() != nil {
+		return nil
 	}
 	return segments
 }
