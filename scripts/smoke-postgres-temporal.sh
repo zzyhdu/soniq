@@ -137,7 +137,7 @@ assert_json_field_equals() {
 }
 
 apply_recording_migrations() {
-  local table_exists audio_columns_exist audio_probe_table_exists transcript_table_exists summary_table_exists
+  local table_exists audio_columns_exist audio_probe_table_exists transcript_table_exists summary_table_exists normalized_audio_table_exists
   table_exists="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
     psql -U soniq_user -d soniq -Atc "SELECT to_regclass('public.recordings') IS NOT NULL")"
   if [[ "$table_exists" != "t" ]]; then
@@ -182,6 +182,17 @@ apply_recording_migrations() {
       -f - < backend/migrations/0004_create_recording_transcripts_and_summaries.up.sql
   else
     log "recording transcript and summary tables already exist; skipping migration 0004"
+  fi
+
+  normalized_audio_table_exists="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
+    psql -U soniq_user -d soniq -Atc "SELECT to_regclass('public.recording_normalized_audios') IS NOT NULL")"
+  if [[ "$normalized_audio_table_exists" != "t" ]]; then
+    log "applying recordings migration 0005"
+    docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
+      psql -U soniq_user -d soniq -v ON_ERROR_STOP=1 \
+      -f - < backend/migrations/0005_create_recording_normalized_audios.up.sql
+  else
+    log "recording normalized audio table already exists; skipping migration 0005"
   fi
 }
 
@@ -240,6 +251,34 @@ assert_recording_audio_probe_in_db() {
   IFS=$'\t' read -r format_name codec_name sample_rate channels has_duration raw_json_type <<<"$row"
   if [[ -z "$format_name" || -z "$codec_name" || "$sample_rate" -le 0 || "$channels" -le 0 || "$has_duration" != "t" || "$raw_json_type" != "object" ]]; then
     log "unexpected DB audio probe row: $row"
+    return 1
+  fi
+}
+
+assert_recording_normalized_audio_in_db() {
+  local recording_id="$1"
+  local row object_key content_type size_bytes format_name codec_name sample_rate channels normalized_at_set object_path actual_size_bytes
+  row="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
+    psql -U soniq_user -d soniq -AtF $'\t' -c "SELECT object_key, content_type, size_bytes, format_name, codec_name, sample_rate, channels, (normalized_at IS NOT NULL) FROM recording_normalized_audios WHERE recording_id = '$recording_id'")"
+  if [[ -z "$row" ]]; then
+    log "recording normalized audio row missing for $recording_id"
+    return 1
+  fi
+
+  IFS=$'\t' read -r object_key content_type size_bytes format_name codec_name sample_rate channels normalized_at_set <<<"$row"
+  if [[ -z "$object_key" || "$object_key" != */normalized.wav || "$content_type" != "audio/wav" || "$size_bytes" -le 0 || "$format_name" != "wav" || "$codec_name" != "pcm_s16le" || "$sample_rate" != "16000" || "$channels" != "1" || "$normalized_at_set" != "t" ]]; then
+    log "unexpected DB normalized audio row: $row"
+    return 1
+  fi
+
+  object_path="$LOCAL_STORAGE_PATH/$object_key"
+  if [[ ! -f "$object_path" ]]; then
+    log "normalized audio object does not exist: $object_path"
+    return 1
+  fi
+  actual_size_bytes="$(wc -c <"$object_path" | tr -d ' ')"
+  if [[ "$actual_size_bytes" != "$size_bytes" ]]; then
+    log "normalized audio object size mismatch: $actual_size_bytes, want $size_bytes"
     return 1
   fi
 }
@@ -364,6 +403,8 @@ main() {
       log "recording DB status reached completed: $recording_id"
       assert_recording_audio_probe_in_db "$recording_id"
       log "recording audio probe metadata persisted: $recording_id"
+      assert_recording_normalized_audio_in_db "$recording_id"
+      log "recording normalized audio persisted: $recording_id"
       assert_recording_transcript_summary_in_db "$recording_id"
       log "recording transcript and summary persisted: $recording_id"
       log "recording persisted across API restart: $recording_id"
