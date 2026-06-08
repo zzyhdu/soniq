@@ -1,11 +1,16 @@
+import { useState } from 'react';
+
+import { type UploadRecordingResponse } from '@soniq/api-client';
+
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select } from '@/components/ui/select';
+import { RecordingUploadForm } from '@/components/RecordingUploadForm';
+import { useUploadRecording } from '@/api/queries';
 
 export function App() {
+  const uploadRecordingMutation = useUploadRecording();
+  const [latestUpload, setLatestUpload] = useState<UploadRecordingResponse | null>(null);
+
   return (
     <main className="min-h-screen bg-muted/30 px-6 py-10">
       <div className="mx-auto flex max-w-4xl flex-col gap-8">
@@ -19,37 +24,35 @@ export function App() {
           </div>
         </section>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Recording workflow shell</CardTitle>
-            <CardDescription>
-              Task 3 wires the app shell, React Query, Tailwind, shadcn/ui, and the local API proxy. Upload behavior lands in Task 4.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="title">Title</Label>
-              <Input id="title" placeholder="Weekly standup" disabled />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="workflow-type">Workflow type</Label>
-              <Select id="workflow-type" disabled defaultValue="meeting">
-                <option value="meeting">Meeting</option>
-                <option value="lecture">Lecture</option>
-                <option value="interview">Interview</option>
-                <option value="memo">Memo</option>
-              </Select>
-            </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="audio">Audio file</Label>
-              <Input id="audio" type="file" accept="audio/*" disabled />
-            </div>
-            <div className="flex items-center gap-3 md:col-span-2">
-              <Button disabled>Upload coming in Task 4</Button>
-              <span className="text-sm text-muted-foreground">API client is ready through @soniq/api-client.</span>
-            </div>
-          </CardContent>
-        </Card>
+        <RecordingUploadForm
+          onUpload={(input) => uploadRecordingMutation.mutateAsync(input)}
+          onUploaded={setLatestUpload}
+          isUploading={uploadRecordingMutation.isPending}
+          error={uploadRecordingMutation.error instanceof Error ? uploadRecordingMutation.error.message : null}
+        />
+
+        {latestUpload !== null && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Upload created</CardTitle>
+              <CardDescription>
+                Status polling and results display will be added in the next tasks.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <div>
+                <span className="text-muted-foreground">Recording ID: </span>
+                <span className="font-mono">{latestUpload.recording.id}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Processing enqueued: </span>
+                <Badge variant={latestUpload.processing_enqueued ? 'default' : 'destructive'}>
+                  {latestUpload.processing_enqueued ? 'yes' : 'no'}
+                </Badge>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </main>
   );
