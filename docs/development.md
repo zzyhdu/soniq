@@ -12,7 +12,8 @@ Soniq is currently in the local audio-upload, Postgres-backed recording persiste
 - the worker starts a real Temporal SDK worker, registers the recording processing workflow and Soniq Postgres-backed recording status/audio-probe/normalized-audio/transcript/summary activities, and polls the configured task queue;
 - local filesystem object storage is implemented for development; the worker resolves local object keys, runs `ffprobe` against uploaded original audio to persist probe metadata, and runs `ffmpeg` to write a deterministic normalized WAV/PCM artifact;
 - deterministic fake transcription and summarization providers are wired for local development verification; transcription reads the normalized audio artifact and persists transcript, transcript segment, and summary rows without external credentials;
-- S3-compatible storage, real ASR providers, real LLM providers, authentication, and the web UI are not implemented in this milestone.
+- the product Web UI foundation in `apps/web` can upload audio through the Go API and show the created recording id/enqueue result; status polling and transcript/summary rendering are still in progress;
+- S3-compatible storage, real ASR providers, real LLM providers, authentication, and full Web UI result browsing are not implemented in this milestone.
 
 ## Prerequisites
 
@@ -470,6 +471,35 @@ temporal_task_queue=soniq-audio-pipeline
 ```
 
 If Temporal is not reachable, `make worker` fails during startup. Unit tests do not require a running Temporal server; worker registration is covered by an in-process registry spy.
+
+## Run the product Web UI
+
+The product Web UI lives in `apps/web` and uses the root pnpm workspace. It currently supports uploading audio through the Go API and showing the created recording id plus whether processing was enqueued. Status polling and transcript/summary rendering are still in progress.
+
+For local development, run these from the repository root:
+
+```bash
+make temporal-up
+make api
+make worker
+pnpm web:dev
+```
+
+Open the Vite URL, usually:
+
+```txt
+http://localhost:5173
+```
+
+The Vite dev server proxies `/healthz` and `/recordings/*` to `http://localhost:8080`, so keep `make api` running while using the browser UI. Uploading audio starts the same backend path as `POST /recordings/upload`; keep `make worker` running if you want Temporal processing to continue after upload.
+
+Useful Web UI checks:
+
+```bash
+pnpm --filter @soniq/web test
+pnpm --filter @soniq/web typecheck
+pnpm --filter @soniq/web build
+```
 
 ## Temporal workflow boundaries
 
