@@ -133,7 +133,7 @@ backend/internal/storage   object storage abstractions and implementations
 backend/internal/providers external ASR/LLM/notification adapters
 backend/internal/workflows Temporal workflow orchestration
 backend/internal/activities Temporal activities with side effects
-web                        frontend app
+apps/web                   frontend app
 ```
 
 Rules:

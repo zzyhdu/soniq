@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "scripts": {
+    "web:dev": "pnpm --filter @soniq/web dev",
+    "web:build": "pnpm --filter @soniq/web build",
+    "web:test": "pnpm --filter @soniq/web test",
+    "api-client:test": "pnpm --filter @soniq/api-client test",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test"
+  }
+}

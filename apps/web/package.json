@@ -1,0 +1,11 @@
+{
+  "name": "@soniq/web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  }
+}
