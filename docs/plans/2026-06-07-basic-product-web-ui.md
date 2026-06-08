@@ -172,6 +172,8 @@ Use scoped package names:
 - `@soniq/web`
 - `@soniq/api-client`
 
+Keep `apps/web/package.json` as a package identity placeholder in Task 1. Add its `dev`, `build`, `test`, and `typecheck` scripts in Task 3 together with Vite/React dependencies so root `pnpm test` and `pnpm typecheck` do not fail before the Web app is scaffolded.
+
 **Verification:**
 
 Run:
