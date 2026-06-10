@@ -1,6 +1,7 @@
 import {
   type RecordingStatus,
   type UploadRecordingInput,
+  getRecordingDetails,
   getRecordingStatus,
   uploadRecording,
 } from '@soniq/api-client';
@@ -20,6 +21,14 @@ export function useRecordingStatus(recordingId: string | null | undefined) {
     queryFn: () => getRecordingStatus(requireRecordingId(recordingId)),
     enabled: hasRecordingId(recordingId),
     refetchInterval: (query) => recordingStatusRefetchInterval(query.state.data?.status),
+  });
+}
+
+export function useRecordingDetails(recordingId: string | null | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: ['recordings', recordingId, 'details'],
+    queryFn: () => getRecordingDetails(requireRecordingId(recordingId)),
+    enabled: enabled && hasRecordingId(recordingId),
   });
 }
 

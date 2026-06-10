@@ -1,16 +1,16 @@
 import { type RecordingStatus } from '@soniq/api-client';
 
-import {
-  isTerminalRecordingStatus,
-  recordingStatusBadgeVariant,
-  useRecordingStatus,
-} from '@/api/queries';
+import { isTerminalRecordingStatus, recordingStatusBadgeVariant } from '@/api/queries';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 export type RecordingStatusPanelProps = {
   recordingId: string | null;
   initialStatus?: RecordingStatus;
+  currentStatus?: RecordingStatus;
+  isPending?: boolean;
+  isFetching?: boolean;
+  error?: string | null;
   processingEnqueued?: boolean;
 };
 
@@ -27,17 +27,18 @@ const statusLabels: Record<RecordingStatus, string> = {
 export function RecordingStatusPanel({
   recordingId,
   initialStatus = 'uploaded',
+  currentStatus,
+  isPending = false,
+  isFetching = false,
+  error = null,
   processingEnqueued,
 }: RecordingStatusPanelProps) {
-  const statusQuery = useRecordingStatus(recordingId);
-
   if (recordingId === null) {
     return null;
   }
 
-  const status = statusQuery.data?.status ?? initialStatus;
+  const status = currentStatus ?? initialStatus;
   const isTerminal = isTerminalRecordingStatus(status);
-  const error = statusQuery.error instanceof Error ? statusQuery.error.message : null;
 
   return (
     <Card aria-label="Recording processing status">
@@ -67,11 +68,11 @@ export function RecordingStatusPanel({
           <span className="font-medium">{statusLabels[status]}</span>
         </div>
 
-        {statusQuery.isPending && (
+        {isPending && (
           <p className="text-muted-foreground">Checking status...</p>
         )}
 
-        {statusQuery.isFetching && !statusQuery.isPending && !isTerminal && (
+        {isFetching && !isPending && !isTerminal && (
           <p className="text-muted-foreground">Refreshing status...</p>
         )}
 

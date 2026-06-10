@@ -12,8 +12,8 @@ Soniq is currently in the local audio-upload, Postgres-backed recording persiste
 - the worker starts a real Temporal SDK worker, registers the recording processing workflow and Soniq Postgres-backed recording status/audio-probe/normalized-audio/transcript/summary activities, and polls the configured task queue;
 - local filesystem object storage is implemented for development; the worker resolves local object keys, runs `ffprobe` against uploaded original audio to persist probe metadata, and runs `ffmpeg` to write a deterministic normalized WAV/PCM artifact;
 - deterministic fake transcription and summarization providers are wired for local development verification; transcription reads the normalized audio artifact and persists transcript, transcript segment, and summary rows without external credentials;
-- the product Web UI foundation in `apps/web` can upload audio through the Go API and show the created recording id/enqueue result; status polling and transcript/summary rendering are still in progress;
-- S3-compatible storage, real ASR providers, real LLM providers, authentication, and full Web UI result browsing are not implemented in this milestone.
+- the product Web UI foundation in `apps/web` can upload audio through the Go API, show the created recording id/enqueue result, poll processing status, and display completed transcript/summary results;
+- S3-compatible storage, real ASR providers, real LLM providers, authentication, and result browsing beyond the latest uploaded recording are not implemented in this milestone.
 
 ## Prerequisites
 
@@ -490,7 +490,7 @@ If Temporal is not reachable, `make worker` fails during startup. Unit tests do 
 
 ## Run the product Web UI
 
-The product Web UI lives in `apps/web` and uses the root pnpm workspace. It currently supports uploading audio through the Go API and showing the created recording id plus whether processing was enqueued. Status polling and transcript/summary rendering are still in progress.
+The product Web UI lives in `apps/web` and uses the root pnpm workspace. It currently supports uploading audio through the Go API, showing the created recording id plus whether processing was enqueued, polling processing status, and rendering transcript/summary results after completion.
 
 For local development, run these from the repository root:
 

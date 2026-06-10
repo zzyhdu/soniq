@@ -3,14 +3,19 @@ import { useState } from 'react';
 import { type UploadRecordingResponse } from '@soniq/api-client';
 
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { RecordingResults } from '@/components/RecordingResults';
 import { RecordingStatusPanel } from '@/components/RecordingStatusPanel';
 import { RecordingUploadForm } from '@/components/RecordingUploadForm';
-import { useUploadRecording } from '@/api/queries';
+import { useRecordingStatus, useUploadRecording } from '@/api/queries';
 
 export function App() {
   const uploadRecordingMutation = useUploadRecording();
   const [latestUpload, setLatestUpload] = useState<UploadRecordingResponse | null>(null);
+  const recordingId = latestUpload?.recording.id ?? null;
+  const statusQuery = useRecordingStatus(recordingId);
+  const currentStatus = statusQuery.data?.status ?? latestUpload?.recording.status;
+  const statusError = statusQuery.error instanceof Error ? statusQuery.error.message : null;
 
   return (
     <main className="min-h-screen bg-muted/30 px-6 py-10">
@@ -36,9 +41,6 @@ export function App() {
           <Card>
             <CardHeader>
               <CardTitle>Upload created</CardTitle>
-              <CardDescription>
-                Results display will be added in the next task.
-              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
               <div>
@@ -56,9 +58,18 @@ export function App() {
         )}
 
         <RecordingStatusPanel
-          recordingId={latestUpload?.recording.id ?? null}
+          recordingId={recordingId}
           initialStatus={latestUpload?.recording.status}
+          currentStatus={currentStatus}
+          isPending={statusQuery.isPending}
+          isFetching={statusQuery.isFetching}
+          error={statusError}
           processingEnqueued={latestUpload?.processing_enqueued}
+        />
+
+        <RecordingResults
+          recordingId={recordingId}
+          enabled={currentStatus === 'completed'}
         />
       </div>
     </main>

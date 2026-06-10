@@ -15,7 +15,7 @@ Completed foundation milestones:
 - Local Temporal development environment: Docker Compose services, Makefile targets, docs, and a full smoke helper.
 - Verified local smoke path: API → local object store → Soniq Postgres → Temporal → worker → `ffprobe` → `recording_audio_probes` → `ffmpeg` → `recording_normalized_audios` + local `normalized.wav` → fake transcription → `recording_transcripts`/segments → fake summary → `recording_summaries` → `recordings.status=completed`. This is a real pipeline/infrastructure smoke; only the model providers are deterministic fakes by default.
 - Backend-owned OpenAPI + Scalar API Console served at `/openapi.yaml` and `/api-console`, with same-origin browser "Try it" support for upload, status, and details endpoints.
-- Basic product Web UI foundation under `apps/web`: pnpm workspace, typed `@soniq/api-client`, Vite React app shell, Tailwind/shadcn primitives, and a working upload form that calls `POST /recordings/upload` and shows the created recording id/enqueue result.
+- Basic product Web UI foundation under `apps/web`: pnpm workspace, typed `@soniq/api-client`, Vite React app shell, Tailwind/shadcn primitives, upload form, processing status polling, and completed transcript/summary display.
 
 The next focus is choosing a product direction: keep real external model providers as manual/opt-in verification while improving provider productization, or begin the basic product web UI on top of the now-documented API.
 
@@ -131,11 +131,13 @@ Completed scope:
 - Typed recording API client for upload, status, and details endpoints.
 - React + Vite + TypeScript app shell with Tailwind CSS, shadcn/ui primitives, React Query, and local API proxying.
 - Browser upload form for title/workflow type/language/audio that starts processing through `POST /recordings/upload` and displays the created recording id plus `processing_enqueued` result.
+- Status polling UI for `GET /recordings/{id}/status`.
+- Transcript and summary display for `GET /recordings/{id}/details` after processing completes.
 
 Remaining scope:
 
-- Status polling UI for `GET /recordings/{id}/status`.
-- Transcript and summary display for `GET /recordings/{id}/details`.
+- Local Web UI documentation refresh.
+- End-to-end manual verification against the real local backend pipeline.
 
 ## Phase 2 — Provider expansion
 

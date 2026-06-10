@@ -1,6 +1,5 @@
 import '@testing-library/jest-dom/vitest';
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -17,29 +16,13 @@ afterEach(() => {
 });
 
 function renderPanel(props: React.ComponentProps<typeof RecordingStatusPanel>) {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: {
-        retry: false,
-        gcTime: 0,
-      },
-    },
-  });
-
-  render(
-    <QueryClientProvider client={queryClient}>
-      <RecordingStatusPanel {...props} />
-    </QueryClientProvider>,
-  );
+  render(<RecordingStatusPanel {...props} />);
 }
 
 describe('RecordingStatusPanel', () => {
   it('does not request status without a recording id', () => {
-    const fetchStatus = vi.spyOn(globalThis, 'fetch').mockResolvedValue(statusResponse('processing'));
-
     renderPanel({ recordingId: null });
 
-    expect(fetchStatus).not.toHaveBeenCalled();
     expect(screen.queryByText(/processing status/i)).not.toBeInTheDocument();
   });
 
@@ -57,12 +40,15 @@ describe('RecordingStatusPanel', () => {
     expect(recordingStatusRefetchInterval('cancelled')).toBe(false);
   });
 
-  it('renders the current status from the API', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(statusResponse('transcribing'));
+  it('renders the current status', () => {
+    renderPanel({
+      recordingId: 'rec-1',
+      initialStatus: 'uploaded',
+      currentStatus: 'transcribing',
+      processingEnqueued: true,
+    });
 
-    renderPanel({ recordingId: 'rec-1', initialStatus: 'uploaded', processingEnqueued: true });
-
-    expect(await screen.findAllByText('Transcribing')).toHaveLength(2);
+    expect(screen.getAllByText('Transcribing')).toHaveLength(2);
     expect(screen.getByText('rec-1')).toBeInTheDocument();
     expect(screen.getByText('yes')).toBeInTheDocument();
   });
@@ -73,26 +59,10 @@ describe('RecordingStatusPanel', () => {
     expect(recordingStatusBadgeVariant('cancelled')).toBe('destructive');
   });
 
-  it('surfaces status request errors', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ error: 'recording not found' }), {
-        status: 404,
-        statusText: 'Not Found',
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    );
+  it('surfaces status request errors', () => {
+    renderPanel({ recordingId: 'rec-missing', initialStatus: 'uploaded', error: 'recording not found' });
 
-    renderPanel({ recordingId: 'rec-missing', initialStatus: 'uploaded' });
-
-    expect(await screen.findByRole('alert')).toHaveTextContent('recording not found');
+    expect(screen.getByRole('alert')).toHaveTextContent('recording not found');
     expect(screen.getByText('rec-missing')).toBeInTheDocument();
   });
 });
-
-function statusResponse(status: string) {
-  return new Response(JSON.stringify({ id: 'rec-1', status }), {
-    status: 200,
-    statusText: 'OK',
-    headers: { 'Content-Type': 'application/json' },
-  });
-}
