@@ -2,7 +2,6 @@ import { type FormEvent, useState } from 'react';
 
 import { type UploadRecordingInput, type UploadRecordingResponse, type WorkflowType } from '@soniq/api-client';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -41,12 +40,9 @@ export function RecordingUploadForm({ onUpload, onUploaded, isUploading, error }
   return (
     <Card>
       <CardHeader>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="space-y-1.5">
-            <CardTitle>Upload recording</CardTitle>
-            <CardDescription>Select audio and start Soniq processing.</CardDescription>
-          </div>
-          <Badge variant="secondary">Task 4</Badge>
+        <div className="space-y-1.5">
+          <CardTitle>Upload recording</CardTitle>
+          <CardDescription>Select audio and start Soniq processing.</CardDescription>
         </div>
       </CardHeader>
       <CardContent>

@@ -4,6 +4,7 @@ import { type UploadRecordingResponse } from '@soniq/api-client';
 
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { RecordingStatusPanel } from '@/components/RecordingStatusPanel';
 import { RecordingUploadForm } from '@/components/RecordingUploadForm';
 import { useUploadRecording } from '@/api/queries';
 
@@ -36,7 +37,7 @@ export function App() {
             <CardHeader>
               <CardTitle>Upload created</CardTitle>
               <CardDescription>
-                Status polling and results display will be added in the next tasks.
+                Results display will be added in the next task.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
@@ -53,6 +54,12 @@ export function App() {
             </CardContent>
           </Card>
         )}
+
+        <RecordingStatusPanel
+          recordingId={latestUpload?.recording.id ?? null}
+          initialStatus={latestUpload?.recording.status}
+          processingEnqueued={latestUpload?.processing_enqueued}
+        />
       </div>
     </main>
   );
