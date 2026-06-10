@@ -88,9 +88,10 @@ pnpm web:dev
 
 ## Current Web UI Milestone
 
-The basic Web UI plan is complete through upload, status polling, and
-transcript/summary result display. Remaining milestone work is documentation and
-end-to-end manual verification against the real local backend pipeline.
+The basic Web UI plan is complete through upload, status polling,
+transcript/summary result display, and local Web UI documentation. Remaining
+milestone work is end-to-end manual verification against the real local backend
+pipeline.
 
 Keep the UI local/developer focused for now: no auth, workspace settings,
 provider settings, or production static serving unless explicitly requested.

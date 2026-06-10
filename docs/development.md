@@ -1,11 +1,11 @@
 # Local Development
 
-This document describes the current local backend workflow for Soniq.
+This document describes the current local backend and Web UI workflow for Soniq.
 
 Soniq is currently in the local audio-upload, Postgres-backed recording persistence, original-audio probe, normalized-audio artifact, and fake transcription/summarization milestone. The commands below intentionally run a small backend foundation:
 
 - the API exposes `GET /healthz`;
-- the API exposes recording endpoints: `POST /recordings`, `POST /recordings/upload`, `GET /recordings/{id}`, and `GET /recordings/{id}/status`;
+- the API exposes recording endpoints: `POST /recordings`, `POST /recordings/upload`, `GET /recordings/{id}`, `GET /recordings/{id}/status`, and `GET /recordings/{id}/details`;
 - the production API command uses Soniq Postgres for recording metadata persistence;
 - `POST /recordings` creates metadata-only recordings without starting processing; `POST /recordings/upload` accepts multipart audio, writes the original audio through an object-store seam, persists audio metadata, and then invokes the same injectable recording processor seam;
 - the production API command wires the recording processor seam to Temporal and starts `RecordingProcessingWorkflow` asynchronously;
@@ -21,6 +21,8 @@ Soniq is currently in the local audio-upload, Postgres-backed recording persiste
 - `make`.
 - Required for audio-probe smoke testing: `ffmpeg` and `ffprobe` available on `PATH`.
 - Optional for local Temporal/Postgres smoke testing: Docker and Docker Compose.
+- Required for Web UI development: Node.js with `pnpm` available. Use the root
+  pnpm workspace commands; do not use npm or yarn for this repository.
 
 From the repository root, verify the backend toolchain:
 
@@ -490,14 +492,31 @@ If Temporal is not reachable, `make worker` fails during startup. Unit tests do 
 
 ## Run the product Web UI
 
-The product Web UI lives in `apps/web` and uses the root pnpm workspace. It currently supports uploading audio through the Go API, showing the created recording id plus whether processing was enqueued, polling processing status, and rendering transcript/summary results after completion.
+The product Web UI lives in `apps/web` and uses the root pnpm workspace. Shared typed API calls live in `packages/api-client` and are consumed by the Web app as `@soniq/api-client`.
 
-For local development, run these from the repository root:
+The first Web UI milestone uses React, Vite, TypeScript, Tailwind CSS, React Query, and shadcn/ui-style primitives for the upload form, processing status panel, and transcript/summary result display. It currently supports uploading audio through the Go API, showing the created recording id plus whether processing was enqueued, polling processing status, and rendering transcript/summary results after completion.
+
+Run each long-lived process from the repository root in a separate terminal. Start the local dependencies first:
 
 ```bash
 make temporal-up
+```
+
+Then start the Go API:
+
+```bash
 make api
+```
+
+Start the Temporal worker:
+
+```bash
 make worker
+```
+
+Start the Web dev server with pnpm:
+
+```bash
 pnpm web:dev
 ```
 
@@ -507,14 +526,25 @@ Open the Vite URL, usually:
 http://localhost:5173
 ```
 
-The Vite dev server proxies `/healthz` and `/recordings/*` to `http://localhost:8080`, so keep `make api` running while using the browser UI. Uploading audio starts the same backend path as `POST /recordings/upload`; keep `make worker` running if you want Temporal processing to continue after upload.
+The Vite dev server proxies `/healthz` and `/recordings/*` to `http://localhost:8080`, so keep `make api` running while using the browser UI. Keep `make worker` running if you want Temporal processing to continue after upload.
+
+Manual browser verification:
+
+1. Open the Vite local URL.
+2. Select `testdata/asr/mimo-tts/mp3/zh-four-speaker-standup.mp3`.
+3. Choose workflow type `meeting`.
+4. Set language to `zh`.
+5. Upload the recording.
+6. Confirm upload succeeds and the processing status progresses to `completed`.
+7. Confirm the transcript segments and summary render after completion.
 
 Useful Web UI checks:
 
 ```bash
-pnpm --filter @soniq/web test
-pnpm --filter @soniq/web typecheck
-pnpm --filter @soniq/web build
+git diff --check
+pnpm test
+pnpm typecheck
+pnpm web:build
 ```
 
 ## Temporal workflow boundaries
@@ -607,10 +637,12 @@ This manual smoke sends the normalized audio artifact to Xiaomi MiMo. Use only n
 The current backend foundation provides:
 
 - a Go module under `backend/`;
+- a pnpm workspace with `apps/web` for the product Web UI and `packages/api-client` for shared typed recording API calls;
 - config loading and validation;
 - a standard-library HTTP router;
 - `GET /healthz`;
 - Postgres-backed recording endpoints for metadata-only creation, audio upload, full-recording lookup, and status lookup;
+- completed-recording details lookup for transcript segments and summary results;
 - SQL migrations for the `recordings` table, audio object metadata columns, `recording_audio_probes`, `recording_normalized_audios`, `recording_transcripts`, `recording_transcript_segments`, and `recording_summaries`;
 - a local filesystem object-store provider selected with `STORAGE_PROVIDER=local` and rooted at `LOCAL_STORAGE_PATH`;
 - API and Temporal worker command entrypoints;
@@ -618,10 +650,11 @@ The current backend foundation provides:
 - a Temporal SDK recording processing workflow;
 - Soniq Postgres-backed activities for recording validation, durable status transitions, original-audio `ffprobe` metadata persistence, ffmpeg normalized-audio metadata persistence, fake transcription persistence from normalized audio, optional original uploaded audio deletion after successful transcription, and fake summary persistence;
 - root `Makefile` quality and smoke commands.
+- a local developer Web UI for upload, status polling, and completed transcript/summary display.
 
 It does not yet provide:
 
 - MinIO/S3 storage integration;
 - real ASR or LLM provider calls;
 - authentication/RBAC;
-- frontend UI.
+- browsing or managing recordings beyond the latest uploaded recording in the Web UI.

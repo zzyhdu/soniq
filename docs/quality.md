@@ -134,6 +134,7 @@ backend/internal/providers external ASR/LLM/notification adapters
 backend/internal/workflows Temporal workflow orchestration
 backend/internal/activities Temporal activities with side effects
 apps/web                   frontend app
+packages/api-client        shared TypeScript recording API client
 ```
 
 Rules:
