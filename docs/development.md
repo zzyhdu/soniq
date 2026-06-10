@@ -76,6 +76,18 @@ make lint
 make test
 ```
 
+The root `Makefile` automatically reads `.env` when the file exists and exports
+those values only to runtime targets such as `make api`, `make worker`,
+`make env-check`, and smoke targets. Quality targets such as `make test`,
+`make lint`, and `make fmt` stay environment-neutral. Use `make env-check` to
+confirm which non-secret runtime selectors will be used. To use a different env
+file for one command, set `ENV_FILE`:
+
+```bash
+ENV_FILE=.env.local make env-check
+ENV_FILE=.env.local make worker
+```
+
 ## Full local smoke verification
 
 To avoid opening several terminals manually, run the full smoke target from the repository root:
@@ -437,6 +449,10 @@ Do not apply Soniq migrations to `temporal-postgresql`; Temporal owns that datab
 ## Run the Temporal worker skeleton
 
 `make worker` starts a Temporal SDK worker and blocks while polling the configured task queue. It requires a reachable Temporal server at runtime.
+
+`make worker` loads provider settings from `.env` through the root Makefile. If
+you expect a real ASR/LLM provider, run `make env-check` first and verify that
+`transcription_provider` and `llm_provider` are not the fake defaults.
 
 For local development, start Temporal first, then run:
 
