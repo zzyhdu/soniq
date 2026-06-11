@@ -9,7 +9,9 @@ TEMPORAL_NAMESPACE="${TEMPORAL_NAMESPACE:-default}"
 TEMPORAL_TASK_QUEUE="${TEMPORAL_TASK_QUEUE:-soniq-audio-pipeline}"
 POSTGRES_USER="${POSTGRES_USER:-soniq_user}"
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-soniq_password}"
-POSTGRES_DSN="${POSTGRES_DSN:-postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@localhost:5432/soniq?sslmode=disable}"
+POSTGRES_DB="${POSTGRES_DB:-soniq}"
+POSTGRES_DSN="${POSTGRES_DSN:-postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@localhost:5432/$POSTGRES_DB?sslmode=disable}"
+SMOKE_WORKSPACE_ID="${SMOKE_WORKSPACE_ID:-wsp_default}"
 STORAGE_PROVIDER="${STORAGE_PROVIDER:-local}"
 LOCAL_STORAGE_PATH="${LOCAL_STORAGE_PATH:-$ROOT_DIR/var/uploads/smoke}"
 TRANSCRIPTION_PROVIDER="${TRANSCRIPTION_PROVIDER:-fake_transcription}"
@@ -194,64 +196,9 @@ assert_json_field_equals() {
   fi
 }
 
-apply_recording_migrations() {
-  local table_exists audio_columns_exist audio_probe_table_exists transcript_table_exists summary_table_exists normalized_audio_table_exists
-  table_exists="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
-    psql -U soniq_user -d soniq -Atc "SELECT to_regclass('public.recordings') IS NOT NULL")"
-  if [[ "$table_exists" != "t" ]]; then
-    log "applying recordings migration 0001"
-    docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
-      psql -U soniq_user -d soniq -v ON_ERROR_STOP=1 \
-      -f - < backend/migrations/0001_create_recordings.up.sql
-  else
-    log "recordings table already exists; skipping migration 0001"
-  fi
-
-  audio_columns_exist="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
-    psql -U soniq_user -d soniq -Atc "SELECT count(*) = 3 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'recordings' AND column_name IN ('audio_object_key', 'audio_content_type', 'audio_size_bytes')")"
-  if [[ "$audio_columns_exist" != "t" ]]; then
-    log "applying recordings migration 0002"
-    docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
-      psql -U soniq_user -d soniq -v ON_ERROR_STOP=1 \
-      -f - < backend/migrations/0002_add_recording_audio_metadata.up.sql
-  else
-    log "recording audio metadata columns already exist; skipping migration 0002"
-  fi
-
-  audio_probe_table_exists="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
-    psql -U soniq_user -d soniq -Atc "SELECT to_regclass('public.recording_audio_probes') IS NOT NULL")"
-  if [[ "$audio_probe_table_exists" != "t" ]]; then
-    log "applying recordings migration 0003"
-    docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
-      psql -U soniq_user -d soniq -v ON_ERROR_STOP=1 \
-      -f - < backend/migrations/0003_create_recording_audio_probes.up.sql
-  else
-    log "recording audio probes table already exists; skipping migration 0003"
-  fi
-
-  transcript_table_exists="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
-    psql -U soniq_user -d soniq -Atc "SELECT to_regclass('public.recording_transcripts') IS NOT NULL AND to_regclass('public.recording_transcript_segments') IS NOT NULL")"
-  summary_table_exists="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
-    psql -U soniq_user -d soniq -Atc "SELECT to_regclass('public.recording_summaries') IS NOT NULL")"
-  if [[ "$transcript_table_exists" != "t" || "$summary_table_exists" != "t" ]]; then
-    log "applying recordings migration 0004"
-    docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
-      psql -U soniq_user -d soniq -v ON_ERROR_STOP=1 \
-      -f - < backend/migrations/0004_create_recording_transcripts_and_summaries.up.sql
-  else
-    log "recording transcript and summary tables already exist; skipping migration 0004"
-  fi
-
-  normalized_audio_table_exists="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
-    psql -U soniq_user -d soniq -Atc "SELECT to_regclass('public.recording_normalized_audios') IS NOT NULL")"
-  if [[ "$normalized_audio_table_exists" != "t" ]]; then
-    log "applying recordings migration 0005"
-    docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
-      psql -U soniq_user -d soniq -v ON_ERROR_STOP=1 \
-      -f - < backend/migrations/0005_create_recording_normalized_audios.up.sql
-  else
-    log "recording normalized audio table already exists; skipping migration 0005"
-  fi
+apply_application_migrations() {
+  log "applying missing Soniq application migrations"
+  COMPOSE_FILE="$COMPOSE_FILE" POSTGRES_USER="$POSTGRES_USER" POSTGRES_DB="$POSTGRES_DB" make migrate
 }
 
 assert_uploaded_object() {
@@ -277,9 +224,21 @@ assert_recording_audio_metadata_in_db() {
   local expected_size_bytes="$4"
   local row
   row="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
-    psql -U soniq_user -d soniq -AtF $'\t' -c "SELECT audio_object_key, audio_content_type, audio_size_bytes FROM recordings WHERE id = '$recording_id'")"
+    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -AtF $'\t' -c "SELECT audio_object_key, audio_content_type, audio_size_bytes FROM recordings WHERE id = '$recording_id'")"
   if [[ "$row" != "$expected_object_key"$'\t'"$expected_content_type"$'\t'"$expected_size_bytes" ]]; then
     log "unexpected DB audio metadata row: $row"
+    return 1
+  fi
+}
+
+assert_recording_workspace_in_db() {
+  local recording_id="$1"
+  local expected_workspace_id="$2"
+  local actual_workspace_id
+  actual_workspace_id="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
+    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "SELECT workspace_id FROM recordings WHERE id = '$recording_id'")"
+  if [[ "$actual_workspace_id" != "$expected_workspace_id" ]]; then
+    log "unexpected DB recording workspace_id: $actual_workspace_id, want $expected_workspace_id"
     return 1
   fi
 }
@@ -289,7 +248,7 @@ assert_recording_status_in_db() {
   local expected_status="$2"
   local actual_status
   actual_status="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
-    psql -U soniq_user -d soniq -Atc "SELECT status FROM recordings WHERE id = '$recording_id'")"
+    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "SELECT status FROM recordings WHERE id = '$recording_id'")"
   if [[ "$actual_status" != "$expected_status" ]]; then
     log "unexpected DB recording status: $actual_status, want $expected_status"
     return 1
@@ -300,7 +259,7 @@ assert_recording_audio_probe_in_db() {
   local recording_id="$1"
   local row
   row="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
-    psql -U soniq_user -d soniq -AtF $'\t' -c "SELECT format_name, codec_name, sample_rate, channels, (duration_seconds > 0), jsonb_typeof(raw_probe_json) FROM recording_audio_probes WHERE recording_id = '$recording_id'")"
+    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -AtF $'\t' -c "SELECT format_name, codec_name, sample_rate, channels, (duration_seconds > 0), jsonb_typeof(raw_probe_json) FROM recording_audio_probes WHERE recording_id = '$recording_id'")"
   if [[ -z "$row" ]]; then
     log "recording audio probe row missing for $recording_id"
     return 1
@@ -317,7 +276,7 @@ assert_recording_normalized_audio_in_db() {
   local recording_id="$1"
   local row object_key content_type size_bytes format_name codec_name sample_rate channels normalized_at_set object_path actual_size_bytes
   row="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
-    psql -U soniq_user -d soniq -AtF $'\t' -c "SELECT object_key, content_type, size_bytes, format_name, codec_name, sample_rate, channels, (normalized_at IS NOT NULL) FROM recording_normalized_audios WHERE recording_id = '$recording_id'")"
+    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -AtF $'\t' -c "SELECT object_key, content_type, size_bytes, format_name, codec_name, sample_rate, channels, (normalized_at IS NOT NULL) FROM recording_normalized_audios WHERE recording_id = '$recording_id'")"
   if [[ -z "$row" ]]; then
     log "recording normalized audio row missing for $recording_id"
     return 1
@@ -345,7 +304,7 @@ assert_recording_transcript_summary_in_db() {
   local recording_id="$1"
   local transcript_row segment_count summary_row
   transcript_row="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
-    psql -U soniq_user -d soniq -AtF $'\t' -c "SELECT provider, model, language, (length(text) > 0), jsonb_typeof(raw_result_json) FROM recording_transcripts WHERE recording_id = '$recording_id'")"
+    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -AtF $'\t' -c "SELECT provider, model, language, (length(text) > 0), jsonb_typeof(raw_result_json) FROM recording_transcripts WHERE recording_id = '$recording_id'")"
   if [[ -z "$transcript_row" ]]; then
     log "recording transcript row missing for $recording_id"
     return 1
@@ -362,14 +321,14 @@ assert_recording_transcript_summary_in_db() {
   fi
 
   segment_count="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
-    psql -U soniq_user -d soniq -Atc "SELECT count(*) FROM recording_transcript_segments WHERE recording_id = '$recording_id'")"
+    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "SELECT count(*) FROM recording_transcript_segments WHERE recording_id = '$recording_id'")"
   if [[ "$segment_count" -lt 1 ]]; then
     log "recording transcript segments missing for $recording_id"
     return 1
   fi
 
   summary_row="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
-    psql -U soniq_user -d soniq -AtF $'\t' -c "SELECT provider, model, type, (length(overview) > 0 OR length(content_markdown) > 0), jsonb_typeof(raw_result_json) FROM recording_summaries WHERE recording_id = '$recording_id'")"
+    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -AtF $'\t' -c "SELECT provider, model, type, (length(overview) > 0 OR length(content_markdown) > 0), jsonb_typeof(raw_result_json) FROM recording_summaries WHERE recording_id = '$recording_id'")"
   if [[ -z "$summary_row" ]]; then
     log "recording summary row missing for $recording_id"
     return 1
@@ -406,12 +365,12 @@ main() {
   make temporal-up
 
   wait_for_command "Soniq Postgres" 60 \
-    docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql pg_isready -U soniq_user
+    docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql pg_isready -U "$POSTGRES_USER"
 
   wait_for_command "Temporal frontend" 60 \
     docker compose -f "$COMPOSE_FILE" exec -T temporal temporal --address temporal:7233 operator namespace list
 
-  apply_recording_migrations
+  apply_application_migrations
 
   rm -rf "$EFFECTIVE_LOCAL_STORAGE_PATH"
   mkdir -p "$EFFECTIVE_LOCAL_STORAGE_PATH"
@@ -419,7 +378,7 @@ main() {
   start_worker
   start_api
 
-  log "uploading recording audio via POST /recordings/upload"
+  log "uploading recording audio via POST /workspaces/$SMOKE_WORKSPACE_ID/recordings/upload"
   local response recording_id workflow_id audio_object_key audio_size audio_file upload_title upload_language upload_filename upload_content_type
   audio_file="$LOG_DIR/weekly.wav"
   upload_title="${SMOKE_TITLE:-Weekly sync}"
@@ -440,7 +399,7 @@ main() {
     ffmpeg -hide_banner -loglevel error -f lavfi -i sine=frequency=1000:duration=1 -ac 1 -ar 16000 -c:a pcm_s16le "$audio_file"
   fi
   audio_size="$(wc -c <"$audio_file" | tr -d ' ')"
-  response="$(curl -fsS -X POST "$API_URL/recordings/upload" \
+  response="$(curl -fsS -X POST "$API_URL/workspaces/$SMOKE_WORKSPACE_ID/recordings/upload" \
     -F "title=$upload_title" \
     -F 'workflow_type=meeting' \
     -F "language=$upload_language" \
@@ -452,13 +411,20 @@ main() {
   log "expected Temporal workflow ID: $workflow_id"
 
   assert_json_field_equals "$response" processing_enqueued True
+  assert_json_field_equals "$response" recording.workspace_id "$SMOKE_WORKSPACE_ID"
   assert_json_field_equals "$response" recording.audio_content_type "$upload_content_type"
   assert_json_field_equals "$response" recording.audio_size_bytes "$audio_size"
+  if [[ "$audio_object_key" != "workspaces/$SMOKE_WORKSPACE_ID/recordings/"* ]]; then
+    log "unexpected uploaded object key prefix: $audio_object_key"
+    return 1
+  fi
   assert_uploaded_object "$audio_object_key" "$audio_size"
   assert_recording_audio_metadata_in_db "$recording_id" "$audio_object_key" "$upload_content_type" "$audio_size"
+  assert_recording_workspace_in_db "$recording_id" "$SMOKE_WORKSPACE_ID"
 
-  log "verifying GET /recordings/$recording_id before API restart"
-  response="$(curl -fsS "$API_URL/recordings/$recording_id")"
+  log "verifying GET /workspaces/$SMOKE_WORKSPACE_ID/recordings/$recording_id before API restart"
+  response="$(curl -fsS "$API_URL/workspaces/$SMOKE_WORKSPACE_ID/recordings/$recording_id")"
+  assert_json_field_equals "$response" workspace_id "$SMOKE_WORKSPACE_ID"
   assert_json_field_equals "$response" audio_object_key "$audio_object_key"
   assert_json_field_equals "$response" audio_content_type "$upload_content_type"
   assert_json_field_equals "$response" audio_size_bytes "$audio_size"
@@ -467,13 +433,14 @@ main() {
   stop_api
   start_api
 
-  log "verifying GET /recordings/$recording_id after API restart"
-  response="$(curl -fsS "$API_URL/recordings/$recording_id")"
+  log "verifying GET /workspaces/$SMOKE_WORKSPACE_ID/recordings/$recording_id after API restart"
+  response="$(curl -fsS "$API_URL/workspaces/$SMOKE_WORKSPACE_ID/recordings/$recording_id")"
+  assert_json_field_equals "$response" workspace_id "$SMOKE_WORKSPACE_ID"
   assert_json_field_equals "$response" audio_object_key "$audio_object_key"
   assert_json_field_equals "$response" audio_content_type "$upload_content_type"
   assert_json_field_equals "$response" audio_size_bytes "$audio_size"
   assert_uploaded_object "$audio_object_key" "$audio_size"
-  curl -fsS "$API_URL/recordings/$recording_id/status" >/dev/null
+  curl -fsS "$API_URL/workspaces/$SMOKE_WORKSPACE_ID/recordings/$recording_id/status" >/dev/null
 
   log "waiting for Temporal workflow completion"
   local describe_output=""

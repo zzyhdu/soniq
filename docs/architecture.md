@@ -105,6 +105,12 @@ export
 
 Artifacts make reprocessing and debugging easier. The database stores metadata; object storage stores large payloads.
 
+## Database migration boundary
+
+Soniq application migrations belong to the Soniq Postgres database, not Temporal's internal Postgres database. The API and worker processes do not apply migrations during startup. Local development uses `make migrate` to apply missing Soniq application migrations to `soniq-postgresql`; production deployments should run migrations as an explicit deployment step before starting new API/worker versions.
+
+The current schema through the identity/workspace foundation is recorded as baseline schema version `1` in `schema_migrations` and represented by `backend/migrations/0001_baseline.up.sql`. Older local databases with the complete pre-baseline schema may be marked as version `1`; partial local schemas should be inspected or reset before migrating. Future schema changes should be added as later migration versions instead of changing baseline version `1`.
+
 ## Why not serverless-first?
 
 This project needs to run in domestic, global, and private infrastructure. A Docker/Kubernetes-first architecture is more portable than binding to Cloudflare Workers, Vercel, Lambda, or a domestic function platform.

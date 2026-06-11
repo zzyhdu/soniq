@@ -1,9 +1,15 @@
 ENV_FILE ?= .env
+COMPOSE_FILE ?= compose.temporal.yml
+POSTGRES_USER ?= soniq_user
+POSTGRES_DB ?= soniq
 CONFIG_ENV_KEYS := \
 	APP_ENV \
 	APP_PUBLIC_URL \
+	COMPOSE_FILE \
 	API_ADDRESS \
 	POSTGRES_DSN \
+	POSTGRES_USER \
+	POSTGRES_DB \
 	TEMPORAL_ADDRESS \
 	TEMPORAL_NAMESPACE \
 	TEMPORAL_TASK_QUEUE \
@@ -35,9 +41,9 @@ endif
 
 $(foreach key,$(CONFIG_ENV_KEYS),$(if $(filter environment command line,$(__ENV_ORIGIN_$(key))),$(eval override $(key) := $(__ENV_VALUE_$(key)))))
 
-.PHONY: fmt lint test api worker env-check temporal-up temporal-down temporal-logs temporal-ps smoke-postgres-temporal
+.PHONY: fmt lint test api worker env-check migrate temporal-up temporal-down temporal-logs temporal-ps smoke-postgres-temporal
 
-$(foreach key,$(CONFIG_ENV_KEYS),$(eval api worker env-check smoke-postgres-temporal: export $(key) := $($(key))))
+$(foreach key,$(CONFIG_ENV_KEYS),$(eval api worker env-check migrate smoke-postgres-temporal: export $(key) := $($(key))))
 
 fmt:
 	cd backend && go fmt ./...
@@ -57,22 +63,28 @@ worker:
 env-check:
 	@echo "env_file=$(if $(wildcard $(ENV_FILE)),$(ENV_FILE),not found)"
 	@echo "api_address=$(API_ADDRESS)"
+	@echo "compose_file=$(COMPOSE_FILE)"
+	@echo "postgres_user=$(POSTGRES_USER)"
+	@echo "postgres_db=$(POSTGRES_DB)"
 	@echo "transcription_provider=$(TRANSCRIPTION_PROVIDER)"
 	@echo "dashscope_asr_model=$(DASHSCOPE_ASR_MODEL)"
 	@echo "llm_provider=$(LLM_PROVIDER)"
 	@echo "privacy_allow_external_model_providers=$(PRIVACY_ALLOW_EXTERNAL_MODEL_PROVIDERS)"
 
+migrate:
+	./scripts/migrate-local.sh
+
 temporal-up:
-	docker compose -f compose.temporal.yml up -d
+	docker compose -f $(COMPOSE_FILE) up -d
 
 temporal-down:
-	docker compose -f compose.temporal.yml down
+	docker compose -f $(COMPOSE_FILE) down
 
 temporal-logs:
-	docker compose -f compose.temporal.yml logs -f temporal temporal-ui
+	docker compose -f $(COMPOSE_FILE) logs -f temporal temporal-ui
 
 temporal-ps:
-	docker compose -f compose.temporal.yml ps
+	docker compose -f $(COMPOSE_FILE) ps
 
 smoke-postgres-temporal:
 	./scripts/smoke-postgres-temporal.sh

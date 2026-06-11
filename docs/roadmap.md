@@ -7,7 +7,7 @@ Soniq has moved from documentation-only architecture into an executable backend 
 Completed foundation milestones:
 
 - Go backend skeleton with `GET /healthz`.
-- Postgres-backed recording API: `POST /recordings`, `POST /recordings/upload`, `GET /recordings/{id}`, `GET /recordings/{id}/status`.
+- Postgres-backed workspace-scoped recording API: `POST /workspaces/{workspace_id}/recordings`, `POST /workspaces/{workspace_id}/recordings/upload`, `GET /workspaces/{workspace_id}/recordings/{recording_id}`, `GET /workspaces/{workspace_id}/recordings/{recording_id}/status`.
 - Local filesystem object storage for uploaded recording audio.
 - Temporal workflow with Postgres-backed recording status, audio-probe, audio-normalization, fake transcription, and fake summarization activities.
 - Temporal worker registration with Soniq Postgres-backed activities.
@@ -130,9 +130,9 @@ Completed scope:
 - pnpm workspace with `apps/web` and `packages/api-client`.
 - Typed recording API client for upload, status, and details endpoints.
 - React + Vite + TypeScript app shell with Tailwind CSS, shadcn/ui primitives, React Query, and local API proxying.
-- Browser upload form for title/workflow type/language/audio that starts processing through `POST /recordings/upload` and displays the created recording id plus `processing_enqueued` result.
-- Status polling UI for `GET /recordings/{id}/status`.
-- Transcript and summary display for `GET /recordings/{id}/details` after processing completes.
+- Browser upload form for title/workflow type/language/audio that starts processing through `POST /workspaces/{workspace_id}/recordings/upload` and displays the created recording id plus `processing_enqueued` result.
+- Status polling UI for `GET /workspaces/{workspace_id}/recordings/{recording_id}/status`.
+- Transcript and summary display for `GET /workspaces/{workspace_id}/recordings/{recording_id}/details` after processing completes.
 - Local Web UI documentation covering pnpm workspace paths, backend startup, sample audio upload, and expected completed results.
 - End-to-end manual verification against the real local backend pipeline.
 
