@@ -17,12 +17,29 @@ type recordingStoreSpy struct {
 	updateErr  error
 }
 
+const activityTestWorkspaceID = "wsp_test"
+
+func activityRecordingRef(recordingID string) RecordingReference {
+	return RecordingReference{WorkspaceID: activityTestWorkspaceID, RecordingID: recordingID}
+}
+
 func (s *recordingStoreSpy) Get(id string) (domain.Recording, bool, error) {
 	if s.recordings == nil {
 		return domain.Recording{}, false, nil
 	}
 	recording, ok := s.recordings[id]
 	return recording, ok, nil
+}
+
+func (s *recordingStoreSpy) GetForWorkspace(input recordings.GetRecordingInput) (domain.Recording, bool, error) {
+	recording, ok, err := s.Get(input.ID)
+	if err != nil {
+		return domain.Recording{}, false, err
+	}
+	if !ok || recording.WorkspaceID != input.WorkspaceID {
+		return domain.Recording{}, false, nil
+	}
+	return recording, true, nil
 }
 
 func (s *recordingStoreSpy) UpdateStatus(input recordings.UpdateRecordingStatusInput) (domain.Recording, error) {
@@ -36,6 +53,9 @@ func (s *recordingStoreSpy) UpdateStatus(input recordings.UpdateRecordingStatusI
 	}
 	if !ok {
 		return domain.Recording{}, errors.New("recording not found")
+	}
+	if recording.WorkspaceID != input.WorkspaceID {
+		return domain.Recording{}, errors.New("recording not found in workspace")
 	}
 	recording.Status = input.Status
 	return recording, nil
@@ -64,11 +84,12 @@ func TestFakeSummaryProviderTruncatesChineseOverviewWithoutBreakingUTF8(t *testi
 
 func TestRecordingProcessingActivitiesValidateRecordingAcceptsExistingRecording(t *testing.T) {
 	store := &recordingStoreSpy{recordings: map[string]domain.Recording{
-		"rec_test": {ID: "rec_test", Status: domain.RecordingStatusUploaded},
+		"rec_test": {ID: "rec_test", WorkspaceID: activityTestWorkspaceID, Status: domain.RecordingStatusUploaded},
 	}}
 	activities := NewRecordingProcessingActivities(store)
 
 	err := activities.ValidateRecording(context.Background(), RecordingProcessingInput{
+		WorkspaceID:  activityTestWorkspaceID,
 		RecordingID:  "rec_test",
 		WorkflowType: domain.WorkflowTypeMeeting,
 		Language:     "en",
@@ -82,6 +103,7 @@ func TestRecordingProcessingActivitiesValidateRecordingRejectsMissingRecordingID
 	activities := NewRecordingProcessingActivities(&recordingStoreSpy{})
 
 	err := activities.ValidateRecording(context.Background(), RecordingProcessingInput{
+		WorkspaceID:  activityTestWorkspaceID,
 		WorkflowType: domain.WorkflowTypeMeeting,
 		Language:     "en",
 	})
@@ -90,10 +112,24 @@ func TestRecordingProcessingActivitiesValidateRecordingRejectsMissingRecordingID
 	}
 }
 
+func TestRecordingProcessingActivitiesValidateRecordingRejectsMissingWorkspaceID(t *testing.T) {
+	activities := NewRecordingProcessingActivities(&recordingStoreSpy{})
+
+	err := activities.ValidateRecording(context.Background(), RecordingProcessingInput{
+		RecordingID:  "rec_test",
+		WorkflowType: domain.WorkflowTypeMeeting,
+		Language:     "en",
+	})
+	if err == nil {
+		t.Fatal("ValidateRecording() error = nil, want missing workspace id error")
+	}
+}
+
 func TestRecordingProcessingActivitiesValidateRecordingRejectsInvalidWorkflowType(t *testing.T) {
 	activities := NewRecordingProcessingActivities(&recordingStoreSpy{})
 
 	err := activities.ValidateRecording(context.Background(), RecordingProcessingInput{
+		WorkspaceID:  activityTestWorkspaceID,
 		RecordingID:  "rec_test",
 		WorkflowType: "podcast",
 		Language:     "en",
@@ -107,6 +143,7 @@ func TestRecordingProcessingActivitiesValidateRecordingRequiresExistingRecording
 	activities := NewRecordingProcessingActivities(&recordingStoreSpy{})
 
 	err := activities.ValidateRecording(context.Background(), RecordingProcessingInput{
+		WorkspaceID:  activityTestWorkspaceID,
 		RecordingID:  "rec_missing",
 		WorkflowType: domain.WorkflowTypeMeeting,
 		Language:     "en",
@@ -116,17 +153,34 @@ func TestRecordingProcessingActivitiesValidateRecordingRequiresExistingRecording
 	}
 }
 
-func TestRecordingProcessingActivitiesMarkRecordingProcessingUpdatesStatus(t *testing.T) {
+func TestRecordingProcessingActivitiesValidateRecordingRejectsCrossWorkspaceRecording(t *testing.T) {
 	store := &recordingStoreSpy{recordings: map[string]domain.Recording{
-		"rec_test": {ID: "rec_test", Status: domain.RecordingStatusUploaded},
+		"rec_test": {ID: "rec_test", WorkspaceID: "wsp_other", Status: domain.RecordingStatusUploaded},
 	}}
 	activities := NewRecordingProcessingActivities(store)
 
-	if err := activities.MarkRecordingProcessing(context.Background(), "rec_test"); err != nil {
+	err := activities.ValidateRecording(context.Background(), RecordingProcessingInput{
+		WorkspaceID:  activityTestWorkspaceID,
+		RecordingID:  "rec_test",
+		WorkflowType: domain.WorkflowTypeMeeting,
+		Language:     "en",
+	})
+	if err == nil {
+		t.Fatal("ValidateRecording() error = nil, want cross-workspace recording error")
+	}
+}
+
+func TestRecordingProcessingActivitiesMarkRecordingProcessingUpdatesStatus(t *testing.T) {
+	store := &recordingStoreSpy{recordings: map[string]domain.Recording{
+		"rec_test": {ID: "rec_test", WorkspaceID: activityTestWorkspaceID, Status: domain.RecordingStatusUploaded},
+	}}
+	activities := NewRecordingProcessingActivities(store)
+
+	if err := activities.MarkRecordingProcessing(context.Background(), activityRecordingRef("rec_test")); err != nil {
 		t.Fatalf("MarkRecordingProcessing() error = %v, want nil", err)
 	}
 
-	want := recordings.UpdateRecordingStatusInput{ID: "rec_test", Status: domain.RecordingStatusProcessing}
+	want := recordings.UpdateRecordingStatusInput{WorkspaceID: activityTestWorkspaceID, ID: "rec_test", Status: domain.RecordingStatusProcessing}
 	if len(store.updates) != 1 || store.updates[0] != want {
 		t.Fatalf("updates = %+v, want [%+v]", store.updates, want)
 	}
@@ -134,15 +188,15 @@ func TestRecordingProcessingActivitiesMarkRecordingProcessingUpdatesStatus(t *te
 
 func TestRecordingProcessingActivitiesMarkRecordingTranscribingUpdatesStatus(t *testing.T) {
 	store := &recordingStoreSpy{recordings: map[string]domain.Recording{
-		"rec_test": {ID: "rec_test", Status: domain.RecordingStatusProcessing},
+		"rec_test": {ID: "rec_test", WorkspaceID: activityTestWorkspaceID, Status: domain.RecordingStatusProcessing},
 	}}
 	activities := NewRecordingProcessingActivities(store)
 
-	if err := activities.MarkRecordingTranscribing(context.Background(), "rec_test"); err != nil {
+	if err := activities.MarkRecordingTranscribing(context.Background(), activityRecordingRef("rec_test")); err != nil {
 		t.Fatalf("MarkRecordingTranscribing() error = %v, want nil", err)
 	}
 
-	want := recordings.UpdateRecordingStatusInput{ID: "rec_test", Status: domain.RecordingStatusTranscribing}
+	want := recordings.UpdateRecordingStatusInput{WorkspaceID: activityTestWorkspaceID, ID: "rec_test", Status: domain.RecordingStatusTranscribing}
 	if len(store.updates) != 1 || store.updates[0] != want {
 		t.Fatalf("updates = %+v, want [%+v]", store.updates, want)
 	}
@@ -150,15 +204,15 @@ func TestRecordingProcessingActivitiesMarkRecordingTranscribingUpdatesStatus(t *
 
 func TestRecordingProcessingActivitiesMarkRecordingSummarizingUpdatesStatus(t *testing.T) {
 	store := &recordingStoreSpy{recordings: map[string]domain.Recording{
-		"rec_test": {ID: "rec_test", Status: domain.RecordingStatusTranscribing},
+		"rec_test": {ID: "rec_test", WorkspaceID: activityTestWorkspaceID, Status: domain.RecordingStatusTranscribing},
 	}}
 	activities := NewRecordingProcessingActivities(store)
 
-	if err := activities.MarkRecordingSummarizing(context.Background(), "rec_test"); err != nil {
+	if err := activities.MarkRecordingSummarizing(context.Background(), activityRecordingRef("rec_test")); err != nil {
 		t.Fatalf("MarkRecordingSummarizing() error = %v, want nil", err)
 	}
 
-	want := recordings.UpdateRecordingStatusInput{ID: "rec_test", Status: domain.RecordingStatusSummarizing}
+	want := recordings.UpdateRecordingStatusInput{WorkspaceID: activityTestWorkspaceID, ID: "rec_test", Status: domain.RecordingStatusSummarizing}
 	if len(store.updates) != 1 || store.updates[0] != want {
 		t.Fatalf("updates = %+v, want [%+v]", store.updates, want)
 	}
@@ -166,20 +220,20 @@ func TestRecordingProcessingActivitiesMarkRecordingSummarizingUpdatesStatus(t *t
 
 func TestRecordingProcessingActivitiesCompleteRecordingProcessingUpdatesStatusAndReturnsResult(t *testing.T) {
 	store := &recordingStoreSpy{recordings: map[string]domain.Recording{
-		"rec_test": {ID: "rec_test", Status: domain.RecordingStatusProcessing},
+		"rec_test": {ID: "rec_test", WorkspaceID: activityTestWorkspaceID, Status: domain.RecordingStatusProcessing},
 	}}
 	activities := NewRecordingProcessingActivities(store)
 
-	result, err := activities.CompleteRecordingProcessing(context.Background(), "rec_test")
+	result, err := activities.CompleteRecordingProcessing(context.Background(), activityRecordingRef("rec_test"))
 	if err != nil {
 		t.Fatalf("CompleteRecordingProcessing() error = %v, want nil", err)
 	}
 
-	wantUpdate := recordings.UpdateRecordingStatusInput{ID: "rec_test", Status: domain.RecordingStatusCompleted}
+	wantUpdate := recordings.UpdateRecordingStatusInput{WorkspaceID: activityTestWorkspaceID, ID: "rec_test", Status: domain.RecordingStatusCompleted}
 	if len(store.updates) != 1 || store.updates[0] != wantUpdate {
 		t.Fatalf("updates = %+v, want [%+v]", store.updates, wantUpdate)
 	}
-	wantResult := RecordingProcessingResult{RecordingID: "rec_test", Status: domain.RecordingStatusCompleted}
+	wantResult := RecordingProcessingResult{WorkspaceID: activityTestWorkspaceID, RecordingID: "rec_test", Status: domain.RecordingStatusCompleted}
 	if result != wantResult {
 		t.Fatalf("result = %+v, want %+v", result, wantResult)
 	}
@@ -187,15 +241,15 @@ func TestRecordingProcessingActivitiesCompleteRecordingProcessingUpdatesStatusAn
 
 func TestRecordingProcessingActivitiesFailRecordingProcessingUpdatesStatus(t *testing.T) {
 	store := &recordingStoreSpy{recordings: map[string]domain.Recording{
-		"rec_test": {ID: "rec_test", Status: domain.RecordingStatusProcessing},
+		"rec_test": {ID: "rec_test", WorkspaceID: activityTestWorkspaceID, Status: domain.RecordingStatusProcessing},
 	}}
 	activities := NewRecordingProcessingActivities(store)
 
-	if err := activities.FailRecordingProcessing(context.Background(), "rec_test"); err != nil {
+	if err := activities.FailRecordingProcessing(context.Background(), activityRecordingRef("rec_test")); err != nil {
 		t.Fatalf("FailRecordingProcessing() error = %v, want nil", err)
 	}
 
-	want := recordings.UpdateRecordingStatusInput{ID: "rec_test", Status: domain.RecordingStatusFailed}
+	want := recordings.UpdateRecordingStatusInput{WorkspaceID: activityTestWorkspaceID, ID: "rec_test", Status: domain.RecordingStatusFailed}
 	if len(store.updates) != 1 || store.updates[0] != want {
 		t.Fatalf("updates = %+v, want [%+v]", store.updates, want)
 	}

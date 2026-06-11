@@ -141,6 +141,17 @@ func (s *normalizeRecordingStoreSpy) Get(id string) (domain.Recording, bool, err
 	return recording, ok, nil
 }
 
+func (s *normalizeRecordingStoreSpy) GetForWorkspace(input recordings.GetRecordingInput) (domain.Recording, bool, error) {
+	recording, ok, err := s.Get(input.ID)
+	if err != nil {
+		return domain.Recording{}, false, err
+	}
+	if !ok || recording.WorkspaceID != input.WorkspaceID {
+		return domain.Recording{}, false, nil
+	}
+	return recording, true, nil
+}
+
 func (s *normalizeRecordingStoreSpy) UpdateStatus(input recordings.UpdateRecordingStatusInput) (domain.Recording, error) {
 	recording, ok, err := s.Get(input.ID)
 	if err != nil {

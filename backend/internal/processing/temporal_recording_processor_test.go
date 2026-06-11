@@ -19,6 +19,7 @@ func TestTemporalRecordingProcessorStartsRecordingWorkflow(t *testing.T) {
 		DeleteOriginalAudioAfterTranscription: true,
 	})
 	recording := domain.Recording{
+		WorkspaceID:  "wsp_default",
 		ID:           "rec_123",
 		Title:        "Weekly sync",
 		Status:       domain.RecordingStatusUploaded,
@@ -54,6 +55,9 @@ func TestTemporalRecordingProcessorStartsRecordingWorkflow(t *testing.T) {
 	}
 	if input.RecordingID != recording.ID {
 		t.Fatalf("input recording ID = %q, want %q", input.RecordingID, recording.ID)
+	}
+	if input.WorkspaceID != recording.WorkspaceID {
+		t.Fatalf("input workspace ID = %q, want %q", input.WorkspaceID, recording.WorkspaceID)
 	}
 	if input.WorkflowType != recording.WorkflowType {
 		t.Fatalf("input workflow_type = %q, want %q", input.WorkflowType, recording.WorkflowType)

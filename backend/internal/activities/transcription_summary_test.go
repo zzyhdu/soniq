@@ -29,6 +29,17 @@ func (s *transcriptionSummaryStoreSpy) Get(id string) (domain.Recording, bool, e
 	return recording, ok, nil
 }
 
+func (s *transcriptionSummaryStoreSpy) GetForWorkspace(input recordings.GetRecordingInput) (domain.Recording, bool, error) {
+	recording, ok, err := s.Get(input.ID)
+	if err != nil {
+		return domain.Recording{}, false, err
+	}
+	if !ok || recording.WorkspaceID != input.WorkspaceID {
+		return domain.Recording{}, false, nil
+	}
+	return recording, true, nil
+}
+
 func (s *transcriptionSummaryStoreSpy) UpdateStatus(input recordings.UpdateRecordingStatusInput) (domain.Recording, error) {
 	recording, ok, err := s.Get(input.ID)
 	if err != nil {

@@ -247,11 +247,22 @@ func (s *recordingWorkerSpy) RegisterActivityWithOptions(activityFn interface{},
 type workerRecordingStoreSpy struct{}
 
 func (s *workerRecordingStoreSpy) Get(id string) (domain.Recording, bool, error) {
-	return domain.Recording{ID: id}, true, nil
+	return domain.Recording{ID: id, WorkspaceID: "wsp_default"}, true, nil
+}
+
+func (s *workerRecordingStoreSpy) GetForWorkspace(input recordings.GetRecordingInput) (domain.Recording, bool, error) {
+	recording, ok, err := s.Get(input.ID)
+	if err != nil {
+		return domain.Recording{}, false, err
+	}
+	if !ok || recording.WorkspaceID != input.WorkspaceID {
+		return domain.Recording{}, false, nil
+	}
+	return recording, true, nil
 }
 
 func (s *workerRecordingStoreSpy) UpdateStatus(input recordings.UpdateRecordingStatusInput) (domain.Recording, error) {
-	return domain.Recording{ID: input.ID, Status: input.Status}, nil
+	return domain.Recording{ID: input.ID, WorkspaceID: input.WorkspaceID, Status: input.Status}, nil
 }
 
 func (s *workerRecordingStoreSpy) UpsertAudioProbe(input recordings.UpsertAudioProbeInput) (recordings.RecordingAudioProbe, error) {

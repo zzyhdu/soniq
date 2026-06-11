@@ -23,6 +23,17 @@ func (s *audioProbeRecordingStoreSpy) Get(id string) (domain.Recording, bool, er
 	return recording, ok, nil
 }
 
+func (s *audioProbeRecordingStoreSpy) GetForWorkspace(input recordings.GetRecordingInput) (domain.Recording, bool, error) {
+	recording, ok, err := s.Get(input.ID)
+	if err != nil {
+		return domain.Recording{}, false, err
+	}
+	if !ok || recording.WorkspaceID != input.WorkspaceID {
+		return domain.Recording{}, false, nil
+	}
+	return recording, true, nil
+}
+
 func (s *audioProbeRecordingStoreSpy) UpdateStatus(input recordings.UpdateRecordingStatusInput) (domain.Recording, error) {
 	recording, ok, err := s.Get(input.ID)
 	if err != nil {

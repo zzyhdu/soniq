@@ -52,6 +52,7 @@ func (p TemporalRecordingProcessor) Enqueue(recording domain.Recording) error {
 		},
 		workflows.RecordingProcessingWorkflow,
 		workflows.RecordingProcessingInput{
+			WorkspaceID:                           recording.WorkspaceID,
 			RecordingID:                           recording.ID,
 			WorkflowType:                          recording.WorkflowType,
 			Language:                              recording.Language,

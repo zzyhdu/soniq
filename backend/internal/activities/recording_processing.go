@@ -19,14 +19,22 @@ import (
 
 // RecordingProcessingInput is the input shared by the recording processing workflow and activities.
 type RecordingProcessingInput struct {
+	WorkspaceID                           string
 	RecordingID                           string
 	WorkflowType                          domain.WorkflowType
 	Language                              string
 	DeleteOriginalAudioAfterTranscription bool
 }
 
+// RecordingReference identifies a recording inside a workspace.
+type RecordingReference struct {
+	WorkspaceID string
+	RecordingID string
+}
+
 // RecordingProcessingResult is the result returned after processing completes.
 type RecordingProcessingResult struct {
+	WorkspaceID string
 	RecordingID string
 	Status      domain.RecordingStatus
 }
@@ -48,6 +56,7 @@ const (
 // RecordingStore is the persistence seam used by validation, status, and audio probe activities.
 type RecordingStore interface {
 	Get(id string) (domain.Recording, bool, error)
+	GetForWorkspace(input recordings.GetRecordingInput) (domain.Recording, bool, error)
 	UpdateStatus(input recordings.UpdateRecordingStatusInput) (domain.Recording, error)
 	UpsertAudioProbe(input recordings.UpsertAudioProbeInput) (recordings.RecordingAudioProbe, error)
 }
@@ -215,6 +224,9 @@ func NewRecordingProcessingActivitiesWithNormalizedAudio(store NormalizingPipeli
 
 // ValidateRecording validates processing input and confirms the recording exists.
 func (a *RecordingProcessingActivities) ValidateRecording(ctx context.Context, input RecordingProcessingInput) error {
+	if input.WorkspaceID == "" {
+		return errors.New("workspace id is required")
+	}
 	if input.RecordingID == "" {
 		return errors.New("recording id is required")
 	}
@@ -224,7 +236,10 @@ func (a *RecordingProcessingActivities) ValidateRecording(ctx context.Context, i
 	if a == nil || a.store == nil {
 		return errors.New("recording store is required")
 	}
-	_, ok, err := a.store.Get(input.RecordingID)
+	_, ok, err := a.store.GetForWorkspace(recordings.GetRecordingInput{
+		WorkspaceID: input.WorkspaceID,
+		ID:          input.RecordingID,
+	})
 	if err != nil {
 		return fmt.Errorf("get recording: %w", err)
 	}
@@ -235,38 +250,39 @@ func (a *RecordingProcessingActivities) ValidateRecording(ctx context.Context, i
 }
 
 // MarkRecordingProcessing persists the processing status transition.
-func (a *RecordingProcessingActivities) MarkRecordingProcessing(ctx context.Context, recordingID string) error {
-	_, err := a.updateStatus(recordingID, domain.RecordingStatusProcessing)
+func (a *RecordingProcessingActivities) MarkRecordingProcessing(ctx context.Context, recording RecordingReference) error {
+	_, err := a.updateStatus(recording, domain.RecordingStatusProcessing)
 	return err
 }
 
 // MarkRecordingTranscribing persists the transcribing status transition.
-func (a *RecordingProcessingActivities) MarkRecordingTranscribing(ctx context.Context, recordingID string) error {
-	_, err := a.updateStatus(recordingID, domain.RecordingStatusTranscribing)
+func (a *RecordingProcessingActivities) MarkRecordingTranscribing(ctx context.Context, recording RecordingReference) error {
+	_, err := a.updateStatus(recording, domain.RecordingStatusTranscribing)
 	return err
 }
 
 // MarkRecordingSummarizing persists the summarizing status transition.
-func (a *RecordingProcessingActivities) MarkRecordingSummarizing(ctx context.Context, recordingID string) error {
-	_, err := a.updateStatus(recordingID, domain.RecordingStatusSummarizing)
+func (a *RecordingProcessingActivities) MarkRecordingSummarizing(ctx context.Context, recording RecordingReference) error {
+	_, err := a.updateStatus(recording, domain.RecordingStatusSummarizing)
 	return err
 }
 
 // CompleteRecordingProcessing persists completion and returns the workflow result.
-func (a *RecordingProcessingActivities) CompleteRecordingProcessing(ctx context.Context, recordingID string) (RecordingProcessingResult, error) {
-	updated, err := a.updateStatus(recordingID, domain.RecordingStatusCompleted)
+func (a *RecordingProcessingActivities) CompleteRecordingProcessing(ctx context.Context, recording RecordingReference) (RecordingProcessingResult, error) {
+	updated, err := a.updateStatus(recording, domain.RecordingStatusCompleted)
 	if err != nil {
 		return RecordingProcessingResult{}, err
 	}
 	return RecordingProcessingResult{
+		WorkspaceID: updated.WorkspaceID,
 		RecordingID: updated.ID,
 		Status:      updated.Status,
 	}, nil
 }
 
 // FailRecordingProcessing persists a failed status transition.
-func (a *RecordingProcessingActivities) FailRecordingProcessing(ctx context.Context, recordingID string) error {
-	_, err := a.updateStatus(recordingID, domain.RecordingStatusFailed)
+func (a *RecordingProcessingActivities) FailRecordingProcessing(ctx context.Context, recording RecordingReference) error {
+	_, err := a.updateStatus(recording, domain.RecordingStatusFailed)
 	return err
 }
 
@@ -678,16 +694,20 @@ func parseIntOrZero(value string) int {
 	return parsed
 }
 
-func (a *RecordingProcessingActivities) updateStatus(recordingID string, status domain.RecordingStatus) (domain.Recording, error) {
-	if recordingID == "" {
+func (a *RecordingProcessingActivities) updateStatus(recording RecordingReference, status domain.RecordingStatus) (domain.Recording, error) {
+	if recording.WorkspaceID == "" {
+		return domain.Recording{}, errors.New("workspace id is required")
+	}
+	if recording.RecordingID == "" {
 		return domain.Recording{}, errors.New("recording id is required")
 	}
 	if a == nil || a.store == nil {
 		return domain.Recording{}, errors.New("recording store is required")
 	}
 	updated, err := a.store.UpdateStatus(recordings.UpdateRecordingStatusInput{
-		ID:     recordingID,
-		Status: status,
+		WorkspaceID: recording.WorkspaceID,
+		ID:          recording.RecordingID,
+		Status:      status,
 	})
 	if err != nil {
 		return domain.Recording{}, err

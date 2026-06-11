@@ -157,6 +157,9 @@ func TestBuildHandlerWiresUploadEndpointToLocalObjectStorage(t *testing.T) {
 	if input.RecordingID != recording.ID {
 		t.Fatalf("input recording ID = %q, want %q", input.RecordingID, recording.ID)
 	}
+	if input.WorkspaceID != recording.WorkspaceID {
+		t.Fatalf("input workspace ID = %q, want %q", input.WorkspaceID, recording.WorkspaceID)
+	}
 	if input.WorkflowType != domain.WorkflowTypeMeeting {
 		t.Fatalf("input workflow_type = %q, want meeting", input.WorkflowType)
 	}

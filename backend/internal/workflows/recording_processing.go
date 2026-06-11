@@ -21,6 +21,11 @@ const (
 
 // RecordingProcessingWorkflow orchestrates the recording processing pipeline.
 func RecordingProcessingWorkflow(ctx workflow.Context, input RecordingProcessingInput) (RecordingProcessingResult, error) {
+	recording := activities.RecordingReference{
+		WorkspaceID: input.WorkspaceID,
+		RecordingID: input.RecordingID,
+	}
+
 	shortActivityCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		StartToCloseTimeout: shortActivityTimeout,
 		RetryPolicy: &temporal.RetryPolicy{
@@ -37,43 +42,43 @@ func RecordingProcessingWorkflow(ctx workflow.Context, input RecordingProcessing
 	if err := workflow.ExecuteActivity(shortActivityCtx, activities.ValidateRecordingActivityName, input).Get(shortActivityCtx, nil); err != nil {
 		return RecordingProcessingResult{}, err
 	}
-	if err := workflow.ExecuteActivity(shortActivityCtx, activities.MarkRecordingProcessingActivityName, input.RecordingID).Get(shortActivityCtx, nil); err != nil {
+	if err := workflow.ExecuteActivity(shortActivityCtx, activities.MarkRecordingProcessingActivityName, recording).Get(shortActivityCtx, nil); err != nil {
 		return RecordingProcessingResult{}, err
 	}
 	if err := workflow.ExecuteActivity(shortActivityCtx, activities.ProbeRecordingAudioActivityName, input.RecordingID).Get(shortActivityCtx, nil); err != nil {
-		_ = workflow.ExecuteActivity(shortActivityCtx, activities.FailRecordingProcessingActivityName, input.RecordingID).Get(shortActivityCtx, nil)
+		_ = workflow.ExecuteActivity(shortActivityCtx, activities.FailRecordingProcessingActivityName, recording).Get(shortActivityCtx, nil)
 		return RecordingProcessingResult{}, err
 	}
 	if err := workflow.ExecuteActivity(shortActivityCtx, activities.NormalizeRecordingAudioActivityName, input.RecordingID).Get(shortActivityCtx, nil); err != nil {
-		_ = workflow.ExecuteActivity(shortActivityCtx, activities.FailRecordingProcessingActivityName, input.RecordingID).Get(shortActivityCtx, nil)
+		_ = workflow.ExecuteActivity(shortActivityCtx, activities.FailRecordingProcessingActivityName, recording).Get(shortActivityCtx, nil)
 		return RecordingProcessingResult{}, err
 	}
-	if err := workflow.ExecuteActivity(shortActivityCtx, activities.MarkRecordingTranscribingActivityName, input.RecordingID).Get(shortActivityCtx, nil); err != nil {
-		_ = workflow.ExecuteActivity(shortActivityCtx, activities.FailRecordingProcessingActivityName, input.RecordingID).Get(shortActivityCtx, nil)
+	if err := workflow.ExecuteActivity(shortActivityCtx, activities.MarkRecordingTranscribingActivityName, recording).Get(shortActivityCtx, nil); err != nil {
+		_ = workflow.ExecuteActivity(shortActivityCtx, activities.FailRecordingProcessingActivityName, recording).Get(shortActivityCtx, nil)
 		return RecordingProcessingResult{}, err
 	}
 	if err := workflow.ExecuteActivity(longRunningActivityCtx, activities.TranscribeRecordingAudioActivityName, input.RecordingID).Get(longRunningActivityCtx, nil); err != nil {
-		_ = workflow.ExecuteActivity(shortActivityCtx, activities.FailRecordingProcessingActivityName, input.RecordingID).Get(shortActivityCtx, nil)
+		_ = workflow.ExecuteActivity(shortActivityCtx, activities.FailRecordingProcessingActivityName, recording).Get(shortActivityCtx, nil)
 		return RecordingProcessingResult{}, err
 	}
 	if input.DeleteOriginalAudioAfterTranscription {
 		if err := workflow.ExecuteActivity(shortActivityCtx, activities.DeleteOriginalRecordingAudioActivityName, input.RecordingID).Get(shortActivityCtx, nil); err != nil {
-			_ = workflow.ExecuteActivity(shortActivityCtx, activities.FailRecordingProcessingActivityName, input.RecordingID).Get(shortActivityCtx, nil)
+			_ = workflow.ExecuteActivity(shortActivityCtx, activities.FailRecordingProcessingActivityName, recording).Get(shortActivityCtx, nil)
 			return RecordingProcessingResult{}, err
 		}
 	}
-	if err := workflow.ExecuteActivity(shortActivityCtx, activities.MarkRecordingSummarizingActivityName, input.RecordingID).Get(shortActivityCtx, nil); err != nil {
-		_ = workflow.ExecuteActivity(shortActivityCtx, activities.FailRecordingProcessingActivityName, input.RecordingID).Get(shortActivityCtx, nil)
+	if err := workflow.ExecuteActivity(shortActivityCtx, activities.MarkRecordingSummarizingActivityName, recording).Get(shortActivityCtx, nil); err != nil {
+		_ = workflow.ExecuteActivity(shortActivityCtx, activities.FailRecordingProcessingActivityName, recording).Get(shortActivityCtx, nil)
 		return RecordingProcessingResult{}, err
 	}
 	if err := workflow.ExecuteActivity(longRunningActivityCtx, activities.SummarizeRecordingActivityName, input.RecordingID).Get(longRunningActivityCtx, nil); err != nil {
-		_ = workflow.ExecuteActivity(shortActivityCtx, activities.FailRecordingProcessingActivityName, input.RecordingID).Get(shortActivityCtx, nil)
+		_ = workflow.ExecuteActivity(shortActivityCtx, activities.FailRecordingProcessingActivityName, recording).Get(shortActivityCtx, nil)
 		return RecordingProcessingResult{}, err
 	}
 
 	var result RecordingProcessingResult
-	if err := workflow.ExecuteActivity(shortActivityCtx, activities.CompleteRecordingProcessingActivityName, input.RecordingID).Get(shortActivityCtx, &result); err != nil {
-		_ = workflow.ExecuteActivity(shortActivityCtx, activities.FailRecordingProcessingActivityName, input.RecordingID).Get(shortActivityCtx, nil)
+	if err := workflow.ExecuteActivity(shortActivityCtx, activities.CompleteRecordingProcessingActivityName, recording).Get(shortActivityCtx, &result); err != nil {
+		_ = workflow.ExecuteActivity(shortActivityCtx, activities.FailRecordingProcessingActivityName, recording).Get(shortActivityCtx, nil)
 		return RecordingProcessingResult{}, err
 	}
 
