@@ -123,6 +123,7 @@ func TestPostgresStoreCreateInsertsRecording(t *testing.T) {
 	updatedAt := createdAt
 	db := newPostgresExecutorSpy(postgresRow(
 		"rec_pg",
+		"wsp_default",
 		"Weekly sync",
 		domain.RecordingStatusUploaded,
 		domain.WorkflowTypeMeeting,
@@ -136,6 +137,7 @@ func TestPostgresStoreCreateInsertsRecording(t *testing.T) {
 	store := NewPostgresStore(db)
 
 	recording, err := store.Create(CreateRecordingInput{
+		WorkspaceID:  "wsp_default",
 		Title:        "Weekly sync",
 		WorkflowType: domain.WorkflowTypeMeeting,
 		Language:     "en",
@@ -146,6 +148,9 @@ func TestPostgresStoreCreateInsertsRecording(t *testing.T) {
 
 	if recording.ID != "rec_pg" {
 		t.Fatalf("recording.ID = %q, want rec_pg", recording.ID)
+	}
+	if recording.WorkspaceID != "wsp_default" {
+		t.Fatalf("recording.WorkspaceID = %q, want wsp_default", recording.WorkspaceID)
 	}
 	if recording.Status != domain.RecordingStatusUploaded {
 		t.Fatalf("recording.Status = %q, want uploaded", recording.Status)
@@ -162,11 +167,14 @@ func TestPostgresStoreCreateInsertsRecording(t *testing.T) {
 	if !strings.Contains(strings.ToLower(db.calls[0].query), "insert into recordings") {
 		t.Fatalf("query = %q, want insert into recordings", db.calls[0].query)
 	}
-	if got, want := len(db.calls[0].args), 10; got != want {
+	if got, want := len(db.calls[0].args), 11; got != want {
 		t.Fatalf("insert args = %d, want %d", got, want)
 	}
 	if id, ok := db.calls[0].args[0].(string); !ok || !strings.HasPrefix(id, "rec_") {
 		t.Fatalf("first insert arg = %#v, want generated rec_ id", db.calls[0].args[0])
+	}
+	if got, want := db.calls[0].args[1], "wsp_default"; got != want {
+		t.Fatalf("workspace id arg = %q, want %q", got, want)
 	}
 }
 
@@ -175,6 +183,7 @@ func TestPostgresStoreCreatePreservesAudioMetadata(t *testing.T) {
 	updatedAt := createdAt
 	db := newPostgresExecutorSpy(postgresRow(
 		"rec_pg",
+		"wsp_default",
 		"Weekly sync",
 		domain.RecordingStatusUploaded,
 		domain.WorkflowTypeMeeting,
@@ -188,6 +197,7 @@ func TestPostgresStoreCreatePreservesAudioMetadata(t *testing.T) {
 	store := NewPostgresStore(db)
 
 	recording, err := store.Create(CreateRecordingInput{
+		WorkspaceID:      "wsp_default",
 		Title:            "Weekly sync",
 		WorkflowType:     domain.WorkflowTypeMeeting,
 		Language:         "en",
@@ -208,16 +218,16 @@ func TestPostgresStoreCreatePreservesAudioMetadata(t *testing.T) {
 	if recording.AudioSizeBytes != 12345 {
 		t.Fatalf("AudioSizeBytes = %d, want 12345", recording.AudioSizeBytes)
 	}
-	if got, want := len(db.calls[0].args), 10; got != want {
+	if got, want := len(db.calls[0].args), 11; got != want {
 		t.Fatalf("insert args = %d, want %d", got, want)
 	}
-	if got, want := db.calls[0].args[5], "recordings/rec_pg/original.wav"; got != want {
+	if got, want := db.calls[0].args[6], "recordings/rec_pg/original.wav"; got != want {
 		t.Fatalf("audio object key arg = %q, want %q", got, want)
 	}
-	if got, want := db.calls[0].args[6], "audio/wav"; got != want {
+	if got, want := db.calls[0].args[7], "audio/wav"; got != want {
 		t.Fatalf("audio content type arg = %q, want %q", got, want)
 	}
-	if got, want := db.calls[0].args[7], int64(12345); got != want {
+	if got, want := db.calls[0].args[8], int64(12345); got != want {
 		t.Fatalf("audio size arg = %v, want %v", got, want)
 	}
 }
@@ -227,6 +237,7 @@ func TestPostgresStoreGetReturnsExistingRecording(t *testing.T) {
 	updatedAt := createdAt.Add(time.Minute)
 	db := newPostgresExecutorSpy(postgresRow(
 		"rec_pg",
+		"wsp_default",
 		"Lecture 1",
 		domain.RecordingStatusUploaded,
 		domain.WorkflowTypeLecture,
@@ -248,6 +259,9 @@ func TestPostgresStoreGetReturnsExistingRecording(t *testing.T) {
 	}
 	if recording.ID != "rec_pg" || recording.Title != "Lecture 1" || recording.WorkflowType != domain.WorkflowTypeLecture {
 		t.Fatalf("recording = %+v, want persisted recording", recording)
+	}
+	if recording.WorkspaceID != "wsp_default" {
+		t.Fatalf("recording.WorkspaceID = %q, want wsp_default", recording.WorkspaceID)
 	}
 	if got, want := len(db.calls), 1; got != want {
 		t.Fatalf("query calls = %d, want %d", got, want)
@@ -292,6 +306,7 @@ func TestPostgresStoreCreateRejectsInvalidWorkflowTypeBeforeInsert(t *testing.T)
 	store := NewPostgresStore(db)
 
 	_, err := store.Create(CreateRecordingInput{
+		WorkspaceID:  "wsp_default",
 		Title:        "Podcast",
 		WorkflowType: domain.WorkflowType("podcast"),
 		Language:     "en",
@@ -304,11 +319,143 @@ func TestPostgresStoreCreateRejectsInvalidWorkflowTypeBeforeInsert(t *testing.T)
 	}
 }
 
+func TestPostgresStoreCreateRejectsMissingWorkspaceIDBeforeInsert(t *testing.T) {
+	db := newPostgresExecutorSpy()
+	store := NewPostgresStore(db)
+
+	_, err := store.Create(CreateRecordingInput{
+		Title:        "Weekly sync",
+		WorkflowType: domain.WorkflowTypeMeeting,
+		Language:     "en",
+	})
+	if err == nil {
+		t.Fatal("Create returned nil error, want missing workspace id error")
+	}
+	if got, want := len(db.calls), 0; got != want {
+		t.Fatalf("query calls = %d, want %d", got, want)
+	}
+}
+
+func TestPostgresStoreGetForWorkspaceReturnsExistingRecording(t *testing.T) {
+	createdAt := time.Date(2026, 6, 6, 1, 2, 3, 0, time.UTC)
+	updatedAt := createdAt.Add(time.Minute)
+	db := newPostgresExecutorSpy(postgresRow(
+		"rec_pg",
+		"wsp_default",
+		"Lecture 1",
+		domain.RecordingStatusUploaded,
+		domain.WorkflowTypeLecture,
+		"zh",
+		"",
+		"",
+		int64(0),
+		createdAt,
+		updatedAt,
+	))
+	store := NewPostgresStore(db)
+
+	recording, ok, err := store.GetForWorkspace(GetRecordingInput{
+		WorkspaceID: "wsp_default",
+		ID:          "rec_pg",
+	})
+	if err != nil {
+		t.Fatalf("GetForWorkspace returned error: %v", err)
+	}
+	if !ok {
+		t.Fatal("GetForWorkspace ok = false, want true")
+	}
+	if recording.ID != "rec_pg" || recording.WorkspaceID != "wsp_default" {
+		t.Fatalf("recording = %+v, want workspace-scoped recording", recording)
+	}
+	query := strings.ToLower(db.calls[0].query)
+	if !strings.Contains(query, "where workspace_id = $1") || !strings.Contains(query, "and id = $2") {
+		t.Fatalf("query = %q, want workspace-scoped get", db.calls[0].query)
+	}
+	if got, want := db.calls[0].args[0], "wsp_default"; got != want {
+		t.Fatalf("workspace id arg = %q, want %q", got, want)
+	}
+	if got, want := db.calls[0].args[1], "rec_pg"; got != want {
+		t.Fatalf("recording id arg = %q, want %q", got, want)
+	}
+}
+
+func TestPostgresStoreGetForWorkspaceReturnsFalseForCrossWorkspaceRecording(t *testing.T) {
+	db := newPostgresExecutorSpy(postgresErrorRow(sql.ErrNoRows))
+	store := NewPostgresStore(db)
+
+	_, ok, err := store.GetForWorkspace(GetRecordingInput{
+		WorkspaceID: "wsp_default",
+		ID:          "rec_other",
+	})
+	if err != nil {
+		t.Fatalf("GetForWorkspace returned error: %v", err)
+	}
+	if ok {
+		t.Fatal("GetForWorkspace ok = true, want false")
+	}
+}
+
+func TestPostgresStoreListByWorkspaceReturnsRecentRecordings(t *testing.T) {
+	createdAt := time.Date(2026, 6, 6, 1, 2, 3, 0, time.UTC)
+	db := newPostgresExecutorSpy(
+		postgresRow("rec_new", "wsp_default", "New", domain.RecordingStatusCompleted, domain.WorkflowTypeMeeting, "en", "", "", int64(0), createdAt.Add(time.Hour), createdAt.Add(time.Hour)),
+		postgresRow("rec_old", "wsp_default", "Old", domain.RecordingStatusUploaded, domain.WorkflowTypeMemo, "zh", "", "", int64(0), createdAt, createdAt),
+	)
+	store := NewPostgresStore(db)
+
+	recordings, err := store.ListByWorkspace(ListRecordingsInput{WorkspaceID: "wsp_default", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListByWorkspace returned error: %v", err)
+	}
+	if got, want := len(recordings), 2; got != want {
+		t.Fatalf("recordings = %d, want %d", got, want)
+	}
+	if recordings[0].ID != "rec_new" || recordings[1].ID != "rec_old" {
+		t.Fatalf("recordings = %+v, want returned ordering", recordings)
+	}
+	query := strings.ToLower(db.calls[0].query)
+	if !strings.Contains(query, "where workspace_id = $1") || !strings.Contains(query, "order by created_at desc") || !strings.Contains(query, "limit $2") {
+		t.Fatalf("query = %q, want workspace list query", db.calls[0].query)
+	}
+	if got, want := db.calls[0].args[0], "wsp_default"; got != want {
+		t.Fatalf("workspace id arg = %q, want %q", got, want)
+	}
+	if got, want := db.calls[0].args[1], 10; got != want {
+		t.Fatalf("limit arg = %v, want %v", got, want)
+	}
+}
+
+func TestPostgresStoreListByWorkspaceClampsDefaultAndMaxLimit(t *testing.T) {
+	tests := []struct {
+		name      string
+		limit     int
+		wantLimit int
+	}{
+		{name: "default", wantLimit: 50},
+		{name: "max", limit: 500, wantLimit: 100},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := newPostgresExecutorSpy()
+			store := NewPostgresStore(db)
+
+			if _, err := store.ListByWorkspace(ListRecordingsInput{WorkspaceID: "wsp_default", Limit: tt.limit}); err != nil {
+				t.Fatalf("ListByWorkspace returned error: %v", err)
+			}
+			if got, want := db.calls[0].args[1], tt.wantLimit; got != want {
+				t.Fatalf("limit arg = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
 func TestPostgresStoreUpdateStatusUpdatesAndReturnsRecording(t *testing.T) {
 	createdAt := time.Date(2026, 6, 6, 1, 2, 3, 0, time.UTC)
 	updatedAt := createdAt.Add(time.Minute)
 	db := newPostgresExecutorSpy(postgresRow(
 		"rec_pg",
+		"wsp_default",
 		"Weekly sync",
 		domain.RecordingStatusProcessing,
 		domain.WorkflowTypeMeeting,
@@ -322,8 +469,9 @@ func TestPostgresStoreUpdateStatusUpdatesAndReturnsRecording(t *testing.T) {
 	store := NewPostgresStore(db)
 
 	recording, err := store.UpdateStatus(UpdateRecordingStatusInput{
-		ID:     "rec_pg",
-		Status: domain.RecordingStatusProcessing,
+		WorkspaceID: "wsp_default",
+		ID:          "rec_pg",
+		Status:      domain.RecordingStatusProcessing,
 	})
 	if err != nil {
 		t.Fatalf("UpdateStatus returned error: %v", err)
@@ -348,17 +496,20 @@ func TestPostgresStoreUpdateStatusUpdatesAndReturnsRecording(t *testing.T) {
 	if !strings.Contains(query, "update recordings") || !strings.Contains(query, "set status") || !strings.Contains(query, "returning") {
 		t.Fatalf("query = %q, want update recordings set status returning", db.calls[0].query)
 	}
-	if got, want := len(db.calls[0].args), 3; got != want {
+	if got, want := len(db.calls[0].args), 4; got != want {
 		t.Fatalf("update args = %d, want %d", got, want)
 	}
-	if got, want := db.calls[0].args[0], "rec_pg"; got != want {
+	if got, want := db.calls[0].args[0], "wsp_default"; got != want {
+		t.Fatalf("workspace id arg = %q, want %q", got, want)
+	}
+	if got, want := db.calls[0].args[1], "rec_pg"; got != want {
 		t.Fatalf("id arg = %q, want %q", got, want)
 	}
-	if got, want := db.calls[0].args[1], domain.RecordingStatusProcessing; got != want {
+	if got, want := db.calls[0].args[2], domain.RecordingStatusProcessing; got != want {
 		t.Fatalf("status arg = %q, want %q", got, want)
 	}
-	if _, ok := db.calls[0].args[2].(time.Time); !ok {
-		t.Fatalf("updated_at arg = %#v, want time.Time", db.calls[0].args[2])
+	if _, ok := db.calls[0].args[3].(time.Time); !ok {
+		t.Fatalf("updated_at arg = %#v, want time.Time", db.calls[0].args[3])
 	}
 }
 

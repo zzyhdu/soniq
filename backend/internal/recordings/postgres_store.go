@@ -42,8 +42,8 @@ func NewPostgresStore(db PostgresExecutor) *PostgresStore {
 
 // Create inserts a new recording with skeleton defaults and returns the persisted row.
 func (s *PostgresStore) Create(input CreateRecordingInput) (domain.Recording, error) {
-	if !domain.IsValidWorkflowType(string(input.WorkflowType)) {
-		return domain.Recording{}, fmt.Errorf("invalid workflow type: %s", input.WorkflowType)
+	if err := validateCreateRecordingInput(input); err != nil {
+		return domain.Recording{}, err
 	}
 	if s == nil || s.db == nil {
 		return domain.Recording{}, fmt.Errorf("postgres recording store requires database executor")
@@ -52,6 +52,7 @@ func (s *PostgresStore) Create(input CreateRecordingInput) (domain.Recording, er
 	now := time.Now().UTC()
 	recording := domain.Recording{
 		ID:               newRecordingID(),
+		WorkspaceID:      input.WorkspaceID,
 		Title:            input.Title,
 		Status:           domain.RecordingStatusUploaded,
 		WorkflowType:     input.WorkflowType,
@@ -65,10 +66,11 @@ func (s *PostgresStore) Create(input CreateRecordingInput) (domain.Recording, er
 
 	row := s.db.QueryRow(
 		context.Background(),
-		`INSERT INTO recordings (id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-RETURNING id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, created_at, updated_at`,
+		`INSERT INTO recordings (id, workspace_id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+RETURNING id, workspace_id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, created_at, updated_at`,
 		recording.ID,
+		recording.WorkspaceID,
 		recording.Title,
 		recording.Status,
 		recording.WorkflowType,
@@ -94,7 +96,7 @@ func (s *PostgresStore) Get(id string) (domain.Recording, bool, error) {
 	var recording domain.Recording
 	row := s.db.QueryRow(
 		context.Background(),
-		`SELECT id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, created_at, updated_at
+		`SELECT id, workspace_id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, created_at, updated_at
 FROM recordings
 WHERE id = $1`,
 		id,
@@ -108,6 +110,80 @@ WHERE id = $1`,
 	return recording, true, nil
 }
 
+// GetForWorkspace returns a recording by id only if it belongs to the workspace.
+func (s *PostgresStore) GetForWorkspace(input GetRecordingInput) (domain.Recording, bool, error) {
+	if err := validateGetRecordingInput(input); err != nil {
+		return domain.Recording{}, false, err
+	}
+	if s == nil || s.db == nil {
+		return domain.Recording{}, false, fmt.Errorf("postgres recording store requires database executor")
+	}
+
+	var recording domain.Recording
+	row := s.db.QueryRow(
+		context.Background(),
+		`SELECT id, workspace_id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, created_at, updated_at
+FROM recordings
+WHERE workspace_id = $1
+  AND id = $2`,
+		input.WorkspaceID,
+		input.ID,
+	)
+	if err := scanRecording(row, &recording); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.Recording{}, false, nil
+		}
+		return domain.Recording{}, false, fmt.Errorf("get recording for workspace: %w", err)
+	}
+	return recording, true, nil
+}
+
+// ListByWorkspace returns recent recordings for a workspace.
+func (s *PostgresStore) ListByWorkspace(input ListRecordingsInput) ([]domain.Recording, error) {
+	if err := validateListRecordingsInput(input); err != nil {
+		return nil, err
+	}
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("postgres recording store requires database executor")
+	}
+
+	limit := input.Limit
+	if limit == 0 {
+		limit = 50
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	rows, err := s.db.Query(
+		context.Background(),
+		`SELECT id, workspace_id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, created_at, updated_at
+FROM recordings
+WHERE workspace_id = $1
+ORDER BY created_at DESC, id DESC
+LIMIT $2`,
+		input.WorkspaceID,
+		limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list recordings by workspace: %w", err)
+	}
+	defer rows.Close()
+
+	recordings := []domain.Recording{}
+	for rows.Next() {
+		var recording domain.Recording
+		if err := scanRecording(rows, &recording); err != nil {
+			return nil, fmt.Errorf("scan workspace recording: %w", err)
+		}
+		recordings = append(recordings, recording)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list recordings by workspace rows: %w", err)
+	}
+	return recordings, nil
+}
+
 // UpdateStatus persists a recording status transition and returns the updated row.
 func (s *PostgresStore) UpdateStatus(input UpdateRecordingStatusInput) (domain.Recording, error) {
 	if err := validateStatusUpdateInput(input); err != nil {
@@ -119,16 +195,32 @@ func (s *PostgresStore) UpdateStatus(input UpdateRecordingStatusInput) (domain.R
 
 	updatedAt := time.Now().UTC()
 	var recording domain.Recording
-	row := s.db.QueryRow(
-		context.Background(),
-		`UPDATE recordings
+	var row interface{ Scan(dest ...any) error }
+	if input.WorkspaceID == "" {
+		row = s.db.QueryRow(
+			context.Background(),
+			`UPDATE recordings
 SET status = $2, updated_at = $3
 WHERE id = $1
-RETURNING id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, created_at, updated_at`,
-		input.ID,
-		input.Status,
-		updatedAt,
-	)
+RETURNING id, workspace_id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, created_at, updated_at`,
+			input.ID,
+			input.Status,
+			updatedAt,
+		)
+	} else {
+		row = s.db.QueryRow(
+			context.Background(),
+			`UPDATE recordings
+SET status = $3, updated_at = $4
+WHERE workspace_id = $1
+  AND id = $2
+RETURNING id, workspace_id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, created_at, updated_at`,
+			input.WorkspaceID,
+			input.ID,
+			input.Status,
+			updatedAt,
+		)
+	}
 	if err := scanRecording(row, &recording); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Recording{}, fmt.Errorf("recording not found: %s", input.ID)
@@ -423,6 +515,7 @@ func scanSummary(row PostgresRow, summary *RecordingSummary) error {
 func scanRecording(row PostgresRow, recording *domain.Recording) error {
 	return row.Scan(
 		&recording.ID,
+		&recording.WorkspaceID,
 		&recording.Title,
 		&recording.Status,
 		&recording.WorkflowType,

@@ -11,6 +11,7 @@ import (
 
 // CreateRecordingInput contains the metadata needed to create a recording skeleton.
 type CreateRecordingInput struct {
+	WorkspaceID      string
 	Title            string
 	WorkflowType     domain.WorkflowType
 	Language         string
@@ -19,10 +20,23 @@ type CreateRecordingInput struct {
 	AudioSizeBytes   int64
 }
 
+// GetRecordingInput identifies a recording within a workspace.
+type GetRecordingInput struct {
+	WorkspaceID string
+	ID          string
+}
+
+// ListRecordingsInput contains filters for listing recordings in a workspace.
+type ListRecordingsInput struct {
+	WorkspaceID string
+	Limit       int
+}
+
 // UpdateRecordingStatusInput contains the state transition to persist for a recording.
 type UpdateRecordingStatusInput struct {
-	ID     string
-	Status domain.RecordingStatus
+	WorkspaceID string
+	ID          string
+	Status      domain.RecordingStatus
 }
 
 // RecordingAudioProbe contains ffprobe metadata for a recording's original audio.
@@ -169,6 +183,39 @@ func validateStatusUpdateInput(input UpdateRecordingStatusInput) error {
 	default:
 		return fmt.Errorf("unsupported recording status update: %s", input.Status)
 	}
+}
+
+func validateCreateRecordingInput(input CreateRecordingInput) error {
+	if input.WorkspaceID == "" {
+		return fmt.Errorf("workspace id is required")
+	}
+	if !domain.IsValidWorkflowType(string(input.WorkflowType)) {
+		return fmt.Errorf("invalid workflow type: %s", input.WorkflowType)
+	}
+	if input.AudioSizeBytes < 0 {
+		return fmt.Errorf("audio size must not be negative")
+	}
+	return nil
+}
+
+func validateGetRecordingInput(input GetRecordingInput) error {
+	if input.WorkspaceID == "" {
+		return fmt.Errorf("workspace id is required")
+	}
+	if input.ID == "" {
+		return fmt.Errorf("recording id is required")
+	}
+	return nil
+}
+
+func validateListRecordingsInput(input ListRecordingsInput) error {
+	if input.WorkspaceID == "" {
+		return fmt.Errorf("workspace id is required")
+	}
+	if input.Limit < 0 {
+		return fmt.Errorf("recording list limit must not be negative")
+	}
+	return nil
 }
 
 func validateAudioProbeInput(input UpsertAudioProbeInput) error {
