@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/zzyhdu/soniq/backend/internal/activities"
 	"github.com/zzyhdu/soniq/backend/internal/config"
+	storedb "github.com/zzyhdu/soniq/backend/internal/db"
 	"github.com/zzyhdu/soniq/backend/internal/recordings"
 	"github.com/zzyhdu/soniq/backend/internal/storage"
 	"github.com/zzyhdu/soniq/backend/internal/workflows"
@@ -200,11 +201,11 @@ type postgresExecutor struct {
 	pool *pgxpool.Pool
 }
 
-func (e postgresExecutor) QueryRow(ctx context.Context, query string, args ...any) interface{ Scan(dest ...any) error } {
+func (e postgresExecutor) QueryRow(ctx context.Context, query string, args ...any) storedb.PostgresRow {
 	return e.pool.QueryRow(ctx, query, args...)
 }
 
-func (e postgresExecutor) Query(ctx context.Context, query string, args ...any) (recordings.PostgresRows, error) {
+func (e postgresExecutor) Query(ctx context.Context, query string, args ...any) (storedb.PostgresRows, error) {
 	return e.pool.Query(ctx, query, args...)
 }
 

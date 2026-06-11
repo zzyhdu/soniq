@@ -24,6 +24,11 @@ var errObjectStoreFailed = errors.New("object store failed")
 var errRecordingGetFailed = errors.New("recording get failed")
 var errRecordingDetailsFailed = errors.New("recording details failed")
 
+const (
+	testUserID      = "usr_dev"
+	testWorkspaceID = "wsp_default"
+)
+
 type recordingProcessorSpy struct {
 	enqueued []domain.Recording
 	err      error
@@ -35,6 +40,15 @@ type fakeRecordingStore struct {
 	details   map[string]recordingDetailsFixture
 	nextID    int
 	createErr error
+}
+
+type fakeWorkspaceStore struct {
+	user        domain.User
+	workspaces  []domain.WorkspaceWithRole
+	memberships map[string]domain.WorkspaceWithRole
+	getUserErr  error
+	listErr     error
+	getErr      error
 }
 
 type recordingDetailsFixture struct {
@@ -72,6 +86,24 @@ func newFakeRecordingStore() *fakeRecordingStore {
 	return &fakeRecordingStore{stored: make(map[string]domain.Recording), details: make(map[string]recordingDetailsFixture)}
 }
 
+func newFakeWorkspaceStore() *fakeWorkspaceStore {
+	workspace := domain.WorkspaceWithRole{
+		ID:              testWorkspaceID,
+		Name:            "Default Workspace",
+		CreatedByUserID: testUserID,
+		Role:            domain.WorkspaceRoleOwner,
+	}
+	return &fakeWorkspaceStore{
+		user: domain.User{
+			ID:          testUserID,
+			Email:       "dev@local.soniq",
+			DisplayName: "Local Developer",
+		},
+		workspaces:  []domain.WorkspaceWithRole{workspace},
+		memberships: map[string]domain.WorkspaceWithRole{testUserID + ":" + testWorkspaceID: workspace},
+	}
+}
+
 func (s *fakeRecordingStore) Create(input recordings.CreateRecordingInput) (domain.Recording, error) {
 	if !domain.IsValidWorkflowType(string(input.WorkflowType)) {
 		return domain.Recording{}, errors.New("invalid workflow type")
@@ -83,6 +115,7 @@ func (s *fakeRecordingStore) Create(input recordings.CreateRecordingInput) (doma
 	s.nextID++
 	recording := domain.Recording{
 		ID:               fmt.Sprintf("rec_fake_%d", s.nextID),
+		WorkspaceID:      input.WorkspaceID,
 		Title:            input.Title,
 		Status:           domain.RecordingStatusUploaded,
 		WorkflowType:     input.WorkflowType,
@@ -100,8 +133,57 @@ func (s *fakeRecordingStore) Get(id string) (domain.Recording, bool, error) {
 	return recording, ok, nil
 }
 
+func (s *fakeRecordingStore) GetForWorkspace(input recordings.GetRecordingInput) (domain.Recording, bool, error) {
+	recording, ok := s.stored[input.ID]
+	if !ok || recording.WorkspaceID != input.WorkspaceID {
+		return domain.Recording{}, false, nil
+	}
+	return recording, true, nil
+}
+
+func (s *fakeRecordingStore) ListByWorkspace(input recordings.ListRecordingsInput) ([]domain.Recording, error) {
+	result := []domain.Recording{}
+	for _, recording := range s.stored {
+		if recording.WorkspaceID == input.WorkspaceID {
+			result = append(result, recording)
+		}
+	}
+	return result, nil
+}
+
 func (s *fakeRecordingStore) put(recording domain.Recording) {
+	if recording.WorkspaceID == "" {
+		recording.WorkspaceID = testWorkspaceID
+	}
 	s.stored[recording.ID] = recording
+}
+
+func (s *fakeWorkspaceStore) GetUser(_ context.Context, userID string) (domain.User, bool, error) {
+	if s.getUserErr != nil {
+		return domain.User{}, false, s.getUserErr
+	}
+	if s.user.ID != userID {
+		return domain.User{}, false, nil
+	}
+	return s.user, true, nil
+}
+
+func (s *fakeWorkspaceStore) ListWorkspacesForUser(_ context.Context, userID string) ([]domain.WorkspaceWithRole, error) {
+	if s.listErr != nil {
+		return nil, s.listErr
+	}
+	if userID != s.user.ID {
+		return []domain.WorkspaceWithRole{}, nil
+	}
+	return append([]domain.WorkspaceWithRole(nil), s.workspaces...), nil
+}
+
+func (s *fakeWorkspaceStore) GetWorkspaceForUser(_ context.Context, userID string, workspaceID string) (domain.WorkspaceWithRole, bool, error) {
+	if s.getErr != nil {
+		return domain.WorkspaceWithRole{}, false, s.getErr
+	}
+	workspace, ok := s.memberships[userID+":"+workspaceID]
+	return workspace, ok, nil
 }
 
 func (s *fakeRecordingStore) GetTranscript(recordingID string) (recordings.RecordingTranscript, bool, error) {
@@ -143,12 +225,38 @@ func (s recordingOnlyStore) Get(id string) (domain.Recording, bool, error) {
 	return recording, ok, nil
 }
 
+func (s recordingOnlyStore) GetForWorkspace(input recordings.GetRecordingInput) (domain.Recording, bool, error) {
+	recording, ok := s.stored[input.ID]
+	if !ok || recording.WorkspaceID != input.WorkspaceID {
+		return domain.Recording{}, false, nil
+	}
+	return recording, true, nil
+}
+
+func (s recordingOnlyStore) ListByWorkspace(input recordings.ListRecordingsInput) ([]domain.Recording, error) {
+	result := []domain.Recording{}
+	for _, recording := range s.stored {
+		if recording.WorkspaceID == input.WorkspaceID {
+			result = append(result, recording)
+		}
+	}
+	return result, nil
+}
+
 func (s getErrRecordingStore) Create(recordings.CreateRecordingInput) (domain.Recording, error) {
 	return domain.Recording{}, errors.New("create should not be called")
 }
 
 func (s getErrRecordingStore) Get(string) (domain.Recording, bool, error) {
 	return domain.Recording{}, false, s.err
+}
+
+func (s getErrRecordingStore) GetForWorkspace(recordings.GetRecordingInput) (domain.Recording, bool, error) {
+	return domain.Recording{}, false, s.err
+}
+
+func (s getErrRecordingStore) ListByWorkspace(recordings.ListRecordingsInput) ([]domain.Recording, error) {
+	return nil, s.err
 }
 
 func (s *recordingProcessorSpy) Enqueue(recording domain.Recording) error {
@@ -177,11 +285,100 @@ func (s *objectStoreSpy) DeleteObject(_ context.Context, key string) error {
 	return nil
 }
 
+func TestGetMeReturnsCurrentUser(t *testing.T) {
+	store := newFakeRecordingStore()
+	workspaceStore := newFakeWorkspaceStore()
+	router := NewRouterWithIdentity(store, workspaceStore, NewDevAuthResolver(testUserID), nil)
+
+	request := httptest.NewRequest(http.MethodGet, "/me", nil)
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusOK, response.Body.String())
+	}
+	var body domain.User
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body.ID != testUserID || body.Email != "dev@local.soniq" || body.DisplayName != "Local Developer" {
+		t.Fatalf("user = %+v, want dev user", body)
+	}
+}
+
+func TestListWorkspacesReturnsCurrentUserMemberships(t *testing.T) {
+	store := newFakeRecordingStore()
+	workspaceStore := newFakeWorkspaceStore()
+	router := NewRouterWithIdentity(store, workspaceStore, NewDevAuthResolver(testUserID), nil)
+
+	request := httptest.NewRequest(http.MethodGet, "/workspaces", nil)
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusOK, response.Body.String())
+	}
+	var body listWorkspacesResponse
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if len(body.Workspaces) != 1 {
+		t.Fatalf("workspaces = %d, want 1", len(body.Workspaces))
+	}
+	if body.Workspaces[0].ID != testWorkspaceID || body.Workspaces[0].Role != domain.WorkspaceRoleOwner {
+		t.Fatalf("workspace = %+v, want default owner workspace", body.Workspaces[0])
+	}
+}
+
+func TestListRecordingsReturnsOnlyWorkspaceRecordings(t *testing.T) {
+	store := newFakeRecordingStore()
+	store.put(domain.Recording{ID: "rec_default", WorkspaceID: testWorkspaceID, Title: "Default", Status: domain.RecordingStatusCompleted, WorkflowType: domain.WorkflowTypeMeeting})
+	store.put(domain.Recording{ID: "rec_other", WorkspaceID: "wsp_other", Title: "Other", Status: domain.RecordingStatusCompleted, WorkflowType: domain.WorkflowTypeMeeting})
+	router := NewRouterWithStore(store)
+
+	request := httptest.NewRequest(http.MethodGet, "/workspaces/wsp_default/recordings", nil)
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusOK, response.Body.String())
+	}
+	var body listRecordingsResponse
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if len(body.Recordings) != 1 {
+		t.Fatalf("recordings = %d, want 1", len(body.Recordings))
+	}
+	if body.Recordings[0].ID != "rec_default" || body.Recordings[0].WorkspaceID != testWorkspaceID {
+		t.Fatalf("recording = %+v, want default workspace recording", body.Recordings[0])
+	}
+}
+
+func TestWorkspaceScopedRoutesReturnNotFoundForNonMember(t *testing.T) {
+	store := newFakeRecordingStore()
+	workspaceStore := newFakeWorkspaceStore()
+	workspaceStore.memberships = map[string]domain.WorkspaceWithRole{}
+	router := NewRouterWithIdentity(store, workspaceStore, NewDevAuthResolver(testUserID), nil)
+
+	request := httptest.NewRequest(http.MethodGet, "/workspaces/wsp_default/recordings", nil)
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status code = %d, want %d", response.Code, http.StatusNotFound)
+	}
+}
+
 func TestNewRouterWithStoreAcceptsRecordingStoreInterface(t *testing.T) {
 	store := newFakeRecordingStore()
 	router := NewRouterWithStore(store)
 
-	request := httptest.NewRequest(http.MethodPost, "/recordings", strings.NewReader(`{"title":"Weekly sync","workflow_type":"meeting","language":"en"}`))
+	request := httptest.NewRequest(http.MethodPost, "/workspaces/wsp_default/recordings", strings.NewReader(`{"title":"Weekly sync","workflow_type":"meeting","language":"en"}`))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 
@@ -192,6 +389,9 @@ func TestNewRouterWithStoreAcceptsRecordingStoreInterface(t *testing.T) {
 	}
 	if got, want := len(store.created), 1; got != want {
 		t.Fatalf("store created calls = %d, want %d", got, want)
+	}
+	if store.created[0].WorkspaceID != testWorkspaceID {
+		t.Fatalf("created workspace id = %q, want %q", store.created[0].WorkspaceID, testWorkspaceID)
 	}
 }
 
@@ -205,7 +405,7 @@ func TestGetRecordingUsesRecordingStoreInterface(t *testing.T) {
 		Language:     "en",
 	})
 	router := NewRouterWithStore(store)
-	request := httptest.NewRequest(http.MethodGet, "/recordings/rec_fake", nil)
+	request := httptest.NewRequest(http.MethodGet, "/workspaces/wsp_default/recordings/rec_fake", nil)
 	response := httptest.NewRecorder()
 
 	router.ServeHTTP(response, request)
@@ -220,7 +420,7 @@ func TestCreateRecordingReturnsCreatedRecording(t *testing.T) {
 	router := NewRouterWithStore(store)
 
 	requestBody := strings.NewReader(`{"title":"Weekly sync","workflow_type":"meeting","language":"en"}`)
-	request := httptest.NewRequest(http.MethodPost, "/recordings", requestBody)
+	request := httptest.NewRequest(http.MethodPost, "/workspaces/wsp_default/recordings", requestBody)
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 
@@ -272,7 +472,7 @@ func TestCreateRecordingDoesNotEnqueueProcessingWithoutAudio(t *testing.T) {
 	router := NewRouterWithProcessor(store, processor)
 
 	requestBody := strings.NewReader(`{"title":"Weekly sync","workflow_type":"meeting","language":"en"}`)
-	request := httptest.NewRequest(http.MethodPost, "/recordings", requestBody)
+	request := httptest.NewRequest(http.MethodPost, "/workspaces/wsp_default/recordings", requestBody)
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 
@@ -294,7 +494,7 @@ func TestCreateRecordingDoesNotEnqueueInvalidRequest(t *testing.T) {
 	processor := &recordingProcessorSpy{}
 	router := NewRouterWithProcessor(store, processor)
 
-	request := httptest.NewRequest(http.MethodPost, "/recordings", strings.NewReader(`{"title":"Podcast","workflow_type":"podcast","language":"en"}`))
+	request := httptest.NewRequest(http.MethodPost, "/workspaces/wsp_default/recordings", strings.NewReader(`{"title":"Podcast","workflow_type":"podcast","language":"en"}`))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 
@@ -314,7 +514,7 @@ func TestUploadRecordingStoresAudioCreatesRecordingAndEnqueues(t *testing.T) {
 	processor := &recordingProcessorSpy{}
 	router := NewRouterWithStorage(store, processor, objectStore)
 
-	request := newMultipartUploadRequest(t, "/recordings/upload", map[string]string{
+	request := newMultipartUploadRequest(t, "/workspaces/wsp_default/recordings/upload", map[string]string{
 		"title":         "Weekly sync",
 		"workflow_type": "meeting",
 		"language":      "en",
@@ -341,6 +541,9 @@ func TestUploadRecordingStoresAudioCreatesRecordingAndEnqueues(t *testing.T) {
 	created := store.created[0]
 	if created.Title != "Weekly sync" || created.WorkflowType != domain.WorkflowTypeMeeting || created.Language != "en" {
 		t.Fatalf("created input = %+v, want upload metadata", created)
+	}
+	if created.WorkspaceID != testWorkspaceID {
+		t.Fatalf("created WorkspaceID = %q, want %q", created.WorkspaceID, testWorkspaceID)
 	}
 	if created.AudioObjectKey == "" {
 		t.Fatal("created AudioObjectKey is empty, want stored object key")
@@ -379,7 +582,7 @@ func TestUploadRecordingRequiresAudioFile(t *testing.T) {
 	processor := &recordingProcessorSpy{}
 	router := NewRouterWithStorage(store, processor, objectStore)
 
-	request := newMultipartUploadRequest(t, "/recordings/upload", map[string]string{
+	request := newMultipartUploadRequest(t, "/workspaces/wsp_default/recordings/upload", map[string]string{
 		"title":         "Weekly sync",
 		"workflow_type": "meeting",
 		"language":      "en",
@@ -402,7 +605,7 @@ func TestUploadRecordingReturnsServerErrorWhenStorageFails(t *testing.T) {
 	processor := &recordingProcessorSpy{}
 	router := NewRouterWithStorage(store, processor, objectStore)
 
-	request := newMultipartUploadRequest(t, "/recordings/upload", map[string]string{
+	request := newMultipartUploadRequest(t, "/workspaces/wsp_default/recordings/upload", map[string]string{
 		"title":         "Weekly sync",
 		"workflow_type": "meeting",
 		"language":      "en",
@@ -426,7 +629,7 @@ func TestUploadRecordingDeletesStoredAudioWhenCreateFails(t *testing.T) {
 	processor := &recordingProcessorSpy{}
 	router := NewRouterWithStorage(store, processor, objectStore)
 
-	request := newMultipartUploadRequest(t, "/recordings/upload", map[string]string{
+	request := newMultipartUploadRequest(t, "/workspaces/wsp_default/recordings/upload", map[string]string{
 		"title":         "Weekly sync",
 		"workflow_type": "meeting",
 		"language":      "en",
@@ -458,7 +661,7 @@ func TestUploadRecordingReturnsCreatedWhenEnqueueFails(t *testing.T) {
 	processor := &recordingProcessorSpy{err: errRecordingProcessorFailed}
 	router := NewRouterWithStorage(store, processor, objectStore)
 
-	request := newMultipartUploadRequest(t, "/recordings/upload", map[string]string{
+	request := newMultipartUploadRequest(t, "/workspaces/wsp_default/recordings/upload", map[string]string{
 		"title":         "Weekly sync",
 		"workflow_type": "meeting",
 		"language":      "en",
@@ -532,6 +735,7 @@ func newMultipartUploadRequest(t *testing.T, target string, fields map[string]st
 func TestGetRecordingReturnsExistingRecording(t *testing.T) {
 	store := newFakeRecordingStore()
 	created, err := store.Create(recordings.CreateRecordingInput{
+		WorkspaceID:  testWorkspaceID,
 		Title:        "Lecture 1",
 		WorkflowType: domain.WorkflowTypeLecture,
 		Language:     "zh",
@@ -540,7 +744,7 @@ func TestGetRecordingReturnsExistingRecording(t *testing.T) {
 		t.Fatalf("Create returned error: %v", err)
 	}
 	router := NewRouterWithStore(store)
-	request := httptest.NewRequest(http.MethodGet, "/recordings/"+created.ID, nil)
+	request := httptest.NewRequest(http.MethodGet, "/workspaces/wsp_default/recordings/"+created.ID, nil)
 	response := httptest.NewRecorder()
 
 	router.ServeHTTP(response, request)
@@ -604,7 +808,7 @@ func TestGetRecordingDetailsReturnsTranscriptSegmentsAndSummary(t *testing.T) {
 		hasSummary:    true,
 	}
 	router := NewRouterWithStore(store)
-	request := httptest.NewRequest(http.MethodGet, "/recordings/"+recording.ID+"/details", nil)
+	request := httptest.NewRequest(http.MethodGet, "/workspaces/wsp_default/recordings/"+recording.ID+"/details", nil)
 	response := httptest.NewRecorder()
 
 	router.ServeHTTP(response, request)
@@ -656,13 +860,14 @@ func TestGetRecordingDetailsReturnsTranscriptSegmentsAndSummary(t *testing.T) {
 func TestGetRecordingDetailsReturnsInternalServerErrorWhenDetailsStoreMissing(t *testing.T) {
 	recording := domain.Recording{
 		ID:           "rec_no_details_store",
+		WorkspaceID:  testWorkspaceID,
 		Title:        "Stored recording",
 		Status:       domain.RecordingStatusUploaded,
 		WorkflowType: domain.WorkflowTypeMemo,
 		Language:     "en",
 	}
 	router := NewRouterWithStore(recordingOnlyStore{stored: map[string]domain.Recording{recording.ID: recording}})
-	request := httptest.NewRequest(http.MethodGet, "/recordings/"+recording.ID+"/details", nil)
+	request := httptest.NewRequest(http.MethodGet, "/workspaces/wsp_default/recordings/"+recording.ID+"/details", nil)
 	response := httptest.NewRecorder()
 
 	router.ServeHTTP(response, request)
@@ -708,7 +913,7 @@ func TestGetRecordingDetailsReturnsInternalServerErrorWhenDetailsReadFails(t *te
 			store.put(recording)
 			store.details[recording.ID] = tt.details
 			router := NewRouterWithStore(store)
-			request := httptest.NewRequest(http.MethodGet, "/recordings/"+recording.ID+"/details", nil)
+			request := httptest.NewRequest(http.MethodGet, "/workspaces/wsp_default/recordings/"+recording.ID+"/details", nil)
 			response := httptest.NewRecorder()
 
 			router.ServeHTTP(response, request)
@@ -722,7 +927,7 @@ func TestGetRecordingDetailsReturnsInternalServerErrorWhenDetailsReadFails(t *te
 
 func TestGetRecordingReturnsNotFoundForUnknownRecording(t *testing.T) {
 	router := NewRouterWithStore(newFakeRecordingStore())
-	request := httptest.NewRequest(http.MethodGet, "/recordings/rec_missing", nil)
+	request := httptest.NewRequest(http.MethodGet, "/workspaces/wsp_default/recordings/rec_missing", nil)
 	response := httptest.NewRecorder()
 
 	router.ServeHTTP(response, request)
@@ -734,7 +939,7 @@ func TestGetRecordingReturnsNotFoundForUnknownRecording(t *testing.T) {
 
 func TestGetRecordingReturnsServerErrorWhenStoreGetFails(t *testing.T) {
 	router := NewRouterWithStore(getErrRecordingStore{err: errRecordingGetFailed})
-	request := httptest.NewRequest(http.MethodGet, "/recordings/rec_db_error", nil)
+	request := httptest.NewRequest(http.MethodGet, "/workspaces/wsp_default/recordings/rec_db_error", nil)
 	response := httptest.NewRecorder()
 
 	router.ServeHTTP(response, request)
@@ -747,6 +952,7 @@ func TestGetRecordingReturnsServerErrorWhenStoreGetFails(t *testing.T) {
 func TestGetRecordingStatusReturnsExistingRecordingStatus(t *testing.T) {
 	store := newFakeRecordingStore()
 	created, err := store.Create(recordings.CreateRecordingInput{
+		WorkspaceID:  testWorkspaceID,
 		Title:        "Interview",
 		WorkflowType: domain.WorkflowTypeInterview,
 		Language:     "en",
@@ -755,7 +961,7 @@ func TestGetRecordingStatusReturnsExistingRecordingStatus(t *testing.T) {
 		t.Fatalf("Create returned error: %v", err)
 	}
 	router := NewRouterWithStore(store)
-	request := httptest.NewRequest(http.MethodGet, "/recordings/"+created.ID+"/status", nil)
+	request := httptest.NewRequest(http.MethodGet, "/workspaces/wsp_default/recordings/"+created.ID+"/status", nil)
 	response := httptest.NewRecorder()
 
 	router.ServeHTTP(response, request)
@@ -769,14 +975,18 @@ func TestGetRecordingStatusReturnsExistingRecordingStatus(t *testing.T) {
 	}
 
 	var body struct {
-		ID     string                 `json:"id"`
-		Status domain.RecordingStatus `json:"status"`
+		ID          string                 `json:"id"`
+		WorkspaceID string                 `json:"workspace_id"`
+		Status      domain.RecordingStatus `json:"status"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
 		t.Fatalf("decode response body: %v", err)
 	}
 	if body.ID != created.ID {
 		t.Fatalf("id = %q, want %q", body.ID, created.ID)
+	}
+	if body.WorkspaceID != testWorkspaceID {
+		t.Fatalf("workspace_id = %q, want %q", body.WorkspaceID, testWorkspaceID)
 	}
 	if body.Status != domain.RecordingStatusUploaded {
 		t.Fatalf("status = %q, want uploaded", body.Status)
@@ -785,7 +995,7 @@ func TestGetRecordingStatusReturnsExistingRecordingStatus(t *testing.T) {
 
 func TestGetRecordingStatusReturnsNotFoundForUnknownRecording(t *testing.T) {
 	router := NewRouterWithStore(newFakeRecordingStore())
-	request := httptest.NewRequest(http.MethodGet, "/recordings/rec_missing/status", nil)
+	request := httptest.NewRequest(http.MethodGet, "/workspaces/wsp_default/recordings/rec_missing/status", nil)
 	response := httptest.NewRecorder()
 
 	router.ServeHTTP(response, request)
@@ -797,7 +1007,7 @@ func TestGetRecordingStatusReturnsNotFoundForUnknownRecording(t *testing.T) {
 
 func TestCreateRecordingRejectsInvalidJSON(t *testing.T) {
 	router := NewRouterWithStore(newFakeRecordingStore())
-	request := httptest.NewRequest(http.MethodPost, "/recordings", bytes.NewBufferString(`{"title":`))
+	request := httptest.NewRequest(http.MethodPost, "/workspaces/wsp_default/recordings", bytes.NewBufferString(`{"title":`))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 
@@ -810,7 +1020,7 @@ func TestCreateRecordingRejectsInvalidJSON(t *testing.T) {
 
 func TestCreateRecordingRejectsInvalidWorkflowType(t *testing.T) {
 	router := NewRouterWithStore(newFakeRecordingStore())
-	request := httptest.NewRequest(http.MethodPost, "/recordings", strings.NewReader(`{"title":"Podcast","workflow_type":"podcast","language":"en"}`))
+	request := httptest.NewRequest(http.MethodPost, "/workspaces/wsp_default/recordings", strings.NewReader(`{"title":"Podcast","workflow_type":"podcast","language":"en"}`))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 
@@ -823,7 +1033,7 @@ func TestCreateRecordingRejectsInvalidWorkflowType(t *testing.T) {
 
 func TestCreateRecordingRejectsNonPOST(t *testing.T) {
 	router := NewRouterWithStore(newFakeRecordingStore())
-	request := httptest.NewRequest(http.MethodGet, "/recordings", nil)
+	request := httptest.NewRequest(http.MethodPut, "/workspaces/wsp_default/recordings", nil)
 	response := httptest.NewRecorder()
 
 	router.ServeHTTP(response, request)

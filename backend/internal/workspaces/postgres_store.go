@@ -8,30 +8,17 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	storedb "github.com/zzyhdu/soniq/backend/internal/db"
 	"github.com/zzyhdu/soniq/backend/internal/domain"
 )
 
-// PostgresRows is the subset of database rows behavior used by PostgresStore.
-type PostgresRows interface {
-	Close()
-	Next() bool
-	Scan(dest ...any) error
-	Err() error
-}
-
-// PostgresExecutor is the subset of database behavior used by PostgresStore.
-type PostgresExecutor interface {
-	QueryRow(ctx context.Context, query string, args ...any) interface{ Scan(dest ...any) error }
-	Query(ctx context.Context, query string, args ...any) (PostgresRows, error)
-}
-
 // PostgresStore persists users and workspace memberships in Postgres.
 type PostgresStore struct {
-	db PostgresExecutor
+	db storedb.PostgresExecutor
 }
 
 // NewPostgresStore creates a Postgres-backed workspace store.
-func NewPostgresStore(db PostgresExecutor) *PostgresStore {
+func NewPostgresStore(db storedb.PostgresExecutor) *PostgresStore {
 	return &PostgresStore{db: db}
 }
 
@@ -130,7 +117,7 @@ WHERE wm.user_id = $1
 	return workspace, true, nil
 }
 
-func scanWorkspaceWithRole(row interface{ Scan(dest ...any) error }, workspace *domain.WorkspaceWithRole) error {
+func scanWorkspaceWithRole(row storedb.PostgresRow, workspace *domain.WorkspaceWithRole) error {
 	return row.Scan(
 		&workspace.ID,
 		&workspace.Name,

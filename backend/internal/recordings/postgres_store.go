@@ -8,35 +8,17 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	storedb "github.com/zzyhdu/soniq/backend/internal/db"
 	"github.com/zzyhdu/soniq/backend/internal/domain"
 )
 
-// PostgresRow is the subset of database row behavior used by PostgresStore.
-type PostgresRow interface {
-	Scan(dest ...any) error
-}
-
-// PostgresRows is the subset of database rows behavior used by PostgresStore.
-type PostgresRows interface {
-	Close()
-	Next() bool
-	Scan(dest ...any) error
-	Err() error
-}
-
-// PostgresExecutor is the subset of database behavior used by PostgresStore.
-type PostgresExecutor interface {
-	QueryRow(ctx context.Context, query string, args ...any) interface{ Scan(dest ...any) error }
-	Query(ctx context.Context, query string, args ...any) (PostgresRows, error)
-}
-
 // PostgresStore persists recordings in a Postgres recordings table.
 type PostgresStore struct {
-	db PostgresExecutor
+	db storedb.PostgresExecutor
 }
 
 // NewPostgresStore creates a Postgres-backed recording store.
-func NewPostgresStore(db PostgresExecutor) *PostgresStore {
+func NewPostgresStore(db storedb.PostgresExecutor) *PostgresStore {
 	return &PostgresStore{db: db}
 }
 
@@ -195,7 +177,7 @@ func (s *PostgresStore) UpdateStatus(input UpdateRecordingStatusInput) (domain.R
 
 	updatedAt := time.Now().UTC()
 	var recording domain.Recording
-	var row interface{ Scan(dest ...any) error }
+	var row storedb.PostgresRow
 	if input.WorkspaceID == "" {
 		row = s.db.QueryRow(
 			context.Background(),
@@ -483,7 +465,7 @@ WHERE recording_id = $1`,
 	return summary, true, nil
 }
 
-func scanNormalizedAudio(row PostgresRow, normalized *RecordingNormalizedAudio) error {
+func scanNormalizedAudio(row storedb.PostgresRow, normalized *RecordingNormalizedAudio) error {
 	return row.Scan(
 		&normalized.RecordingID,
 		&normalized.ObjectKey,
@@ -500,19 +482,19 @@ func scanNormalizedAudio(row PostgresRow, normalized *RecordingNormalizedAudio) 
 	)
 }
 
-func scanTranscript(row PostgresRow, transcript *RecordingTranscript) error {
+func scanTranscript(row storedb.PostgresRow, transcript *RecordingTranscript) error {
 	return row.Scan(&transcript.RecordingID, &transcript.Provider, &transcript.Model, &transcript.Language, &transcript.Text, &transcript.RawResultJSON, &transcript.TranscribedAt, &transcript.CreatedAt, &transcript.UpdatedAt)
 }
 
-func scanTranscriptSegment(row PostgresRow, segment *RecordingTranscriptSegment) error {
+func scanTranscriptSegment(row storedb.PostgresRow, segment *RecordingTranscriptSegment) error {
 	return row.Scan(&segment.ID, &segment.RecordingID, &segment.SegmentIndex, &segment.StartMS, &segment.EndMS, &segment.SpeakerLabel, &segment.Text, &segment.Confidence, &segment.CreatedAt)
 }
 
-func scanSummary(row PostgresRow, summary *RecordingSummary) error {
+func scanSummary(row storedb.PostgresRow, summary *RecordingSummary) error {
 	return row.Scan(&summary.RecordingID, &summary.Provider, &summary.Model, &summary.Type, &summary.Title, &summary.Overview, &summary.ContentMarkdown, &summary.RawResultJSON, &summary.SummarizedAt, &summary.CreatedAt, &summary.UpdatedAt)
 }
 
-func scanRecording(row PostgresRow, recording *domain.Recording) error {
+func scanRecording(row storedb.PostgresRow, recording *domain.Recording) error {
 	return row.Scan(
 		&recording.ID,
 		&recording.WorkspaceID,
@@ -595,7 +577,7 @@ WHERE recording_id = $1`,
 	return probe, true, nil
 }
 
-func scanAudioProbe(row PostgresRow, probe *RecordingAudioProbe) error {
+func scanAudioProbe(row storedb.PostgresRow, probe *RecordingAudioProbe) error {
 	return row.Scan(
 		&probe.RecordingID,
 		&probe.DurationSeconds,

@@ -10,9 +10,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/zzyhdu/soniq/backend/internal/api"
 	"github.com/zzyhdu/soniq/backend/internal/config"
+	storedb "github.com/zzyhdu/soniq/backend/internal/db"
 	"github.com/zzyhdu/soniq/backend/internal/processing"
 	"github.com/zzyhdu/soniq/backend/internal/recordings"
 	"github.com/zzyhdu/soniq/backend/internal/storage"
+	"github.com/zzyhdu/soniq/backend/internal/workspaces"
 	"go.temporal.io/sdk/client"
 )
 
@@ -22,7 +24,7 @@ func main() {
 		log.Fatalf("invalid startup config: %v", err)
 	}
 
-	handler, cleanup, err := buildHandler(context.Background(), cfg, dialTemporalClient, openPostgresRecordingStore)
+	handler, cleanup, err := buildHandler(context.Background(), cfg, dialTemporalClient, openPostgresAppStore)
 	if err != nil {
 		log.Fatalf("build api handler: %v", err)
 	}
@@ -42,19 +44,20 @@ type temporalWorkflowClient interface {
 
 type temporalClientFactory func(context.Context, config.Config) (temporalWorkflowClient, error)
 
-type recordingStoreClient interface {
-	api.RecordingStore
+type appStoreClient interface {
+	RecordingStore() api.RecordingDetailsStore
+	WorkspaceStore() api.WorkspaceStore
 	Close()
 }
 
-type recordingStoreFactory func(context.Context, string) (recordingStoreClient, error)
+type appStoreFactory func(context.Context, string) (appStoreClient, error)
 
-func buildHandler(ctx context.Context, cfg config.Config, temporalFactory temporalClientFactory, storeFactory recordingStoreFactory) (http.Handler, func(), error) {
+func buildHandler(ctx context.Context, cfg config.Config, temporalFactory temporalClientFactory, storeFactory appStoreFactory) (http.Handler, func(), error) {
 	temporalClient, err := temporalFactory(ctx, cfg)
 	if err != nil {
 		return nil, func() {}, err
 	}
-	recordingStore, err := storeFactory(ctx, cfg.PostgresDSN)
+	appStore, err := storeFactory(ctx, cfg.PostgresDSN)
 	if err != nil {
 		temporalClient.Close()
 		return nil, func() {}, err
@@ -66,13 +69,13 @@ func buildHandler(ctx context.Context, cfg config.Config, temporalFactory tempor
 	})
 	objectStore, err := buildObjectStore(cfg)
 	if err != nil {
-		recordingStore.Close()
+		appStore.Close()
 		temporalClient.Close()
 		return nil, func() {}, err
 	}
-	handler := api.NewRouterWithStorage(recordingStore, processor, objectStore)
+	handler := api.NewRouterWithStorageAndIdentity(appStore.RecordingStore(), appStore.WorkspaceStore(), api.NewDevAuthResolver(cfg.DevUserID), processor, objectStore)
 	cleanup := func() {
-		recordingStore.Close()
+		appStore.Close()
 		temporalClient.Close()
 	}
 
@@ -95,7 +98,7 @@ func dialTemporalClient(ctx context.Context, cfg config.Config) (temporalWorkflo
 	})
 }
 
-func openPostgresRecordingStore(ctx context.Context, dsn string) (recordingStoreClient, error) {
+func openPostgresAppStore(ctx context.Context, dsn string) (appStoreClient, error) {
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
 		return nil, err
@@ -104,9 +107,11 @@ func openPostgresRecordingStore(ctx context.Context, dsn string) (recordingStore
 		pool.Close()
 		return nil, fmt.Errorf("ping postgres: %w", err)
 	}
-	return &postgresRecordingStoreClient{
-		PostgresStore: recordings.NewPostgresStore(postgresExecutor{pool: pool}),
-		pool:          pool,
+	executor := postgresExecutor{pool: pool}
+	return &postgresAppStoreClient{
+		recordings: recordings.NewPostgresStore(executor),
+		workspaces: workspaces.NewPostgresStore(executor),
+		pool:       pool,
 	}, nil
 }
 
@@ -114,19 +119,28 @@ type postgresExecutor struct {
 	pool *pgxpool.Pool
 }
 
-func (e postgresExecutor) QueryRow(ctx context.Context, query string, args ...any) interface{ Scan(dest ...any) error } {
+func (e postgresExecutor) QueryRow(ctx context.Context, query string, args ...any) storedb.PostgresRow {
 	return e.pool.QueryRow(ctx, query, args...)
 }
 
-func (e postgresExecutor) Query(ctx context.Context, query string, args ...any) (recordings.PostgresRows, error) {
+func (e postgresExecutor) Query(ctx context.Context, query string, args ...any) (storedb.PostgresRows, error) {
 	return e.pool.Query(ctx, query, args...)
 }
 
-type postgresRecordingStoreClient struct {
-	*recordings.PostgresStore
-	pool *pgxpool.Pool
+type postgresAppStoreClient struct {
+	recordings *recordings.PostgresStore
+	workspaces *workspaces.PostgresStore
+	pool       *pgxpool.Pool
 }
 
-func (s *postgresRecordingStoreClient) Close() {
+func (s *postgresAppStoreClient) RecordingStore() api.RecordingDetailsStore {
+	return s.recordings
+}
+
+func (s *postgresAppStoreClient) WorkspaceStore() api.WorkspaceStore {
+	return s.workspaces
+}
+
+func (s *postgresAppStoreClient) Close() {
 	s.pool.Close()
 }

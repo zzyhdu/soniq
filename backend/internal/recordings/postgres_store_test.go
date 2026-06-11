@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	storedb "github.com/zzyhdu/soniq/backend/internal/db"
 	"github.com/zzyhdu/soniq/backend/internal/domain"
 )
 
@@ -26,7 +27,7 @@ func newPostgresExecutorSpy(rows ...*postgresRowStub) *postgresExecutorSpy {
 	return &postgresExecutorSpy{rows: rows}
 }
 
-func (s *postgresExecutorSpy) QueryRow(ctx context.Context, query string, args ...any) interface{ Scan(dest ...any) error } {
+func (s *postgresExecutorSpy) QueryRow(ctx context.Context, query string, args ...any) storedb.PostgresRow {
 	s.calls = append(s.calls, postgresQueryCall{query: query, args: append([]any(nil), args...)})
 	if len(s.rows) == 0 {
 		return &postgresRowStub{err: sql.ErrNoRows}
@@ -36,7 +37,7 @@ func (s *postgresExecutorSpy) QueryRow(ctx context.Context, query string, args .
 	return row
 }
 
-func (s *postgresExecutorSpy) Query(ctx context.Context, query string, args ...any) (PostgresRows, error) {
+func (s *postgresExecutorSpy) Query(ctx context.Context, query string, args ...any) (storedb.PostgresRows, error) {
 	s.calls = append(s.calls, postgresQueryCall{query: query, args: append([]any(nil), args...)})
 	if s.queryErr != nil {
 		return nil, s.queryErr

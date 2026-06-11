@@ -16,6 +16,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/zzyhdu/soniq/backend/internal/api"
 	"github.com/zzyhdu/soniq/backend/internal/config"
 	"github.com/zzyhdu/soniq/backend/internal/domain"
 	"github.com/zzyhdu/soniq/backend/internal/recordings"
@@ -26,7 +27,7 @@ import (
 func TestBuildHandlerCreatesRecordingSessionWithoutStartingWorkflow(t *testing.T) {
 	temporalClient := &temporalClientSpy{}
 	store := newBuildHandlerRecordingStoreSpy()
-	storeFactory := &recordingStoreFactorySpy{store: store}
+	storeFactory := &appStoreFactorySpy{store: store}
 	cfg := config.Config{
 		APIAddress:        ":0",
 		PostgresDSN:       "postgres://custom_user:***@db:5432/custom?sslmode=disable",
@@ -57,7 +58,7 @@ func TestBuildHandlerCreatesRecordingSessionWithoutStartingWorkflow(t *testing.T
 		t.Fatalf("recording store factory DSN = %q, want %q", storeFactory.calls[0], cfg.PostgresDSN)
 	}
 
-	request := httptest.NewRequest(http.MethodPost, "/recordings", strings.NewReader(`{"title":"Weekly sync","workflow_type":"meeting","language":"en"}`))
+	request := httptest.NewRequest(http.MethodPost, "/workspaces/wsp_default/recordings", strings.NewReader(`{"title":"Weekly sync","workflow_type":"meeting","language":"en"}`))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 
@@ -78,7 +79,7 @@ func TestBuildHandlerCreatesRecordingSessionWithoutStartingWorkflow(t *testing.T
 func TestBuildHandlerWiresUploadEndpointToLocalObjectStorage(t *testing.T) {
 	temporalClient := &temporalClientSpy{}
 	store := newBuildHandlerRecordingStoreSpy()
-	storeFactory := &recordingStoreFactorySpy{store: store}
+	storeFactory := &appStoreFactorySpy{store: store}
 	uploadRoot := t.TempDir()
 	cfg := config.Config{
 		PostgresDSN:       "postgres://custom_user:***@db:5432/custom?sslmode=disable",
@@ -97,7 +98,7 @@ func TestBuildHandlerWiresUploadEndpointToLocalObjectStorage(t *testing.T) {
 	}
 	defer cleanup()
 
-	request := newMultipartUploadRequest(t, "/recordings/upload", map[string]string{
+	request := newMultipartUploadRequest(t, "/workspaces/wsp_default/recordings/upload", map[string]string{
 		"title":         "Weekly sync",
 		"workflow_type": "meeting",
 		"language":      "en",
@@ -167,7 +168,7 @@ func TestBuildHandlerWiresUploadEndpointToLocalObjectStorage(t *testing.T) {
 func TestBuildHandlerCleanupClosesTemporalClient(t *testing.T) {
 	temporalClient := &temporalClientSpy{}
 	store := newBuildHandlerRecordingStoreSpy()
-	storeFactory := &recordingStoreFactorySpy{store: store}
+	storeFactory := &appStoreFactorySpy{store: store}
 
 	_, cleanup, err := buildHandler(context.Background(), config.Config{TemporalTaskQueue: "soniq-audio-pipeline", PostgresDSN: "postgres://custom_user:***@db:5432/custom?sslmode=disable", StorageProvider: "local", LocalStoragePath: t.TempDir()}, func(context.Context, config.Config) (temporalWorkflowClient, error) {
 		return temporalClient, nil
@@ -219,12 +220,12 @@ func newMultipartUploadRequest(t *testing.T, target string, fields map[string]st
 	return request
 }
 
-type recordingStoreFactorySpy struct {
+type appStoreFactorySpy struct {
 	store *buildHandlerRecordingStoreSpy
 	calls []string
 }
 
-func (s *recordingStoreFactorySpy) Open(ctx context.Context, dsn string) (recordingStoreClient, error) {
+func (s *appStoreFactorySpy) Open(ctx context.Context, dsn string) (appStoreClient, error) {
 	s.calls = append(s.calls, dsn)
 	return s.store, nil
 }
@@ -239,6 +240,14 @@ func newBuildHandlerRecordingStoreSpy() *buildHandlerRecordingStoreSpy {
 	return &buildHandlerRecordingStoreSpy{stored: make(map[string]domain.Recording)}
 }
 
+func (s *buildHandlerRecordingStoreSpy) RecordingStore() api.RecordingDetailsStore {
+	return s
+}
+
+func (s *buildHandlerRecordingStoreSpy) WorkspaceStore() api.WorkspaceStore {
+	return s
+}
+
 func (s *buildHandlerRecordingStoreSpy) Create(input recordings.CreateRecordingInput) (domain.Recording, error) {
 	if !domain.IsValidWorkflowType(string(input.WorkflowType)) {
 		return domain.Recording{}, errors.New("invalid workflow type")
@@ -246,6 +255,7 @@ func (s *buildHandlerRecordingStoreSpy) Create(input recordings.CreateRecordingI
 	s.nextID++
 	recording := domain.Recording{
 		ID:               fmt.Sprintf("rec_build_%d", s.nextID),
+		WorkspaceID:      input.WorkspaceID,
 		Title:            input.Title,
 		Status:           domain.RecordingStatusUploaded,
 		WorkflowType:     input.WorkflowType,
@@ -261,6 +271,67 @@ func (s *buildHandlerRecordingStoreSpy) Create(input recordings.CreateRecordingI
 func (s *buildHandlerRecordingStoreSpy) Get(id string) (domain.Recording, bool, error) {
 	recording, ok := s.stored[id]
 	return recording, ok, nil
+}
+
+func (s *buildHandlerRecordingStoreSpy) GetForWorkspace(input recordings.GetRecordingInput) (domain.Recording, bool, error) {
+	recording, ok := s.stored[input.ID]
+	if !ok || recording.WorkspaceID != input.WorkspaceID {
+		return domain.Recording{}, false, nil
+	}
+	return recording, true, nil
+}
+
+func (s *buildHandlerRecordingStoreSpy) ListByWorkspace(input recordings.ListRecordingsInput) ([]domain.Recording, error) {
+	result := []domain.Recording{}
+	for _, recording := range s.stored {
+		if recording.WorkspaceID == input.WorkspaceID {
+			result = append(result, recording)
+		}
+	}
+	return result, nil
+}
+
+func (s *buildHandlerRecordingStoreSpy) GetTranscript(string) (recordings.RecordingTranscript, bool, error) {
+	return recordings.RecordingTranscript{}, false, nil
+}
+
+func (s *buildHandlerRecordingStoreSpy) ListTranscriptSegments(string) ([]recordings.RecordingTranscriptSegment, error) {
+	return []recordings.RecordingTranscriptSegment{}, nil
+}
+
+func (s *buildHandlerRecordingStoreSpy) GetSummary(string) (recordings.RecordingSummary, bool, error) {
+	return recordings.RecordingSummary{}, false, nil
+}
+
+func (s *buildHandlerRecordingStoreSpy) GetUser(_ context.Context, userID string) (domain.User, bool, error) {
+	if userID != "usr_dev" {
+		return domain.User{}, false, nil
+	}
+	return domain.User{ID: "usr_dev", Email: "dev@local.soniq", DisplayName: "Local Developer"}, true, nil
+}
+
+func (s *buildHandlerRecordingStoreSpy) ListWorkspacesForUser(_ context.Context, userID string) ([]domain.WorkspaceWithRole, error) {
+	if userID != "usr_dev" {
+		return []domain.WorkspaceWithRole{}, nil
+	}
+	return []domain.WorkspaceWithRole{{
+		ID:              "wsp_default",
+		Name:            "Default Workspace",
+		CreatedByUserID: "usr_dev",
+		Role:            domain.WorkspaceRoleOwner,
+	}}, nil
+}
+
+func (s *buildHandlerRecordingStoreSpy) GetWorkspaceForUser(_ context.Context, userID string, workspaceID string) (domain.WorkspaceWithRole, bool, error) {
+	if userID != "usr_dev" || workspaceID != "wsp_default" {
+		return domain.WorkspaceWithRole{}, false, nil
+	}
+	return domain.WorkspaceWithRole{
+		ID:              "wsp_default",
+		Name:            "Default Workspace",
+		CreatedByUserID: "usr_dev",
+		Role:            domain.WorkspaceRoleOwner,
+	}, true, nil
 }
 
 func (s *buildHandlerRecordingStoreSpy) Close() {
