@@ -28,6 +28,7 @@ const (
 // Recording is the minimal domain representation used by the recording API skeleton.
 type Recording struct {
 	ID               string          `json:"id"`
+	WorkspaceID      string          `json:"workspace_id"`
 	Title            string          `json:"title"`
 	Status           RecordingStatus `json:"status"`
 	WorkflowType     WorkflowType    `json:"workflow_type"`

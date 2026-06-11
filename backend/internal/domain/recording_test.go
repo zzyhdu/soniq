@@ -31,3 +31,11 @@ func TestRecordingStatusConstants(t *testing.T) {
 		t.Fatalf("RecordingStatusUploaded = %q, want uploaded", RecordingStatusUploaded)
 	}
 }
+
+func TestRecordingIncludesWorkspaceID(t *testing.T) {
+	recording := Recording{ID: "rec_test", WorkspaceID: "wsp_default"}
+
+	if recording.WorkspaceID != "wsp_default" {
+		t.Fatalf("WorkspaceID = %q, want wsp_default", recording.WorkspaceID)
+	}
+}

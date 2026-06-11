@@ -10,6 +10,8 @@ func clearConfigEnv(t *testing.T) {
 	for _, key := range []string{
 		"APP_ENV",
 		"APP_PUBLIC_URL",
+		"AUTH_MODE",
+		"DEV_USER_ID",
 		"API_ADDRESS",
 		"POSTGRES_DSN",
 		"TEMPORAL_ADDRESS",
@@ -57,6 +59,12 @@ func TestLoadFromEnvUsesDevelopmentDefaults(t *testing.T) {
 	}
 	if cfg.PublicURL != "http://localhost:8080" {
 		t.Fatalf("PublicURL = %q, want http://localhost:8080", cfg.PublicURL)
+	}
+	if cfg.AuthMode != "dev" {
+		t.Fatalf("AuthMode = %q, want dev", cfg.AuthMode)
+	}
+	if cfg.DevUserID != "usr_dev" {
+		t.Fatalf("DevUserID = %q, want usr_dev", cfg.DevUserID)
 	}
 	if cfg.APIAddress != ":8080" {
 		t.Fatalf("APIAddress = %q, want :8080", cfg.APIAddress)
@@ -129,6 +137,8 @@ func TestLoadFromEnvUsesDevelopmentDefaults(t *testing.T) {
 func TestLoadFromEnvAppliesEnvironmentOverrides(t *testing.T) {
 	t.Setenv("APP_ENV", "test")
 	t.Setenv("APP_PUBLIC_URL", "http://127.0.0.1:9090")
+	t.Setenv("AUTH_MODE", "dev")
+	t.Setenv("DEV_USER_ID", "usr_custom")
 	t.Setenv("API_ADDRESS", ":9090")
 	t.Setenv("POSTGRES_DSN", "postgres://custom_user:custom_password@db:5432/custom?sslmode=disable")
 	t.Setenv("TEMPORAL_ADDRESS", "temporal:7233")
@@ -160,6 +170,12 @@ func TestLoadFromEnvAppliesEnvironmentOverrides(t *testing.T) {
 	}
 	if cfg.PublicURL != "http://127.0.0.1:9090" {
 		t.Fatalf("PublicURL = %q, want override", cfg.PublicURL)
+	}
+	if cfg.AuthMode != "dev" {
+		t.Fatalf("AuthMode = %q, want dev", cfg.AuthMode)
+	}
+	if cfg.DevUserID != "usr_custom" {
+		t.Fatalf("DevUserID = %q, want usr_custom", cfg.DevUserID)
 	}
 	if cfg.APIAddress != ":9090" {
 		t.Fatalf("APIAddress = %q, want :9090", cfg.APIAddress)
@@ -267,6 +283,27 @@ func TestValidateForStartupRejectsEmptyLocalStoragePath(t *testing.T) {
 
 	if err := cfg.ValidateForStartup(); err == nil {
 		t.Fatal("ValidateForStartup() error = nil, want error for empty LocalStoragePath")
+	}
+}
+
+func TestValidateForStartupRejectsInvalidAuthConfig(t *testing.T) {
+	cfg := LoadFromEnv()
+	cfg.AuthMode = ""
+	if err := cfg.ValidateForStartup(); err == nil {
+		t.Fatal("ValidateForStartup() error = nil, want missing auth mode error")
+	}
+
+	cfg = LoadFromEnv()
+	cfg.AuthMode = "oidc"
+	if err := cfg.ValidateForStartup(); err == nil {
+		t.Fatal("ValidateForStartup() error = nil, want unsupported auth mode error")
+	}
+
+	cfg = LoadFromEnv()
+	cfg.AuthMode = "dev"
+	cfg.DevUserID = ""
+	if err := cfg.ValidateForStartup(); err == nil {
+		t.Fatal("ValidateForStartup() error = nil, want missing dev user id error")
 	}
 }
 

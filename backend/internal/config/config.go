@@ -10,6 +10,8 @@ import (
 type Config struct {
 	AppEnv                                       string
 	PublicURL                                    string
+	AuthMode                                     string
+	DevUserID                                    string
 	APIAddress                                   string
 	PostgresDSN                                  string
 	TemporalAddress                              string
@@ -40,6 +42,8 @@ func LoadFromEnv() Config {
 	return Config{
 		AppEnv:                             envString("APP_ENV", "development"),
 		PublicURL:                          envString("APP_PUBLIC_URL", "http://localhost:8080"),
+		AuthMode:                           envString("AUTH_MODE", "dev"),
+		DevUserID:                          envString("DEV_USER_ID", "usr_dev"),
 		APIAddress:                         envString("API_ADDRESS", ":8080"),
 		PostgresDSN:                        envString("POSTGRES_DSN", "postgres://soniq_user:soniq_password@localhost:5432/soniq?sslmode=disable"),
 		TemporalAddress:                    envString("TEMPORAL_ADDRESS", "localhost:7233"),
@@ -70,6 +74,15 @@ func LoadFromEnv() Config {
 func (c Config) ValidateForStartup() error {
 	if strings.TrimSpace(c.PostgresDSN) == "" {
 		return fmt.Errorf("POSTGRES_DSN is required")
+	}
+	if strings.TrimSpace(c.AuthMode) == "" {
+		return fmt.Errorf("AUTH_MODE is required")
+	}
+	if strings.TrimSpace(c.AuthMode) != "dev" {
+		return fmt.Errorf("unsupported AUTH_MODE %q", c.AuthMode)
+	}
+	if strings.TrimSpace(c.DevUserID) == "" {
+		return fmt.Errorf("DEV_USER_ID is required for dev auth mode")
 	}
 	if strings.TrimSpace(c.TemporalTaskQueue) == "" {
 		return fmt.Errorf("TEMPORAL_TASK_QUEUE is required")
