@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Soniq API
   version: 0.1.0
-  description: Local-first API for uploading recordings, tracking processing, and reading transcript/summary results.
+  description: Local-first API for identity, workspaces, recording uploads, processing status, and transcript/summary results.
   license:
     name: Apache-2.0
     url: https://www.apache.org/licenses/LICENSE-2.0.html
@@ -26,11 +26,73 @@ paths:
           $ref: '#/components/responses/Error'
         default:
           $ref: '#/components/responses/Error'
-  /recordings:
+  /me:
+    get:
+      summary: Get current user
+      operationId: getMe
+      responses:
+        '200':
+          description: Current user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+  /workspaces:
+    get:
+      summary: List workspaces for the current user
+      operationId: listWorkspaces
+      responses:
+        '200':
+          description: Workspaces available to the current user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListWorkspacesResponse'
+        '401':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+  /workspaces/{workspace_id}/recordings:
+    get:
+      summary: List workspace recordings
+      operationId: listRecordings
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+            default: 50
+      responses:
+        '200':
+          description: Recent recordings in the workspace.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListRecordingsResponse'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
     post:
       summary: Create recording metadata
-      description: Creates a recording session without uploading audio or starting processing.
+      description: Creates a recording session in a workspace without uploading audio or starting processing.
       operationId: createRecording
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
       requestBody:
         required: true
         content:
@@ -46,13 +108,19 @@ paths:
                 $ref: '#/components/schemas/Recording'
         '400':
           $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
         default:
           $ref: '#/components/responses/Error'
-  /recordings/upload:
+  /workspaces/{workspace_id}/recordings/upload:
     post:
       summary: Upload recording audio
-      description: Uploads audio, creates a recording, and starts processing.
+      description: Uploads audio into a workspace, creates a recording, and starts processing.
       operationId: uploadRecording
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
       requestBody:
         required: true
         content:
@@ -77,22 +145,21 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required: [recording, processing_enqueued]
-                properties:
-                  recording:
-                    $ref: '#/components/schemas/Recording'
-                  processing_enqueued:
-                    type: boolean
+                $ref: '#/components/schemas/UploadRecordingResponse'
         '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
           $ref: '#/components/responses/Error'
         default:
           $ref: '#/components/responses/Error'
-  /recordings/{id}:
+  /workspaces/{workspace_id}/recordings/{recording_id}:
     get:
       summary: Get recording
       operationId: getRecording
       parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
         - $ref: '#/components/parameters/RecordingID'
       responses:
         '200':
@@ -101,15 +168,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Recording'
+        '401':
+          $ref: '#/components/responses/Error'
         '404':
           $ref: '#/components/responses/Error'
         default:
           $ref: '#/components/responses/Error'
-  /recordings/{id}/status:
+  /workspaces/{workspace_id}/recordings/{recording_id}/status:
     get:
       summary: Get recording status
       operationId: getRecordingStatus
       parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
         - $ref: '#/components/parameters/RecordingID'
       responses:
         '200':
@@ -118,16 +188,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RecordingStatusResponse'
+        '401':
+          $ref: '#/components/responses/Error'
         '404':
           $ref: '#/components/responses/Error'
         default:
           $ref: '#/components/responses/Error'
-  /recordings/{id}/details:
+  /workspaces/{workspace_id}/recordings/{recording_id}/details:
     get:
       summary: Get recording details
       description: Returns recording metadata with transcript, transcript segments, and summary when available.
       operationId: getRecordingDetails
       parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
         - $ref: '#/components/parameters/RecordingID'
       responses:
         '200':
@@ -136,14 +209,23 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RecordingDetails'
+        '401':
+          $ref: '#/components/responses/Error'
         '404':
           $ref: '#/components/responses/Error'
         default:
           $ref: '#/components/responses/Error'
 components:
   parameters:
+    WorkspaceID:
+      name: workspace_id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Workspace identifier.
     RecordingID:
-      name: id
+      name: recording_id
       in: path
       required: true
       schema:
@@ -157,6 +239,50 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
   schemas:
+    User:
+      type: object
+      required: [id, email, display_name, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    WorkspaceRole:
+      type: string
+      enum: [owner, member]
+    Workspace:
+      type: object
+      required: [id, name, role, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        role:
+          $ref: '#/components/schemas/WorkspaceRole'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ListWorkspacesResponse:
+      type: object
+      required: [workspaces]
+      properties:
+        workspaces:
+          type: array
+          items:
+            $ref: '#/components/schemas/Workspace'
     WorkflowType:
       type: string
       enum: [meeting, lecture, interview, memo]
@@ -165,9 +291,11 @@ components:
       enum: [uploaded, processing, transcribing, summarizing, completed, failed, cancelled]
     Recording:
       type: object
-      required: [id, title, status, workflow_type, language, created_at, updated_at]
+      required: [id, workspace_id, title, status, workflow_type, language, created_at, updated_at]
       properties:
         id:
+          type: string
+        workspace_id:
           type: string
         title:
           type: string
@@ -201,11 +329,29 @@ components:
         language:
           type: string
           example: en
+    ListRecordingsResponse:
+      type: object
+      required: [recordings]
+      properties:
+        recordings:
+          type: array
+          items:
+            $ref: '#/components/schemas/Recording'
+    UploadRecordingResponse:
+      type: object
+      required: [recording, processing_enqueued]
+      properties:
+        recording:
+          $ref: '#/components/schemas/Recording'
+        processing_enqueued:
+          type: boolean
     RecordingStatusResponse:
       type: object
-      required: [id, status]
+      required: [id, workspace_id, status]
       properties:
         id:
+          type: string
+        workspace_id:
           type: string
         status:
           $ref: '#/components/schemas/RecordingStatus'

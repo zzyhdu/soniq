@@ -8,17 +8,18 @@ import {
 import { useMutation, useQuery } from '@tanstack/react-query';
 
 export const RECORDING_STATUS_POLL_INTERVAL_MS = 1500;
+export const DEFAULT_WORKSPACE_ID = 'wsp_default';
 
 export function useUploadRecording() {
   return useMutation({
-    mutationFn: (input: UploadRecordingInput) => uploadRecording(input),
+    mutationFn: (input: UploadRecordingInput) => uploadRecording(DEFAULT_WORKSPACE_ID, input),
   });
 }
 
 export function useRecordingStatus(recordingId: string | null | undefined) {
   return useQuery({
     queryKey: ['recordings', recordingId, 'status'],
-    queryFn: () => getRecordingStatus(requireRecordingId(recordingId)),
+    queryFn: () => getRecordingStatus(DEFAULT_WORKSPACE_ID, requireRecordingId(recordingId)),
     enabled: hasRecordingId(recordingId),
     refetchInterval: (query) => recordingStatusRefetchInterval(query.state.data?.status),
   });
@@ -27,7 +28,7 @@ export function useRecordingStatus(recordingId: string | null | undefined) {
 export function useRecordingDetails(recordingId: string | null | undefined, enabled: boolean) {
   return useQuery({
     queryKey: ['recordings', recordingId, 'details'],
-    queryFn: () => getRecordingDetails(requireRecordingId(recordingId)),
+    queryFn: () => getRecordingDetails(DEFAULT_WORKSPACE_ID, requireRecordingId(recordingId)),
     enabled: enabled && hasRecordingId(recordingId),
   });
 }

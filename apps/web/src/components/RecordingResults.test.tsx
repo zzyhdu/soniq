@@ -89,6 +89,7 @@ function recordingDetails(overrides: Record<string, unknown> = {}) {
   return {
     recording: {
       id: 'rec-1',
+      workspace_id: 'wsp_default',
       title: 'Weekly sync',
       status: 'completed',
       workflow_type: 'meeting',

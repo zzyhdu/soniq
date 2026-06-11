@@ -1,3 +1,5 @@
+import { type SoniqApiClientOptions, requestJSON } from './http';
+
 export type WorkflowType = 'memo' | 'meeting' | 'lecture' | 'interview';
 
 export type RecordingStatus =
@@ -11,6 +13,7 @@ export type RecordingStatus =
 
 export type Recording = {
   id: string;
+  workspace_id: string;
   title: string;
   status: RecordingStatus;
   workflow_type: WorkflowType;
@@ -20,6 +23,20 @@ export type Recording = {
   audio_size_bytes?: number;
   created_at: string;
   updated_at: string;
+};
+
+export type CreateRecordingInput = {
+  workflow_type: WorkflowType;
+  title?: string;
+  language?: string;
+};
+
+export type ListRecordingsInput = {
+  limit?: number;
+};
+
+export type ListRecordingsResponse = {
+  recordings: Recording[];
 };
 
 export type UploadRecordingInput = {
@@ -36,6 +53,7 @@ export type UploadRecordingResponse = {
 
 export type RecordingStatusResponse = {
   id: string;
+  workspace_id: string;
   status: RecordingStatus;
 };
 
@@ -77,26 +95,42 @@ export type RecordingDetails = {
   summary?: RecordingSummary | null;
 };
 
-export type SoniqApiClientOptions = {
-  baseUrl?: string;
-  fetch?: typeof fetch;
-};
-
-export class SoniqApiError extends Error {
-  readonly status: number;
-  readonly statusText: string;
-  readonly body: unknown;
-
-  constructor(message: string, status: number, statusText: string, body: unknown) {
-    super(message);
-    this.name = 'SoniqApiError';
-    this.status = status;
-    this.statusText = statusText;
-    this.body = body;
+export async function listRecordings(
+  workspaceId: string,
+  input: ListRecordingsInput = {},
+  options: SoniqApiClientOptions = {},
+): Promise<ListRecordingsResponse> {
+  const query = new URLSearchParams();
+  if (input.limit !== undefined) {
+    query.set('limit', String(input.limit));
   }
+
+  const suffix = query.size > 0 ? `?${query.toString()}` : '';
+  return requestJSON<ListRecordingsResponse>(
+    `${workspaceRecordingsPath(workspaceId)}${suffix}`,
+    { method: 'GET' },
+    options,
+  );
+}
+
+export async function createRecording(
+  workspaceId: string,
+  input: CreateRecordingInput,
+  options: SoniqApiClientOptions = {},
+): Promise<Recording> {
+  return requestJSON<Recording>(
+    workspaceRecordingsPath(workspaceId),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+    options,
+  );
 }
 
 export async function uploadRecording(
+  workspaceId: string,
   input: UploadRecordingInput,
   options: SoniqApiClientOptions = {},
 ): Promise<UploadRecordingResponse> {
@@ -112,83 +146,56 @@ export async function uploadRecording(
     formData.append('language', input.language);
   }
 
-  return requestJSON<UploadRecordingResponse>('/recordings/upload', {
-    method: 'POST',
-    body: formData,
-  }, options);
+  return requestJSON<UploadRecordingResponse>(
+    `${workspaceRecordingsPath(workspaceId)}/upload`,
+    {
+      method: 'POST',
+      body: formData,
+    },
+    options,
+  );
+}
+
+export async function getRecording(
+  workspaceId: string,
+  recordingId: string,
+  options: SoniqApiClientOptions = {},
+): Promise<Recording> {
+  return requestJSON<Recording>(
+    recordingPath(workspaceId, recordingId),
+    { method: 'GET' },
+    options,
+  );
 }
 
 export async function getRecordingStatus(
+  workspaceId: string,
   recordingId: string,
   options: SoniqApiClientOptions = {},
 ): Promise<RecordingStatusResponse> {
   return requestJSON<RecordingStatusResponse>(
-    `/recordings/${encodeURIComponent(recordingId)}/status`,
+    `${recordingPath(workspaceId, recordingId)}/status`,
     { method: 'GET' },
     options,
   );
 }
 
 export async function getRecordingDetails(
+  workspaceId: string,
   recordingId: string,
   options: SoniqApiClientOptions = {},
 ): Promise<RecordingDetails> {
   return requestJSON<RecordingDetails>(
-    `/recordings/${encodeURIComponent(recordingId)}/details`,
+    `${recordingPath(workspaceId, recordingId)}/details`,
     { method: 'GET' },
     options,
   );
 }
 
-async function requestJSON<T>(
-  path: string,
-  init: RequestInit,
-  options: SoniqApiClientOptions,
-): Promise<T> {
-  const fetchImpl = options.fetch ?? globalThis.fetch;
-  const response = await fetchImpl(buildUrl(path, options.baseUrl), init);
-  const body = await parseResponseBody(response);
-
-  if (!response.ok) {
-    throw new SoniqApiError(errorMessage(body, response), response.status, response.statusText, body);
-  }
-
-  return body as T;
+function workspaceRecordingsPath(workspaceId: string): string {
+  return `/workspaces/${encodeURIComponent(workspaceId)}/recordings`;
 }
 
-async function parseResponseBody(response: Response): Promise<unknown> {
-  const text = await response.text();
-  if (text.length === 0) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text;
-  }
-}
-
-function errorMessage(body: unknown, response: Response): string {
-  if (typeof body === 'string' && body.length > 0) {
-    return body;
-  }
-
-  if (body !== null && typeof body === 'object') {
-    const maybeMessage = (body as { message?: unknown; error?: unknown }).message ??
-      (body as { message?: unknown; error?: unknown }).error;
-    if (typeof maybeMessage === 'string' && maybeMessage.length > 0) {
-      return maybeMessage;
-    }
-  }
-
-  return response.statusText || `HTTP ${response.status}`;
-}
-
-function buildUrl(path: string, baseUrl?: string): string {
-  if (baseUrl === undefined || baseUrl.length === 0) {
-    return path;
-  }
-
-  return `${baseUrl.replace(/\/$/, '')}${path}`;
+function recordingPath(workspaceId: string, recordingId: string): string {
+  return `${workspaceRecordingsPath(workspaceId)}/${encodeURIComponent(recordingId)}`;
 }

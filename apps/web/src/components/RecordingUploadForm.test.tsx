@@ -66,6 +66,7 @@ describe('RecordingUploadForm', () => {
     const response = {
       recording: {
         id: 'rec-1',
+        workspace_id: 'wsp_default',
         title: 'Weekly sync',
         status: 'uploaded' as const,
         workflow_type: 'meeting' as const,

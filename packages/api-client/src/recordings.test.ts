@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { SoniqApiError } from './http';
 import {
-  SoniqApiError,
+  createRecording,
+  getRecording,
   getRecordingDetails,
   getRecordingStatus,
+  listRecordings,
   uploadRecording,
 } from './recordings';
 
@@ -15,7 +18,7 @@ function jsonResponse(body: unknown, init?: ResponseInit): Response {
 }
 
 describe('uploadRecording', () => {
-  it('sends multipart form data to the upload endpoint', async () => {
+  it('sends multipart form data to the workspace upload endpoint', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
       jsonResponse({
         recording: recordingFixture({ id: 'rec-1' }),
@@ -25,6 +28,7 @@ describe('uploadRecording', () => {
     const audio = new File(['audio-bytes'], 'meeting.mp3', { type: 'audio/mpeg' });
 
     const result = await uploadRecording(
+      'wsp_default',
       {
         audio,
         workflow_type: 'meeting',
@@ -35,7 +39,7 @@ describe('uploadRecording', () => {
     );
 
     expect(result.processing_enqueued).toBe(true);
-    expect(fetchMock).toHaveBeenCalledWith('/recordings/upload', {
+    expect(fetchMock).toHaveBeenCalledWith('/workspaces/wsp_default/recordings/upload', {
       method: 'POST',
       body: expect.any(FormData),
     });
@@ -56,7 +60,7 @@ describe('uploadRecording', () => {
     );
     const audio = new File(['audio-bytes'], 'memo.wav', { type: 'audio/wav' });
 
-    await uploadRecording({ audio, workflow_type: 'memo' }, { fetch: fetchMock });
+    await uploadRecording('wsp_default', { audio, workflow_type: 'memo' }, { fetch: fetchMock });
 
     const formData = fetchMock.mock.calls[0]?.[1]?.body as FormData;
     expect(formData.get('audio')).toBe(audio);
@@ -66,22 +70,57 @@ describe('uploadRecording', () => {
   });
 });
 
+describe('recording writes', () => {
+  it('creates recording metadata in a workspace', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(recordingFixture({ id: 'rec-created' }), { status: 201 }),
+    );
+
+    const result = await createRecording(
+      'wsp_default',
+      { workflow_type: 'meeting', title: 'Weekly standup', language: 'en' },
+      { fetch: fetchMock },
+    );
+
+    expect(result.id).toBe('rec-created');
+    expect(fetchMock).toHaveBeenCalledWith('/workspaces/wsp_default/recordings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workflow_type: 'meeting', title: 'Weekly standup', language: 'en' }),
+    });
+  });
+});
+
 describe('recording reads', () => {
-  it('URL-encodes recording ids for status and details requests', async () => {
+  it('lists workspace recordings with an optional limit', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({ recordings: [recordingFixture({ id: 'rec-list' })] }),
+    );
+
+    const result = await listRecordings('wsp_default', { limit: 10 }, { fetch: fetchMock });
+
+    expect(result.recordings).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledWith('/workspaces/wsp_default/recordings?limit=10', { method: 'GET' });
+  });
+
+  it('URL-encodes workspace and recording ids for read requests', async () => {
     const fetchMock = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(jsonResponse({ id: 'rec/with space', status: 'completed' }))
+      .mockResolvedValueOnce(jsonResponse(recordingFixture({ id: 'rec/with space' })))
+      .mockResolvedValueOnce(jsonResponse({ id: 'rec/with space', workspace_id: 'wsp/default', status: 'completed' }))
       .mockResolvedValueOnce(jsonResponse({
-        recording: recordingFixture({ id: 'rec/with space' }),
+        recording: recordingFixture({ id: 'rec/with space', workspace_id: 'wsp/default' }),
         transcript: null,
         segments: [],
         summary: null,
       }));
 
-    await getRecordingStatus('rec/with space', { fetch: fetchMock });
-    await getRecordingDetails('rec/with space', { fetch: fetchMock });
+    await getRecording('wsp/default', 'rec/with space', { fetch: fetchMock });
+    await getRecordingStatus('wsp/default', 'rec/with space', { fetch: fetchMock });
+    await getRecordingDetails('wsp/default', 'rec/with space', { fetch: fetchMock });
 
-    expect(fetchMock).toHaveBeenNthCalledWith(1, '/recordings/rec%2Fwith%20space/status', { method: 'GET' });
-    expect(fetchMock).toHaveBeenNthCalledWith(2, '/recordings/rec%2Fwith%20space/details', { method: 'GET' });
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/workspaces/wsp%2Fdefault/recordings/rec%2Fwith%20space', { method: 'GET' });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/workspaces/wsp%2Fdefault/recordings/rec%2Fwith%20space/status', { method: 'GET' });
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/workspaces/wsp%2Fdefault/recordings/rec%2Fwith%20space/details', { method: 'GET' });
   });
 });
 
@@ -91,7 +130,7 @@ describe('API errors', () => {
       jsonResponse({ message: 'recording not found' }, { status: 404, statusText: 'Not Found' }),
     );
 
-    const errorPromise = getRecordingStatus('missing', { fetch: fetchMock });
+    const errorPromise = getRecordingStatus('wsp_default', 'missing', { fetch: fetchMock });
 
     await expect(errorPromise).rejects.toMatchObject({
       name: 'SoniqApiError',
@@ -104,6 +143,7 @@ describe('API errors', () => {
 
 type RecordingFixture = {
   id: string;
+  workspace_id: string;
   title: string;
   status: string;
   workflow_type: string;
@@ -115,6 +155,7 @@ type RecordingFixture = {
 function recordingFixture(overrides: Partial<RecordingFixture> = {}): RecordingFixture {
   return {
     id: 'rec-1',
+    workspace_id: 'wsp_default',
     title: 'Recording',
     status: 'uploaded',
     workflow_type: 'meeting',
