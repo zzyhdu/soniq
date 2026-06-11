@@ -3,7 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
-	"path/filepath"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -145,7 +145,7 @@ func uploadRecordingHandler(store RecordingStore, processor RecordingProcessor, 
 		defer file.Close()
 
 		contentType := header.Header.Get("Content-Type")
-		objectKey := recordingAudioObjectKey(header.Filename)
+		objectKey := recordingAudioObjectKey(workspaceID, header.Filename)
 		putResult, err := objectStore.PutObject(r.Context(), storage.PutObjectInput{
 			Key:         objectKey,
 			Body:        file,
@@ -181,12 +181,12 @@ func uploadRecordingHandler(store RecordingStore, processor RecordingProcessor, 
 	}
 }
 
-func recordingAudioObjectKey(filename string) string {
-	name := filepath.Base(filename)
-	if name == "." || name == string(filepath.Separator) || name == "" {
+func recordingAudioObjectKey(workspaceID string, filename string) string {
+	name := path.Base(strings.ReplaceAll(filename, "\\", "/"))
+	if name == "." || name == ".." || name == "/" || name == "" {
 		name = "audio"
 	}
-	return "recordings/" + time.Now().UTC().Format("20060102T150405.000000000Z") + "/" + name
+	return "workspaces/" + workspaceID + "/recordings/" + time.Now().UTC().Format("20060102T150405.000000000Z") + "/" + name
 }
 
 func recordingByIDHandler(store RecordingStore, workspaceID string, path string) http.HandlerFunc {

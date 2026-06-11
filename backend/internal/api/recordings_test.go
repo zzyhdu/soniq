@@ -548,6 +548,15 @@ func TestUploadRecordingStoresAudioCreatesRecordingAndEnqueues(t *testing.T) {
 	if created.AudioObjectKey == "" {
 		t.Fatal("created AudioObjectKey is empty, want stored object key")
 	}
+	if got, want := objectStore.puts[0].key, created.AudioObjectKey; got != want {
+		t.Fatalf("stored object key = %q, want created audio object key %q", got, want)
+	}
+	if !strings.HasPrefix(created.AudioObjectKey, "workspaces/wsp_default/recordings/") {
+		t.Fatalf("created AudioObjectKey = %q, want workspace-scoped object key", created.AudioObjectKey)
+	}
+	if !strings.HasSuffix(created.AudioObjectKey, "/weekly.wav") {
+		t.Fatalf("created AudioObjectKey = %q, want original filename suffix", created.AudioObjectKey)
+	}
 	if created.AudioContentType != "audio/wav" {
 		t.Fatalf("created AudioContentType = %q, want audio/wav", created.AudioContentType)
 	}
@@ -573,6 +582,28 @@ func TestUploadRecordingStoresAudioCreatesRecordingAndEnqueues(t *testing.T) {
 	}
 	if body.Recording.AudioObjectKey != created.AudioObjectKey || body.Recording.AudioContentType != "audio/wav" || body.Recording.AudioSizeBytes != int64(len("audio-bytes")) {
 		t.Fatalf("response audio metadata = %+v, want created audio metadata %+v", body.Recording, created)
+	}
+}
+
+func TestRecordingAudioObjectKeyUsesWorkspaceScopedPrefix(t *testing.T) {
+	key := recordingAudioObjectKey("wsp_default", "weekly.wav")
+
+	if !strings.HasPrefix(key, "workspaces/wsp_default/recordings/") {
+		t.Fatalf("recordingAudioObjectKey = %q, want workspace-scoped prefix", key)
+	}
+	if !strings.HasSuffix(key, "/weekly.wav") {
+		t.Fatalf("recordingAudioObjectKey = %q, want original filename suffix", key)
+	}
+}
+
+func TestRecordingAudioObjectKeyFallsBackToSafeFilename(t *testing.T) {
+	key := recordingAudioObjectKey("wsp_default", "..")
+
+	if !strings.HasPrefix(key, "workspaces/wsp_default/recordings/") {
+		t.Fatalf("recordingAudioObjectKey = %q, want workspace-scoped prefix", key)
+	}
+	if !strings.HasSuffix(key, "/audio") {
+		t.Fatalf("recordingAudioObjectKey = %q, want safe fallback filename", key)
 	}
 }
 

@@ -140,6 +140,21 @@ func TestLocalStoreLocalPathForObjectResolvesValidKeyUnderRoot(t *testing.T) {
 	root := t.TempDir()
 	store := NewLocalStore(root)
 
+	path, err := store.LocalPathForObject("workspaces/wsp_default/recordings/rec_123/original.wav")
+	if err != nil {
+		t.Fatalf("LocalPathForObject returned error: %v", err)
+	}
+
+	want := filepath.Join(root, "workspaces", "wsp_default", "recordings", "rec_123", "original.wav")
+	if path != want {
+		t.Fatalf("LocalPathForObject path = %q, want %q", path, want)
+	}
+}
+
+func TestLocalStoreLocalPathForObjectResolvesLegacyRecordingKey(t *testing.T) {
+	root := t.TempDir()
+	store := NewLocalStore(root)
+
 	path, err := store.LocalPathForObject("recordings/rec_123/original.wav")
 	if err != nil {
 		t.Fatalf("LocalPathForObject returned error: %v", err)
@@ -188,6 +203,16 @@ func TestLocalStoreLocalPathForObjectRejectsInvalidKeys(t *testing.T) {
 }
 
 func TestNormalizedAudioObjectKeyReturnsSiblingNormalizedWAV(t *testing.T) {
+	key, err := NormalizedAudioObjectKey("workspaces/wsp_default/recordings/20260606T150747.170276465Z/weekly.wav")
+	if err != nil {
+		t.Fatalf("NormalizedAudioObjectKey returned error: %v", err)
+	}
+	if key != "workspaces/wsp_default/recordings/20260606T150747.170276465Z/normalized.wav" {
+		t.Fatalf("NormalizedAudioObjectKey = %q, want sibling normalized.wav", key)
+	}
+}
+
+func TestNormalizedAudioObjectKeySupportsLegacyRecordingKey(t *testing.T) {
 	key, err := NormalizedAudioObjectKey("recordings/20260606T150747.170276465Z/weekly.wav")
 	if err != nil {
 		t.Fatalf("NormalizedAudioObjectKey returned error: %v", err)
