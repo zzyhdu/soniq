@@ -32,7 +32,7 @@ describe('RecordingResults', () => {
   it('does not request details before completion', () => {
     const fetchDetails = vi.spyOn(globalThis, 'fetch').mockResolvedValue(detailsResponse(recordingDetails()));
 
-    renderResults({ recordingId: 'rec-1', enabled: false });
+    renderResults({ workspaceId: 'wsp_default', recordingId: 'rec-1', enabled: false });
 
     expect(fetchDetails).not.toHaveBeenCalled();
     expect(screen.queryByLabelText(/recording results/i)).not.toBeInTheDocument();
@@ -41,7 +41,7 @@ describe('RecordingResults', () => {
   it('renders summary when present', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(detailsResponse(recordingDetails()));
 
-    renderResults({ recordingId: 'rec-1', enabled: true });
+    renderResults({ workspaceId: 'wsp_default', recordingId: 'rec-1', enabled: true });
 
     expect(await screen.findByText('Weekly sync summary')).toBeInTheDocument();
     expect(screen.getByText('The meeting covered launch status.')).toBeInTheDocument();
@@ -56,7 +56,7 @@ describe('RecordingResults', () => {
       ],
     })));
 
-    renderResults({ recordingId: 'rec-1', enabled: true });
+    renderResults({ workspaceId: 'wsp_default', recordingId: 'rec-1', enabled: true });
 
     const renderedSegments = await screen.findAllByTestId('transcript-segment');
     expect(within(renderedSegments[0]).getByText('First segment')).toBeInTheDocument();
@@ -70,7 +70,7 @@ describe('RecordingResults', () => {
       summary: null,
     })));
 
-    renderResults({ recordingId: 'rec-empty', enabled: true });
+    renderResults({ workspaceId: 'wsp_default', recordingId: 'rec-empty', enabled: true });
 
     expect(await screen.findByText('No summary available yet.')).toBeInTheDocument();
     expect(screen.getByText('No transcript available yet.')).toBeInTheDocument();

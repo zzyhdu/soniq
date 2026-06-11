@@ -1,35 +1,71 @@
 import {
-  type RecordingStatus,
-  type UploadRecordingInput,
+  getMe,
   getRecordingDetails,
   getRecordingStatus,
+  listRecordings,
+  listWorkspaces,
+  type RecordingStatus,
+  type UploadRecordingInput,
   uploadRecording,
 } from '@soniq/api-client';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 export const RECORDING_STATUS_POLL_INTERVAL_MS = 1500;
-export const DEFAULT_WORKSPACE_ID = 'wsp_default';
 
-export function useUploadRecording() {
-  return useMutation({
-    mutationFn: (input: UploadRecordingInput) => uploadRecording(DEFAULT_WORKSPACE_ID, input),
+export function useMe() {
+  return useQuery({
+    queryKey: ['me'],
+    queryFn: () => getMe(),
   });
 }
 
-export function useRecordingStatus(recordingId: string | null | undefined) {
+export function useWorkspaces() {
   return useQuery({
-    queryKey: ['recordings', recordingId, 'status'],
-    queryFn: () => getRecordingStatus(DEFAULT_WORKSPACE_ID, requireRecordingId(recordingId)),
-    enabled: hasRecordingId(recordingId),
+    queryKey: ['workspaces'],
+    queryFn: () => listWorkspaces(),
+  });
+}
+
+export function useRecordings(workspaceId: string | null | undefined) {
+  return useQuery({
+    queryKey: ['workspaces', workspaceId, 'recordings'],
+    queryFn: () => listRecordings(requireWorkspaceId(workspaceId)),
+    enabled: hasWorkspaceId(workspaceId),
+  });
+}
+
+export function useUploadRecording(workspaceId: string | null | undefined) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: UploadRecordingInput) => uploadRecording(requireWorkspaceId(workspaceId), input),
+    onSuccess: async () => {
+      if (!hasWorkspaceId(workspaceId)) {
+        return;
+      }
+      await queryClient.invalidateQueries({ queryKey: ['workspaces', workspaceId, 'recordings'] });
+    },
+  });
+}
+
+export function useRecordingStatus(workspaceId: string | null | undefined, recordingId: string | null | undefined) {
+  return useQuery({
+    queryKey: ['workspaces', workspaceId, 'recordings', recordingId, 'status'],
+    queryFn: () => getRecordingStatus(requireWorkspaceId(workspaceId), requireRecordingId(recordingId)),
+    enabled: hasWorkspaceId(workspaceId) && hasRecordingId(recordingId),
     refetchInterval: (query) => recordingStatusRefetchInterval(query.state.data?.status),
   });
 }
 
-export function useRecordingDetails(recordingId: string | null | undefined, enabled: boolean) {
+export function useRecordingDetails(
+  workspaceId: string | null | undefined,
+  recordingId: string | null | undefined,
+  enabled: boolean,
+) {
   return useQuery({
-    queryKey: ['recordings', recordingId, 'details'],
-    queryFn: () => getRecordingDetails(DEFAULT_WORKSPACE_ID, requireRecordingId(recordingId)),
-    enabled: enabled && hasRecordingId(recordingId),
+    queryKey: ['workspaces', workspaceId, 'recordings', recordingId, 'details'],
+    queryFn: () => getRecordingDetails(requireWorkspaceId(workspaceId), requireRecordingId(recordingId)),
+    enabled: enabled && hasWorkspaceId(workspaceId) && hasRecordingId(recordingId),
   });
 }
 
@@ -65,10 +101,22 @@ function hasRecordingId(recordingId: string | null | undefined): recordingId is 
   return typeof recordingId === 'string' && recordingId.length > 0;
 }
 
+function hasWorkspaceId(workspaceId: string | null | undefined): workspaceId is string {
+  return typeof workspaceId === 'string' && workspaceId.length > 0;
+}
+
 function requireRecordingId(recordingId: string | null | undefined) {
   if (!hasRecordingId(recordingId)) {
     throw new Error('recording id is required');
   }
 
   return recordingId;
+}
+
+function requireWorkspaceId(workspaceId: string | null | undefined) {
+  if (!hasWorkspaceId(workspaceId)) {
+    throw new Error('workspace id is required');
+  }
+
+  return workspaceId;
 }

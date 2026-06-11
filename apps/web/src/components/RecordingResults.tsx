@@ -5,14 +5,15 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 export type RecordingResultsProps = {
+  workspaceId: string | null;
   recordingId: string | null;
   enabled: boolean;
 };
 
-export function RecordingResults({ recordingId, enabled }: RecordingResultsProps) {
-  const detailsQuery = useRecordingDetails(recordingId, enabled);
+export function RecordingResults({ workspaceId, recordingId, enabled }: RecordingResultsProps) {
+  const detailsQuery = useRecordingDetails(workspaceId, recordingId, enabled);
 
-  if (recordingId === null || !enabled) {
+  if (workspaceId === null || recordingId === null || !enabled) {
     return null;
   }
 
