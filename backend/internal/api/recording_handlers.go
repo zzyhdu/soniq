@@ -15,43 +15,6 @@ import (
 
 const maxUploadRequestBytes = 100 << 20 // 100 MiB
 
-func workspaceByIDHandler(store RecordingStore, workspaceStore WorkspaceStore, authResolver AuthResolver, processor RecordingProcessor, objectStore storage.ObjectStore) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		workspaceID, rest, ok := parseWorkspacePath(r.URL.Path)
-		if !ok {
-			http.NotFound(w, r)
-			return
-		}
-		if !authorizeWorkspace(w, r, workspaceStore, authResolver, workspaceID) {
-			return
-		}
-		switch {
-		case rest == "/recordings":
-			switch r.Method {
-			case http.MethodGet:
-				listRecordingsHandler(store, workspaceID)(w, r)
-				return
-			case http.MethodPost:
-				createRecordingHandler(store, workspaceID)(w, r)
-				return
-			default:
-				w.Header().Set("Allow", "GET, POST")
-				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-				return
-			}
-		case rest == "/recordings/upload":
-			uploadRecordingHandler(store, processor, objectStore, workspaceID)(w, r)
-			return
-		case strings.HasPrefix(rest, "/recordings/"):
-			recordingByIDHandler(store, processor, workspaceID, strings.TrimPrefix(rest, "/recordings/"))(w, r)
-			return
-		default:
-			http.NotFound(w, r)
-			return
-		}
-	}
-}
-
 func createRecordingHandler(store RecordingStore, workspaceID string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -189,27 +152,8 @@ func recordingAudioObjectKey(workspaceID string, filename string) string {
 	return "workspaces/" + workspaceID + "/recordings/" + time.Now().UTC().Format("20060102T150405.000000000Z") + "/" + name
 }
 
-func recordingByIDHandler(store RecordingStore, processor RecordingProcessor, workspaceID string, path string) http.HandlerFunc {
+func getRecordingHandler(store RecordingStore, workspaceID string, id string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var wantsDetails bool
-		var wantsRetry bool
-		id, wantsStatus := strings.CutSuffix(path, "/status")
-		if !wantsStatus {
-			id, wantsDetails = strings.CutSuffix(path, "/details")
-		}
-		if !wantsStatus && !wantsDetails {
-			id, wantsRetry = strings.CutSuffix(path, "/retry")
-		}
-		if id == "" || strings.Contains(id, "/") {
-			http.NotFound(w, r)
-			return
-		}
-
-		if wantsRetry {
-			retryRecordingHandler(store, processor, workspaceID, id)(w, r)
-			return
-		}
-
 		if r.Method != http.MethodGet {
 			w.Header().Set("Allow", http.MethodGet)
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -226,60 +170,96 @@ func recordingByIDHandler(store RecordingStore, processor RecordingProcessor, wo
 			return
 		}
 
-		if wantsStatus {
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(struct {
-				ID            string                 `json:"id"`
-				WorkspaceID   string                 `json:"workspace_id"`
-				Status        domain.RecordingStatus `json:"status"`
-				FailureReason string                 `json:"failure_reason,omitempty"`
-				CompletedAt   *time.Time             `json:"completed_at,omitempty"`
-				FailedAt      *time.Time             `json:"failed_at,omitempty"`
-			}{
-				ID:            recording.ID,
-				WorkspaceID:   recording.WorkspaceID,
-				Status:        recording.Status,
-				FailureReason: recording.FailureReason,
-				CompletedAt:   recording.CompletedAt,
-				FailedAt:      recording.FailedAt,
-			})
-			return
-		}
-		if wantsDetails {
-			detailsStore, ok := store.(RecordingDetailsStore)
-			if !ok {
-				http.Error(w, "recording details are not configured", http.StatusInternalServerError)
-				return
-			}
-			details := recordingDetailsResponse{Recording: toRecordingResponse(recording), Segments: []recordingSegmentResponse{}}
-			transcript, hasTranscript, err := detailsStore.GetTranscript(id)
-			if err != nil {
-				http.Error(w, "get recording transcript", http.StatusInternalServerError)
-				return
-			}
-			if hasTranscript {
-				details.Transcript = toRecordingTranscriptResponse(transcript)
-				segments, err := detailsStore.ListTranscriptSegments(id)
-				if err != nil {
-					http.Error(w, "list recording transcript segments", http.StatusInternalServerError)
-					return
-				}
-				details.Segments = toRecordingSegmentResponses(segments)
-			}
-			summary, hasSummary, err := detailsStore.GetSummary(id)
-			if err != nil {
-				http.Error(w, "get recording summary", http.StatusInternalServerError)
-				return
-			}
-			if hasSummary {
-				details.Summary = toRecordingSummaryResponse(summary)
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(details)
-			return
-		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(recording)
+	}
+}
+
+func getRecordingStatusHandler(store RecordingStore, workspaceID string, id string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", http.MethodGet)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		recording, ok, err := store.GetForWorkspace(recordings.GetRecordingInput{WorkspaceID: workspaceID, ID: id})
+		if err != nil {
+			http.Error(w, "get recording", http.StatusInternalServerError)
+			return
+		}
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(struct {
+			ID            string                 `json:"id"`
+			WorkspaceID   string                 `json:"workspace_id"`
+			Status        domain.RecordingStatus `json:"status"`
+			FailureReason string                 `json:"failure_reason,omitempty"`
+			CompletedAt   *time.Time             `json:"completed_at,omitempty"`
+			FailedAt      *time.Time             `json:"failed_at,omitempty"`
+		}{
+			ID:            recording.ID,
+			WorkspaceID:   recording.WorkspaceID,
+			Status:        recording.Status,
+			FailureReason: recording.FailureReason,
+			CompletedAt:   recording.CompletedAt,
+			FailedAt:      recording.FailedAt,
+		})
+	}
+}
+
+func getRecordingDetailsHandler(store RecordingStore, workspaceID string, id string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", http.MethodGet)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		recording, ok, err := store.GetForWorkspace(recordings.GetRecordingInput{WorkspaceID: workspaceID, ID: id})
+		if err != nil {
+			http.Error(w, "get recording", http.StatusInternalServerError)
+			return
+		}
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+
+		detailsStore, ok := store.(RecordingDetailsStore)
+		if !ok {
+			http.Error(w, "recording details are not configured", http.StatusInternalServerError)
+			return
+		}
+		details := recordingDetailsResponse{Recording: toRecordingResponse(recording), Segments: []recordingSegmentResponse{}}
+		transcript, hasTranscript, err := detailsStore.GetTranscript(id)
+		if err != nil {
+			http.Error(w, "get recording transcript", http.StatusInternalServerError)
+			return
+		}
+		if hasTranscript {
+			details.Transcript = toRecordingTranscriptResponse(transcript)
+			segments, err := detailsStore.ListTranscriptSegments(id)
+			if err != nil {
+				http.Error(w, "list recording transcript segments", http.StatusInternalServerError)
+				return
+			}
+			details.Segments = toRecordingSegmentResponses(segments)
+		}
+		summary, hasSummary, err := detailsStore.GetSummary(id)
+		if err != nil {
+			http.Error(w, "get recording summary", http.StatusInternalServerError)
+			return
+		}
+		if hasSummary {
+			details.Summary = toRecordingSummaryResponse(summary)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(details)
 	}
 }
 
@@ -358,13 +338,4 @@ func authorizeWorkspace(w http.ResponseWriter, r *http.Request, workspaceStore W
 		return false
 	}
 	return true
-}
-
-func parseWorkspacePath(path string) (string, string, bool) {
-	path = strings.TrimPrefix(path, "/workspaces/")
-	workspaceID, rest, ok := strings.Cut(path, "/")
-	if !ok || workspaceID == "" {
-		return "", "", false
-	}
-	return workspaceID, "/" + rest, true
 }
