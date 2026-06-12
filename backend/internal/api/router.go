@@ -28,6 +28,13 @@ type RecordingDetailsStore interface {
 	GetSummary(recordingID string) (recordings.RecordingSummary, bool, error)
 }
 
+// RecordingRetryStore is the optional persistence seam for resetting failed recordings before retry.
+type RecordingRetryStore interface {
+	RecordingStore
+	ResetForRetry(input recordings.RetryRecordingInput) (domain.Recording, error)
+	UpdateStatus(input recordings.UpdateRecordingStatusInput) (domain.Recording, error)
+}
+
 // WorkspaceStore is the persistence seam required by identity and workspace-scoped handlers.
 type WorkspaceStore interface {
 	GetUser(ctx context.Context, userID string) (domain.User, bool, error)
@@ -58,6 +65,10 @@ func (unconfiguredRecordingStore) GetForWorkspace(recordings.GetRecordingInput) 
 
 func (unconfiguredRecordingStore) ListByWorkspace(recordings.ListRecordingsInput) ([]domain.Recording, error) {
 	return nil, errRecordingStoreNotConfigured
+}
+
+func (unconfiguredRecordingStore) ResetForRetry(recordings.RetryRecordingInput) (domain.Recording, error) {
+	return domain.Recording{}, errRecordingStoreNotConfigured
 }
 
 func (unconfiguredWorkspaceStore) GetUser(context.Context, string) (domain.User, bool, error) {

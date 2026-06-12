@@ -194,6 +194,29 @@ paths:
           $ref: '#/components/responses/Error'
         default:
           $ref: '#/components/responses/Error'
+  /workspaces/{workspace_id}/recordings/{recording_id}/retry:
+    post:
+      summary: Retry failed recording processing
+      description: Resets a failed audio-backed recording and attempts to enqueue processing again.
+      operationId: retryRecording
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
+        - $ref: '#/components/parameters/RecordingID'
+      responses:
+        '200':
+          description: Recording retry was requested.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetryRecordingResponse'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
   /workspaces/{workspace_id}/recordings/{recording_id}/details:
     get:
       summary: Get recording details
@@ -312,6 +335,14 @@ components:
         audio_size_bytes:
           type: integer
           format: int64
+        failure_reason:
+          type: string
+        completed_at:
+          type: string
+          format: date-time
+        failed_at:
+          type: string
+          format: date-time
         created_at:
           type: string
           format: date-time
@@ -355,6 +386,22 @@ components:
           type: string
         status:
           $ref: '#/components/schemas/RecordingStatus'
+        failure_reason:
+          type: string
+        completed_at:
+          type: string
+          format: date-time
+        failed_at:
+          type: string
+          format: date-time
+    RetryRecordingResponse:
+      type: object
+      required: [recording, processing_enqueued]
+      properties:
+        recording:
+          $ref: '#/components/schemas/Recording'
+        processing_enqueued:
+          type: boolean
     RecordingTranscript:
       type: object
       required: [recording_id, provider, model, language, text, transcribed_at]

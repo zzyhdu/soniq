@@ -40,6 +40,7 @@ type fakeRecordingStore struct {
 	details   map[string]recordingDetailsFixture
 	nextID    int
 	createErr error
+	updateErr error
 }
 
 type fakeWorkspaceStore struct {
@@ -149,6 +150,36 @@ func (s *fakeRecordingStore) ListByWorkspace(input recordings.ListRecordingsInpu
 		}
 	}
 	return result, nil
+}
+
+func (s *fakeRecordingStore) UpdateStatus(input recordings.UpdateRecordingStatusInput) (domain.Recording, error) {
+	if s.updateErr != nil {
+		return domain.Recording{}, s.updateErr
+	}
+	recording, ok := s.stored[input.ID]
+	if !ok || recording.WorkspaceID != input.WorkspaceID {
+		return domain.Recording{}, errors.New("recording not found")
+	}
+	recording.Status = input.Status
+	recording.FailureReason = ""
+	if input.Status == domain.RecordingStatusFailed {
+		recording.FailureReason = input.FailureReason
+	}
+	s.stored[input.ID] = recording
+	return recording, nil
+}
+
+func (s *fakeRecordingStore) ResetForRetry(input recordings.RetryRecordingInput) (domain.Recording, error) {
+	recording, ok := s.stored[input.ID]
+	if !ok || recording.WorkspaceID != input.WorkspaceID || recording.Status != domain.RecordingStatusFailed {
+		return domain.Recording{}, errors.New("recording not found or not failed")
+	}
+	recording.Status = domain.RecordingStatusUploaded
+	recording.FailureReason = ""
+	recording.FailedAt = nil
+	recording.CompletedAt = nil
+	s.stored[input.ID] = recording
+	return recording, nil
 }
 
 func (s *fakeRecordingStore) put(recording domain.Recording) {
@@ -1021,6 +1052,168 @@ func TestGetRecordingStatusReturnsExistingRecordingStatus(t *testing.T) {
 	}
 	if body.Status != domain.RecordingStatusUploaded {
 		t.Fatalf("status = %q, want uploaded", body.Status)
+	}
+}
+
+func TestGetRecordingStatusReturnsFailureMetadata(t *testing.T) {
+	store := newFakeRecordingStore()
+	store.put(domain.Recording{
+		ID:            "rec_failed",
+		WorkspaceID:   testWorkspaceID,
+		Title:         "Failed recording",
+		Status:        domain.RecordingStatusFailed,
+		WorkflowType:  domain.WorkflowTypeMeeting,
+		Language:      "en",
+		FailureReason: "transcribe audio: provider failed",
+	})
+	router := NewRouterWithStore(store)
+	request := httptest.NewRequest(http.MethodGet, "/workspaces/wsp_default/recordings/rec_failed/status", nil)
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusOK, response.Body.String())
+	}
+	var body struct {
+		ID            string                 `json:"id"`
+		WorkspaceID   string                 `json:"workspace_id"`
+		Status        domain.RecordingStatus `json:"status"`
+		FailureReason string                 `json:"failure_reason"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body.Status != domain.RecordingStatusFailed || body.FailureReason != "transcribe audio: provider failed" {
+		t.Fatalf("status body = %+v, want failed reason", body)
+	}
+}
+
+func TestRetryFailedRecordingResetsAndEnqueues(t *testing.T) {
+	store := newFakeRecordingStore()
+	store.put(domain.Recording{
+		ID:             "rec_failed",
+		WorkspaceID:    testWorkspaceID,
+		Title:          "Failed recording",
+		Status:         domain.RecordingStatusFailed,
+		WorkflowType:   domain.WorkflowTypeMeeting,
+		Language:       "en",
+		AudioObjectKey: "workspaces/wsp_default/recordings/rec_failed/audio.wav",
+		FailureReason:  "transcribe audio: provider failed",
+	})
+	processor := &recordingProcessorSpy{}
+	router := NewRouterWithProcessor(store, processor)
+	request := httptest.NewRequest(http.MethodPost, "/workspaces/wsp_default/recordings/rec_failed/retry", nil)
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusOK, response.Body.String())
+	}
+	var body retryRecordingResponse
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if !body.ProcessingEnqueued {
+		t.Fatal("processing_enqueued = false, want true")
+	}
+	if body.Recording.Status != domain.RecordingStatusUploaded || body.Recording.FailureReason != "" {
+		t.Fatalf("recording = %+v, want uploaded with cleared failure", body.Recording)
+	}
+	if got, want := len(processor.enqueued), 1; got != want {
+		t.Fatalf("enqueued recordings = %d, want %d", got, want)
+	}
+	if processor.enqueued[0].Status != domain.RecordingStatusUploaded || processor.enqueued[0].FailureReason != "" {
+		t.Fatalf("enqueued recording = %+v, want uploaded retry recording", processor.enqueued[0])
+	}
+}
+
+func TestRetryRecordingRejectsNonFailedRecording(t *testing.T) {
+	store := newFakeRecordingStore()
+	store.put(domain.Recording{
+		ID:             "rec_completed",
+		WorkspaceID:    testWorkspaceID,
+		Title:          "Completed recording",
+		Status:         domain.RecordingStatusCompleted,
+		WorkflowType:   domain.WorkflowTypeMeeting,
+		Language:       "en",
+		AudioObjectKey: "workspaces/wsp_default/recordings/rec_completed/audio.wav",
+	})
+	processor := &recordingProcessorSpy{}
+	router := NewRouterWithProcessor(store, processor)
+	request := httptest.NewRequest(http.MethodPost, "/workspaces/wsp_default/recordings/rec_completed/retry", nil)
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusConflict {
+		t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusConflict, response.Body.String())
+	}
+	if len(processor.enqueued) != 0 {
+		t.Fatalf("enqueued recordings = %d, want none", len(processor.enqueued))
+	}
+}
+
+func TestRetryRecordingMarksFailedWhenEnqueueFails(t *testing.T) {
+	store := newFakeRecordingStore()
+	store.put(domain.Recording{
+		ID:             "rec_failed",
+		WorkspaceID:    testWorkspaceID,
+		Title:          "Failed recording",
+		Status:         domain.RecordingStatusFailed,
+		WorkflowType:   domain.WorkflowTypeMeeting,
+		Language:       "en",
+		AudioObjectKey: "workspaces/wsp_default/recordings/rec_failed/audio.wav",
+		FailureReason:  "old failure",
+	})
+	processor := &recordingProcessorSpy{err: errRecordingProcessorFailed}
+	router := NewRouterWithProcessor(store, processor)
+	request := httptest.NewRequest(http.MethodPost, "/workspaces/wsp_default/recordings/rec_failed/retry", nil)
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusOK, response.Body.String())
+	}
+	var body retryRecordingResponse
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body.ProcessingEnqueued {
+		t.Fatal("processing_enqueued = true, want false")
+	}
+	if body.Recording.Status != domain.RecordingStatusFailed || !strings.Contains(body.Recording.FailureReason, "retry enqueue failed") {
+		t.Fatalf("recording = %+v, want failed retry enqueue reason", body.Recording)
+	}
+}
+
+func TestRetryRecordingReturnsServerErrorWhenFailureRestoreFails(t *testing.T) {
+	store := newFakeRecordingStore()
+	store.updateErr = errors.New("update failed")
+	store.put(domain.Recording{
+		ID:             "rec_failed",
+		WorkspaceID:    testWorkspaceID,
+		Title:          "Failed recording",
+		Status:         domain.RecordingStatusFailed,
+		WorkflowType:   domain.WorkflowTypeMeeting,
+		Language:       "en",
+		AudioObjectKey: "workspaces/wsp_default/recordings/rec_failed/audio.wav",
+		FailureReason:  "old failure",
+	})
+	processor := &recordingProcessorSpy{err: errRecordingProcessorFailed}
+	router := NewRouterWithProcessor(store, processor)
+	request := httptest.NewRequest(http.MethodPost, "/workspaces/wsp_default/recordings/rec_failed/retry", nil)
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusInternalServerError, response.Body.String())
+	}
+	if got, want := len(processor.enqueued), 1; got != want {
+		t.Fatalf("enqueued recordings = %d, want %d", got, want)
 	}
 }
 

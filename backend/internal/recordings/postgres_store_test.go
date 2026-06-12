@@ -64,10 +64,14 @@ func (r *postgresRowStub) Scan(dest ...any) error {
 	if r.err != nil {
 		return r.err
 	}
-	if len(dest) != len(r.values) {
+	values := r.values
+	if len(dest) == 14 && len(values) == 11 {
+		values = append(append(append([]any{}, values[:9]...), "", nil, nil), values[9:]...)
+	}
+	if len(dest) != len(values) {
 		return sql.ErrNoRows
 	}
-	for i, value := range r.values {
+	for i, value := range values {
 		switch target := dest[i].(type) {
 		case *string:
 			*target = value.(string)
@@ -77,6 +81,12 @@ func (r *postgresRowStub) Scan(dest ...any) error {
 			*target = value.(domain.WorkflowType)
 		case *time.Time:
 			*target = value.(time.Time)
+		case *sql.NullTime:
+			if value == nil {
+				*target = sql.NullTime{}
+			} else {
+				*target = sql.NullTime{Time: value.(time.Time), Valid: true}
+			}
 		case *int64:
 			*target = value.(int64)
 		case *int:
@@ -497,7 +507,7 @@ func TestPostgresStoreUpdateStatusUpdatesAndReturnsRecording(t *testing.T) {
 	if !strings.Contains(query, "update recordings") || !strings.Contains(query, "set status") || !strings.Contains(query, "returning") {
 		t.Fatalf("query = %q, want update recordings set status returning", db.calls[0].query)
 	}
-	if got, want := len(db.calls[0].args), 4; got != want {
+	if got, want := len(db.calls[0].args), 5; got != want {
 		t.Fatalf("update args = %d, want %d", got, want)
 	}
 	if got, want := db.calls[0].args[0], "wsp_default"; got != want {
@@ -511,6 +521,92 @@ func TestPostgresStoreUpdateStatusUpdatesAndReturnsRecording(t *testing.T) {
 	}
 	if _, ok := db.calls[0].args[3].(time.Time); !ok {
 		t.Fatalf("updated_at arg = %#v, want time.Time", db.calls[0].args[3])
+	}
+	if got, want := db.calls[0].args[4], ""; got != want {
+		t.Fatalf("failure reason arg = %q, want empty", got)
+	}
+}
+
+func TestPostgresStoreUpdateStatusPersistsFailureMetadata(t *testing.T) {
+	createdAt := time.Date(2026, 6, 6, 1, 2, 3, 0, time.UTC)
+	failedAt := createdAt.Add(time.Minute)
+	db := newPostgresExecutorSpy(postgresRow(
+		"rec_pg",
+		"wsp_default",
+		"Weekly sync",
+		domain.RecordingStatusFailed,
+		domain.WorkflowTypeMeeting,
+		"en",
+		"recordings/rec_pg/original.wav",
+		"audio/wav",
+		int64(12345),
+		"transcribe audio: provider failed",
+		nil,
+		failedAt,
+		createdAt,
+		failedAt,
+	))
+	store := NewPostgresStore(db)
+
+	recording, err := store.UpdateStatus(UpdateRecordingStatusInput{
+		WorkspaceID:   "wsp_default",
+		ID:            "rec_pg",
+		Status:        domain.RecordingStatusFailed,
+		FailureReason: "transcribe audio: provider failed",
+	})
+	if err != nil {
+		t.Fatalf("UpdateStatus returned error: %v", err)
+	}
+
+	if recording.Status != domain.RecordingStatusFailed || recording.FailureReason != "transcribe audio: provider failed" {
+		t.Fatalf("recording = %+v, want failed with reason", recording)
+	}
+	if recording.FailedAt == nil || !recording.FailedAt.Equal(failedAt) {
+		t.Fatalf("FailedAt = %v, want %s", recording.FailedAt, failedAt)
+	}
+	if recording.CompletedAt != nil {
+		t.Fatalf("CompletedAt = %v, want nil", recording.CompletedAt)
+	}
+	if got, want := db.calls[0].args[4], "transcribe audio: provider failed"; got != want {
+		t.Fatalf("failure reason arg = %q, want %q", got, want)
+	}
+}
+
+func TestPostgresStoreResetForRetryClearsFailureMetadata(t *testing.T) {
+	createdAt := time.Date(2026, 6, 6, 1, 2, 3, 0, time.UTC)
+	updatedAt := createdAt.Add(time.Minute)
+	db := newPostgresExecutorSpy(postgresRow(
+		"rec_pg",
+		"wsp_default",
+		"Weekly sync",
+		domain.RecordingStatusUploaded,
+		domain.WorkflowTypeMeeting,
+		"en",
+		"recordings/rec_pg/original.wav",
+		"audio/wav",
+		int64(12345),
+		"",
+		nil,
+		nil,
+		createdAt,
+		updatedAt,
+	))
+	store := NewPostgresStore(db)
+
+	recording, err := store.ResetForRetry(RetryRecordingInput{WorkspaceID: "wsp_default", ID: "rec_pg"})
+	if err != nil {
+		t.Fatalf("ResetForRetry returned error: %v", err)
+	}
+
+	if recording.Status != domain.RecordingStatusUploaded || recording.FailureReason != "" || recording.FailedAt != nil || recording.CompletedAt != nil {
+		t.Fatalf("recording = %+v, want uploaded with cleared failure metadata", recording)
+	}
+	query := strings.ToLower(db.calls[0].query)
+	if !strings.Contains(query, "status = 'failed'") || !strings.Contains(query, "failure_reason = ''") {
+		t.Fatalf("query = %q, want failed-only reset that clears failure metadata", db.calls[0].query)
+	}
+	if got, want := len(db.calls[0].args), 3; got != want {
+		t.Fatalf("reset args = %d, want %d", got, want)
 	}
 }
 

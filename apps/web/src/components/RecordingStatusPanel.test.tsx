@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 
 import { cleanup, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -64,5 +65,21 @@ describe('RecordingStatusPanel', () => {
 
     expect(screen.getByRole('alert')).toHaveTextContent('recording not found');
     expect(screen.getByText('rec-missing')).toBeInTheDocument();
+  });
+
+  it('renders failure reasons and retry action for failed recordings', async () => {
+    const retry = vi.fn();
+    const user = userEvent.setup();
+
+    renderPanel({
+      recordingId: 'rec-failed',
+      currentStatus: 'failed',
+      failureReason: 'transcribe audio: provider failed',
+      onRetry: retry,
+    });
+
+    expect(screen.getByRole('alert')).toHaveTextContent('transcribe audio: provider failed');
+    await user.click(screen.getByRole('button', { name: /^retry$/i }));
+    expect(retry).toHaveBeenCalledTimes(1);
   });
 });

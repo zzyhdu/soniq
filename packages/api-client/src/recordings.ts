@@ -21,6 +21,9 @@ export type Recording = {
   audio_object_key?: string;
   audio_content_type?: string;
   audio_size_bytes?: number;
+  failure_reason?: string;
+  completed_at?: string;
+  failed_at?: string;
   created_at: string;
   updated_at: string;
 };
@@ -51,10 +54,18 @@ export type UploadRecordingResponse = {
   processing_enqueued: boolean;
 };
 
+export type RetryRecordingResponse = {
+  recording: Recording;
+  processing_enqueued: boolean;
+};
+
 export type RecordingStatusResponse = {
   id: string;
   workspace_id: string;
   status: RecordingStatus;
+  failure_reason?: string;
+  completed_at?: string;
+  failed_at?: string;
 };
 
 export type RecordingTranscript = {
@@ -188,6 +199,18 @@ export async function getRecordingDetails(
   return requestJSON<RecordingDetails>(
     `${recordingPath(workspaceId, recordingId)}/details`,
     { method: 'GET' },
+    options,
+  );
+}
+
+export async function retryRecording(
+  workspaceId: string,
+  recordingId: string,
+  options: SoniqApiClientOptions = {},
+): Promise<RetryRecordingResponse> {
+  return requestJSON<RetryRecordingResponse>(
+    `${recordingPath(workspaceId, recordingId)}/retry`,
+    { method: 'POST' },
     options,
   );
 }

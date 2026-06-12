@@ -124,11 +124,38 @@ apply_baseline_v1() {
   log "recorded baseline schema version 1"
 }
 
+recording_failure_metadata_present() {
+  [[ "$(psql_scalar "SELECT count(*) = 3
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'recordings'
+      AND column_name IN ('failure_reason', 'completed_at', 'failed_at')")" == "t" ]]
+}
+
+apply_recording_failure_metadata_v2() {
+  if migration_applied "2"; then
+    log "recording failure metadata version 2 already recorded; skipping"
+    return 0
+  fi
+
+  if recording_failure_metadata_present; then
+    log "recording failure metadata already present; recording version 2"
+    record_migration "2"
+    return 0
+  fi
+
+  log "applying recording failure metadata version 2"
+  psql_apply "backend/migrations/0002_add_recording_failure_metadata.up.sql"
+  record_migration "2"
+  log "recorded recording failure metadata version 2"
+}
+
 main() {
   cd "$ROOT_DIR"
 
   ensure_schema_migrations_table
   apply_baseline_v1
+  apply_recording_failure_metadata_v2
 
   log "local Soniq application migrations are up to date"
 }

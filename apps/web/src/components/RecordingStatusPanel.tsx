@@ -2,6 +2,7 @@ import { type RecordingStatus } from '@soniq/api-client';
 
 import { isTerminalRecordingStatus, recordingStatusBadgeVariant } from '@/api/queries';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 export type RecordingStatusPanelProps = {
@@ -12,6 +13,10 @@ export type RecordingStatusPanelProps = {
   isFetching?: boolean;
   error?: string | null;
   processingEnqueued?: boolean;
+  failureReason?: string | null;
+  onRetry?: () => void;
+  isRetrying?: boolean;
+  retryError?: string | null;
 };
 
 const statusLabels: Record<RecordingStatus, string> = {
@@ -32,6 +37,10 @@ export function RecordingStatusPanel({
   isFetching = false,
   error = null,
   processingEnqueued,
+  failureReason = null,
+  onRetry,
+  isRetrying = false,
+  retryError = null,
 }: RecordingStatusPanelProps) {
   if (recordingId === null) {
     return null;
@@ -80,13 +89,35 @@ export function RecordingStatusPanel({
           <p className="text-muted-foreground">Processing completed.</p>
         )}
 
-        {isTerminal && status !== 'completed' && (
-          <p className="text-destructive">Processing ended with {statusLabels[status].toLowerCase()} status.</p>
+        {isTerminal && status === 'failed' && (
+          <div className="space-y-3 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-3">
+            <div className="space-y-1">
+              <p className="font-medium text-destructive">Processing failed.</p>
+              {failureReason !== null && failureReason.trim().length > 0 && (
+                <p className="text-sm text-destructive" role="alert">{failureReason}</p>
+              )}
+            </div>
+            {onRetry !== undefined && (
+              <Button type="button" variant="outline" size="sm" onClick={onRetry} disabled={isRetrying}>
+                {isRetrying ? 'Retrying...' : 'Retry'}
+              </Button>
+            )}
+          </div>
+        )}
+
+        {isTerminal && status === 'cancelled' && (
+          <p className="text-destructive">Processing ended with cancelled status.</p>
         )}
 
         {error !== null && (
           <p className="text-destructive" role="alert">
             {error}
+          </p>
+        )}
+
+        {retryError !== null && (
+          <p className="text-destructive" role="alert">
+            {retryError}
           </p>
         )}
       </CardContent>

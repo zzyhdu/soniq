@@ -245,11 +245,20 @@ func TestRecordingProcessingActivitiesFailRecordingProcessingUpdatesStatus(t *te
 	}}
 	activities := NewRecordingProcessingActivities(store)
 
-	if err := activities.FailRecordingProcessing(context.Background(), activityRecordingRef("rec_test")); err != nil {
+	if err := activities.FailRecordingProcessing(context.Background(), RecordingFailure{
+		WorkspaceID: activityTestWorkspaceID,
+		RecordingID: "rec_test",
+		Reason:      "transcribe audio: provider failed",
+	}); err != nil {
 		t.Fatalf("FailRecordingProcessing() error = %v, want nil", err)
 	}
 
-	want := recordings.UpdateRecordingStatusInput{WorkspaceID: activityTestWorkspaceID, ID: "rec_test", Status: domain.RecordingStatusFailed}
+	want := recordings.UpdateRecordingStatusInput{
+		WorkspaceID:   activityTestWorkspaceID,
+		ID:            "rec_test",
+		Status:        domain.RecordingStatusFailed,
+		FailureReason: "transcribe audio: provider failed",
+	}
 	if len(store.updates) != 1 || store.updates[0] != want {
 		t.Fatalf("updates = %+v, want [%+v]", store.updates, want)
 	}

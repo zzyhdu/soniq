@@ -34,9 +34,16 @@ type ListRecordingsInput struct {
 
 // UpdateRecordingStatusInput contains the state transition to persist for a recording.
 type UpdateRecordingStatusInput struct {
+	WorkspaceID   string
+	ID            string
+	Status        domain.RecordingStatus
+	FailureReason string
+}
+
+// RetryRecordingInput identifies a failed recording that should be prepared for retry.
+type RetryRecordingInput struct {
 	WorkspaceID string
 	ID          string
-	Status      domain.RecordingStatus
 }
 
 // RecordingAudioProbe contains ffprobe metadata for a recording's original audio.
@@ -178,11 +185,21 @@ func validateStatusUpdateInput(input UpdateRecordingStatusInput) error {
 		return fmt.Errorf("recording id is required")
 	}
 	switch input.Status {
-	case domain.RecordingStatusProcessing, domain.RecordingStatusTranscribing, domain.RecordingStatusSummarizing, domain.RecordingStatusCompleted, domain.RecordingStatusFailed:
+	case domain.RecordingStatusUploaded, domain.RecordingStatusProcessing, domain.RecordingStatusTranscribing, domain.RecordingStatusSummarizing, domain.RecordingStatusCompleted, domain.RecordingStatusFailed:
 		return nil
 	default:
 		return fmt.Errorf("unsupported recording status update: %s", input.Status)
 	}
+}
+
+func validateRetryRecordingInput(input RetryRecordingInput) error {
+	if input.WorkspaceID == "" {
+		return fmt.Errorf("workspace id is required")
+	}
+	if input.ID == "" {
+		return fmt.Errorf("recording id is required")
+	}
+	return nil
 }
 
 func validateCreateRecordingInput(input CreateRecordingInput) error {

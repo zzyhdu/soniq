@@ -7,6 +7,7 @@ import (
 
 	"github.com/zzyhdu/soniq/backend/internal/domain"
 	"github.com/zzyhdu/soniq/backend/internal/workflows"
+	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/client"
 )
 
@@ -47,8 +48,9 @@ func (p TemporalRecordingProcessor) Enqueue(recording domain.Recording) error {
 	_, err := p.starter.ExecuteWorkflow(
 		context.Background(),
 		client.StartWorkflowOptions{
-			ID:        "recording-processing-" + recording.ID,
-			TaskQueue: p.config.TaskQueue,
+			ID:                    "recording-processing-" + recording.ID,
+			TaskQueue:             p.config.TaskQueue,
+			WorkflowIDReusePolicy: enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY,
 		},
 		workflows.RecordingProcessingWorkflow,
 		workflows.RecordingProcessingInput{

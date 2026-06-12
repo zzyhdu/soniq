@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -50,7 +51,7 @@ func (s *PostgresStore) Create(input CreateRecordingInput) (domain.Recording, er
 		context.Background(),
 		`INSERT INTO recordings (id, workspace_id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-RETURNING id, workspace_id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, created_at, updated_at`,
+RETURNING id, workspace_id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, failure_reason, completed_at, failed_at, created_at, updated_at`,
 		recording.ID,
 		recording.WorkspaceID,
 		recording.Title,
@@ -78,7 +79,7 @@ func (s *PostgresStore) Get(id string) (domain.Recording, bool, error) {
 	var recording domain.Recording
 	row := s.db.QueryRow(
 		context.Background(),
-		`SELECT id, workspace_id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, created_at, updated_at
+		`SELECT id, workspace_id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, failure_reason, completed_at, failed_at, created_at, updated_at
 FROM recordings
 WHERE id = $1`,
 		id,
@@ -104,7 +105,7 @@ func (s *PostgresStore) GetForWorkspace(input GetRecordingInput) (domain.Recordi
 	var recording domain.Recording
 	row := s.db.QueryRow(
 		context.Background(),
-		`SELECT id, workspace_id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, created_at, updated_at
+		`SELECT id, workspace_id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, failure_reason, completed_at, failed_at, created_at, updated_at
 FROM recordings
 WHERE workspace_id = $1
   AND id = $2`,
@@ -139,7 +140,7 @@ func (s *PostgresStore) ListByWorkspace(input ListRecordingsInput) ([]domain.Rec
 
 	rows, err := s.db.Query(
 		context.Background(),
-		`SELECT id, workspace_id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, created_at, updated_at
+		`SELECT id, workspace_id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, failure_reason, completed_at, failed_at, created_at, updated_at
 FROM recordings
 WHERE workspace_id = $1
 ORDER BY created_at DESC, id DESC
@@ -176,31 +177,42 @@ func (s *PostgresStore) UpdateStatus(input UpdateRecordingStatusInput) (domain.R
 	}
 
 	updatedAt := time.Now().UTC()
+	failureReason := failureReasonForStatus(input.Status, input.FailureReason)
 	var recording domain.Recording
 	var row storedb.PostgresRow
 	if input.WorkspaceID == "" {
 		row = s.db.QueryRow(
 			context.Background(),
 			`UPDATE recordings
-SET status = $2, updated_at = $3
+SET status = $2,
+    failure_reason = CASE WHEN $2::text = 'failed' THEN $4 ELSE '' END,
+    completed_at = CASE WHEN $2::text = 'completed' THEN $3::timestamptz ELSE NULL::timestamptz END,
+    failed_at = CASE WHEN $2::text = 'failed' THEN $3::timestamptz ELSE NULL::timestamptz END,
+    updated_at = $3
 WHERE id = $1
-RETURNING id, workspace_id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, created_at, updated_at`,
+RETURNING id, workspace_id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, failure_reason, completed_at, failed_at, created_at, updated_at`,
 			input.ID,
 			input.Status,
 			updatedAt,
+			failureReason,
 		)
 	} else {
 		row = s.db.QueryRow(
 			context.Background(),
 			`UPDATE recordings
-SET status = $3, updated_at = $4
+SET status = $3,
+    failure_reason = CASE WHEN $3::text = 'failed' THEN $5 ELSE '' END,
+    completed_at = CASE WHEN $3::text = 'completed' THEN $4::timestamptz ELSE NULL::timestamptz END,
+    failed_at = CASE WHEN $3::text = 'failed' THEN $4::timestamptz ELSE NULL::timestamptz END,
+    updated_at = $4
 WHERE workspace_id = $1
   AND id = $2
-RETURNING id, workspace_id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, created_at, updated_at`,
+RETURNING id, workspace_id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, failure_reason, completed_at, failed_at, created_at, updated_at`,
 			input.WorkspaceID,
 			input.ID,
 			input.Status,
 			updatedAt,
+			failureReason,
 		)
 	}
 	if err := scanRecording(row, &recording); err != nil {
@@ -208,6 +220,42 @@ RETURNING id, workspace_id, title, status, workflow_type, language, audio_object
 			return domain.Recording{}, fmt.Errorf("recording not found: %s", input.ID)
 		}
 		return domain.Recording{}, fmt.Errorf("update recording status: %w", err)
+	}
+	return recording, nil
+}
+
+// ResetForRetry clears failure metadata and moves a failed recording back to uploaded.
+func (s *PostgresStore) ResetForRetry(input RetryRecordingInput) (domain.Recording, error) {
+	if err := validateRetryRecordingInput(input); err != nil {
+		return domain.Recording{}, err
+	}
+	if s == nil || s.db == nil {
+		return domain.Recording{}, fmt.Errorf("postgres recording store requires database executor")
+	}
+
+	updatedAt := time.Now().UTC()
+	var recording domain.Recording
+	row := s.db.QueryRow(
+		context.Background(),
+		`UPDATE recordings
+SET status = 'uploaded',
+    failure_reason = '',
+    completed_at = NULL,
+    failed_at = NULL,
+    updated_at = $3
+WHERE workspace_id = $1
+  AND id = $2
+  AND status = 'failed'
+RETURNING id, workspace_id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, failure_reason, completed_at, failed_at, created_at, updated_at`,
+		input.WorkspaceID,
+		input.ID,
+		updatedAt,
+	)
+	if err := scanRecording(row, &recording); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.Recording{}, fmt.Errorf("recording not found or not failed: %s", input.ID)
+		}
+		return domain.Recording{}, fmt.Errorf("reset recording for retry: %w", err)
 	}
 	return recording, nil
 }
@@ -495,7 +543,9 @@ func scanSummary(row storedb.PostgresRow, summary *RecordingSummary) error {
 }
 
 func scanRecording(row storedb.PostgresRow, recording *domain.Recording) error {
-	return row.Scan(
+	var completedAt sql.NullTime
+	var failedAt sql.NullTime
+	if err := row.Scan(
 		&recording.ID,
 		&recording.WorkspaceID,
 		&recording.Title,
@@ -505,9 +555,36 @@ func scanRecording(row storedb.PostgresRow, recording *domain.Recording) error {
 		&recording.AudioObjectKey,
 		&recording.AudioContentType,
 		&recording.AudioSizeBytes,
+		&recording.FailureReason,
+		&completedAt,
+		&failedAt,
 		&recording.CreatedAt,
 		&recording.UpdatedAt,
-	)
+	); err != nil {
+		return err
+	}
+	recording.CompletedAt = nil
+	if completedAt.Valid {
+		completed := completedAt.Time
+		recording.CompletedAt = &completed
+	}
+	recording.FailedAt = nil
+	if failedAt.Valid {
+		failed := failedAt.Time
+		recording.FailedAt = &failed
+	}
+	return nil
+}
+
+func failureReasonForStatus(status domain.RecordingStatus, reason string) string {
+	if status != domain.RecordingStatusFailed {
+		return ""
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return "recording processing failed"
+	}
+	return reason
 }
 
 // UpsertAudioProbe stores or replaces ffprobe metadata for a recording.

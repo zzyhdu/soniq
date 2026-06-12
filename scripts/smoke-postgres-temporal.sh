@@ -246,11 +246,16 @@ assert_recording_workspace_in_db() {
 assert_recording_status_in_db() {
   local recording_id="$1"
   local expected_status="$2"
-  local actual_status
-  actual_status="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
-    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "SELECT status FROM recordings WHERE id = '$recording_id'")"
+  local row actual_status completed_at_set failure_reason
+  row="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
+    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -AtF $'\t' -c "SELECT status, (completed_at IS NOT NULL), failure_reason FROM recordings WHERE id = '$recording_id'")"
+  IFS=$'\t' read -r actual_status completed_at_set failure_reason <<<"$row"
   if [[ "$actual_status" != "$expected_status" ]]; then
     log "unexpected DB recording status: $actual_status, want $expected_status"
+    return 1
+  fi
+  if [[ "$expected_status" == "completed" && ( "$completed_at_set" != "t" || -n "$failure_reason" ) ]]; then
+    log "unexpected DB completion metadata: completed_at_set=$completed_at_set failure_reason=$failure_reason"
     return 1
   fi
 }

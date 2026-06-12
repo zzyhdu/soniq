@@ -1,6 +1,7 @@
 package workflows
 
 import (
+	"errors"
 	"time"
 
 	"github.com/zzyhdu/soniq/backend/internal/activities"
@@ -46,41 +47,61 @@ func RecordingProcessingWorkflow(ctx workflow.Context, input RecordingProcessing
 		return RecordingProcessingResult{}, err
 	}
 	if err := workflow.ExecuteActivity(shortActivityCtx, activities.ProbeRecordingAudioActivityName, input.RecordingID).Get(shortActivityCtx, nil); err != nil {
-		_ = workflow.ExecuteActivity(shortActivityCtx, activities.FailRecordingProcessingActivityName, recording).Get(shortActivityCtx, nil)
+		_ = failRecording(shortActivityCtx, recording, "probe audio", err)
 		return RecordingProcessingResult{}, err
 	}
 	if err := workflow.ExecuteActivity(shortActivityCtx, activities.NormalizeRecordingAudioActivityName, input.RecordingID).Get(shortActivityCtx, nil); err != nil {
-		_ = workflow.ExecuteActivity(shortActivityCtx, activities.FailRecordingProcessingActivityName, recording).Get(shortActivityCtx, nil)
+		_ = failRecording(shortActivityCtx, recording, "normalize audio", err)
 		return RecordingProcessingResult{}, err
 	}
 	if err := workflow.ExecuteActivity(shortActivityCtx, activities.MarkRecordingTranscribingActivityName, recording).Get(shortActivityCtx, nil); err != nil {
-		_ = workflow.ExecuteActivity(shortActivityCtx, activities.FailRecordingProcessingActivityName, recording).Get(shortActivityCtx, nil)
+		_ = failRecording(shortActivityCtx, recording, "mark transcribing", err)
 		return RecordingProcessingResult{}, err
 	}
 	if err := workflow.ExecuteActivity(longRunningActivityCtx, activities.TranscribeRecordingAudioActivityName, input.RecordingID).Get(longRunningActivityCtx, nil); err != nil {
-		_ = workflow.ExecuteActivity(shortActivityCtx, activities.FailRecordingProcessingActivityName, recording).Get(shortActivityCtx, nil)
+		_ = failRecording(shortActivityCtx, recording, "transcribe audio", err)
 		return RecordingProcessingResult{}, err
 	}
 	if input.DeleteOriginalAudioAfterTranscription {
 		if err := workflow.ExecuteActivity(shortActivityCtx, activities.DeleteOriginalRecordingAudioActivityName, input.RecordingID).Get(shortActivityCtx, nil); err != nil {
-			_ = workflow.ExecuteActivity(shortActivityCtx, activities.FailRecordingProcessingActivityName, recording).Get(shortActivityCtx, nil)
+			_ = failRecording(shortActivityCtx, recording, "delete original audio", err)
 			return RecordingProcessingResult{}, err
 		}
 	}
 	if err := workflow.ExecuteActivity(shortActivityCtx, activities.MarkRecordingSummarizingActivityName, recording).Get(shortActivityCtx, nil); err != nil {
-		_ = workflow.ExecuteActivity(shortActivityCtx, activities.FailRecordingProcessingActivityName, recording).Get(shortActivityCtx, nil)
+		_ = failRecording(shortActivityCtx, recording, "mark summarizing", err)
 		return RecordingProcessingResult{}, err
 	}
 	if err := workflow.ExecuteActivity(longRunningActivityCtx, activities.SummarizeRecordingActivityName, input.RecordingID).Get(longRunningActivityCtx, nil); err != nil {
-		_ = workflow.ExecuteActivity(shortActivityCtx, activities.FailRecordingProcessingActivityName, recording).Get(shortActivityCtx, nil)
+		_ = failRecording(shortActivityCtx, recording, "summarize recording", err)
 		return RecordingProcessingResult{}, err
 	}
 
 	var result RecordingProcessingResult
 	if err := workflow.ExecuteActivity(shortActivityCtx, activities.CompleteRecordingProcessingActivityName, recording).Get(shortActivityCtx, &result); err != nil {
-		_ = workflow.ExecuteActivity(shortActivityCtx, activities.FailRecordingProcessingActivityName, recording).Get(shortActivityCtx, nil)
+		_ = failRecording(shortActivityCtx, recording, "complete processing", err)
 		return RecordingProcessingResult{}, err
 	}
 
 	return result, nil
+}
+
+func failRecording(ctx workflow.Context, recording activities.RecordingReference, step string, err error) error {
+	return workflow.ExecuteActivity(ctx, activities.FailRecordingProcessingActivityName, activities.RecordingFailure{
+		WorkspaceID: recording.WorkspaceID,
+		RecordingID: recording.RecordingID,
+		Reason:      recordingFailureReason(step, err),
+	}).Get(ctx, nil)
+}
+
+func recordingFailureReason(step string, err error) string {
+	var activityErr *temporal.ActivityError
+	if errors.As(err, &activityErr) && activityErr.Unwrap() != nil {
+		err = activityErr.Unwrap()
+	}
+	var applicationErr *temporal.ApplicationError
+	if errors.As(err, &applicationErr) {
+		return step + ": " + applicationErr.Message()
+	}
+	return step + ": " + err.Error()
 }

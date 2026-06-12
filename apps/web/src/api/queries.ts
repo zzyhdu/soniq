@@ -4,6 +4,7 @@ import {
   getRecordingStatus,
   listRecordings,
   listWorkspaces,
+  retryRecording,
   type RecordingStatus,
   type UploadRecordingInput,
   uploadRecording,
@@ -54,6 +55,32 @@ export function useRecordingStatus(workspaceId: string | null | undefined, recor
     queryFn: () => getRecordingStatus(requireWorkspaceId(workspaceId), requireRecordingId(recordingId)),
     enabled: hasWorkspaceId(workspaceId) && hasRecordingId(recordingId),
     refetchInterval: (query) => recordingStatusRefetchInterval(query.state.data?.status),
+  });
+}
+
+export function useRetryRecording(workspaceId: string | null | undefined, recordingId: string | null | undefined) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => retryRecording(requireWorkspaceId(workspaceId), requireRecordingId(recordingId)),
+    onSuccess: async (response) => {
+      if (!hasWorkspaceId(workspaceId) || !hasRecordingId(recordingId)) {
+        return;
+      }
+      queryClient.setQueryData(['workspaces', workspaceId, 'recordings', recordingId, 'status'], {
+        id: response.recording.id,
+        workspace_id: response.recording.workspace_id,
+        status: response.recording.status,
+        failure_reason: response.recording.failure_reason,
+        completed_at: response.recording.completed_at,
+        failed_at: response.recording.failed_at,
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['workspaces', workspaceId, 'recordings'] }),
+        queryClient.invalidateQueries({ queryKey: ['workspaces', workspaceId, 'recordings', recordingId, 'status'] }),
+        queryClient.invalidateQueries({ queryKey: ['workspaces', workspaceId, 'recordings', recordingId, 'details'] }),
+      ]);
+    },
   });
 }
 

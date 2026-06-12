@@ -7,7 +7,7 @@ Soniq has moved from documentation-only architecture into an executable backend 
 Completed foundation milestones:
 
 - Go backend skeleton with `GET /healthz`.
-- Postgres-backed workspace-scoped recording API: `POST /workspaces/{workspace_id}/recordings`, `POST /workspaces/{workspace_id}/recordings/upload`, `GET /workspaces/{workspace_id}/recordings/{recording_id}`, `GET /workspaces/{workspace_id}/recordings/{recording_id}/status`.
+- Postgres-backed workspace-scoped recording API: `POST /workspaces/{workspace_id}/recordings`, `POST /workspaces/{workspace_id}/recordings/upload`, `GET /workspaces/{workspace_id}/recordings/{recording_id}`, `GET /workspaces/{workspace_id}/recordings/{recording_id}/status`, and `POST /workspaces/{workspace_id}/recordings/{recording_id}/retry`.
 - Local filesystem object storage for uploaded recording audio.
 - Temporal workflow with Postgres-backed recording status, audio-probe, audio-normalization, fake transcription, and fake summarization activities.
 - Temporal worker registration with Soniq Postgres-backed activities.
@@ -15,7 +15,7 @@ Completed foundation milestones:
 - Local Temporal development environment: Docker Compose services, Makefile targets, docs, and a full smoke helper.
 - Verified local smoke path: API → local object store → Soniq Postgres → Temporal → worker → `ffprobe` → `recording_audio_probes` → `ffmpeg` → `recording_normalized_audios` + local `normalized.wav` → fake transcription → `recording_transcripts`/segments → fake summary → `recording_summaries` → `recordings.status=completed`. This is a real pipeline/infrastructure smoke; only the model providers are deterministic fakes by default.
 - Backend-owned OpenAPI + Scalar API Console served at `/openapi.yaml` and `/api-console`, with same-origin browser "Try it" support for upload, status, and details endpoints.
-- Basic product Web UI foundation under `apps/web`: pnpm workspace, typed `@soniq/api-client`, Vite React app shell, Tailwind/shadcn primitives, upload form, processing status polling, and completed transcript/summary display.
+- Basic product Web UI foundation under `apps/web`: pnpm workspace, typed `@soniq/api-client`, Vite React app shell, Tailwind/shadcn primitives, upload form, bookmarkable recording hash routes, processing status polling, failed-recording retry, and completed transcript/summary display.
 
 The next focus is choosing the next product direction: provider productization, broader Web UI result browsing, or another user-facing workflow on top of the working local pipeline.
 

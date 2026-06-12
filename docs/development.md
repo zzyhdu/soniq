@@ -2,18 +2,18 @@
 
 This document describes the current local backend and Web UI workflow for Soniq.
 
-Soniq is currently in the local dev-identity, workspace-scoped recording, Postgres-backed recording persistence, original-audio probe, normalized-audio artifact, and fake transcription/summarization milestone. The commands below intentionally run a small backend foundation:
+Soniq is currently in the local dev-identity, workspace-scoped recording, Postgres-backed recording persistence, original-audio probe, normalized-audio artifact, fake transcription/summarization, and failed-recording retry milestone. The commands below intentionally run a small backend foundation:
 
 - the API exposes `GET /healthz`;
 - the API exposes dev identity endpoints: `GET /me` and `GET /workspaces`;
-- the API exposes workspace-scoped recording endpoints: `GET /workspaces/{workspace_id}/recordings`, `POST /workspaces/{workspace_id}/recordings`, `POST /workspaces/{workspace_id}/recordings/upload`, `GET /workspaces/{workspace_id}/recordings/{recording_id}`, `GET /workspaces/{workspace_id}/recordings/{recording_id}/status`, and `GET /workspaces/{workspace_id}/recordings/{recording_id}/details`;
+- the API exposes workspace-scoped recording endpoints: `GET /workspaces/{workspace_id}/recordings`, `POST /workspaces/{workspace_id}/recordings`, `POST /workspaces/{workspace_id}/recordings/upload`, `GET /workspaces/{workspace_id}/recordings/{recording_id}`, `GET /workspaces/{workspace_id}/recordings/{recording_id}/status`, `GET /workspaces/{workspace_id}/recordings/{recording_id}/details`, and `POST /workspaces/{workspace_id}/recordings/{recording_id}/retry`;
 - the production API command uses Soniq Postgres for user, workspace, membership, and recording metadata persistence;
 - `POST /workspaces/{workspace_id}/recordings` creates metadata-only recordings without starting processing; `POST /workspaces/{workspace_id}/recordings/upload` accepts multipart audio, writes the original audio through an object-store seam, persists audio metadata, and then invokes the same injectable recording processor seam;
-- the production API command wires the recording processor seam to Temporal and starts `RecordingProcessingWorkflow` asynchronously;
+- the production API command wires the recording processor seam to Temporal and starts `RecordingProcessingWorkflow` asynchronously; failed audio-backed recordings can be reset and re-enqueued through the retry endpoint;
 - the worker starts a real Temporal SDK worker, registers the recording processing workflow and Soniq Postgres-backed recording status/audio-probe/normalized-audio/transcript/summary activities, and polls the configured task queue;
 - local filesystem object storage is implemented for development; the worker resolves local object keys, runs `ffprobe` against uploaded original audio to persist probe metadata, and runs `ffmpeg` to write a deterministic normalized WAV/PCM artifact;
 - deterministic fake transcription and summarization providers are wired for local development verification; transcription reads the normalized audio artifact and persists transcript, transcript segment, and summary rows without external credentials;
-- the product Web UI in `apps/web` loads the dev user, selects a workspace, lists recording history, uploads audio through the Go API, polls processing status, and displays completed transcript/summary results;
+- the product Web UI in `apps/web` loads the dev user, selects a workspace, lists recording history, uploads audio through the Go API, exposes bookmarkable recording hash routes, polls processing status, displays failure reasons with retry, and displays completed transcript/summary results;
 - S3-compatible storage, real ASR providers, real LLM providers, and production authentication/RBAC are not implemented in this milestone.
 
 ## Prerequisites
@@ -188,7 +188,7 @@ Content-Type: application/json
 
 The identity, workspace, and recording endpoints now persist metadata in Soniq Postgres in the production API path. In local dev auth mode, every request resolves to `DEV_USER_ID=usr_dev`; baseline migration `0001` seeds `usr_dev`, `wsp_default`, and an owner membership. Records survive API process restarts as long as the local Postgres volume remains intact. Audio-backed recordings also write the original uploaded file under `LOCAL_STORAGE_PATH` through the local object-store provider; the worker later writes a sibling normalized artifact named `normalized.wav`.
 
-`POST /workspaces/{workspace_id}/recordings` creates a metadata-only recording row and returns that metadata record without enqueueing processing. After an audio-backed `POST /workspaces/{workspace_id}/recordings/upload` succeeds in Postgres, the API calls an injectable `RecordingProcessor` seam. In the production API command, that seam is wired to a Temporal-backed processor that starts `RecordingProcessingWorkflow` asynchronously with workflow ID `recording-processing-<recording_id>` on `TEMPORAL_TASK_QUEUE`. The upload HTTP response returns an explicit `{recording, processing_enqueued}` envelope; it does not wait for workflow completion. The worker consumes that workflow from the same task queue, uses Soniq Postgres-backed activities, and updates the recording status from `uploaded` through `processing`, `transcribing`, `summarizing`, and `completed`. For audio-backed recordings, the worker resolves the original local object path, runs `ffprobe`, persists original-audio probe metadata in `recording_audio_probes`, runs `ffmpeg` normalization to create a local WAV/PCM artifact, persists normalized metadata in `recording_normalized_audios`, calls deterministic fake transcription against the normalized audio path, calls deterministic fake summary providers, persists `recording_transcripts`, `recording_transcript_segments`, and `recording_summaries`, and then marks the recording `completed`. If probe, normalization, transcription, summarization, or completion fails, the workflow schedules a best-effort `failed` status update before returning the original error.
+`POST /workspaces/{workspace_id}/recordings` creates a metadata-only recording row and returns that metadata record without enqueueing processing. After an audio-backed `POST /workspaces/{workspace_id}/recordings/upload` succeeds in Postgres, the API calls an injectable `RecordingProcessor` seam. In the production API command, that seam is wired to a Temporal-backed processor that starts `RecordingProcessingWorkflow` asynchronously with workflow ID `recording-processing-<recording_id>` on `TEMPORAL_TASK_QUEUE`. The upload HTTP response returns an explicit `{recording, processing_enqueued}` envelope; it does not wait for workflow completion. The worker consumes that workflow from the same task queue, uses Soniq Postgres-backed activities, and updates the recording status from `uploaded` through `processing`, `transcribing`, `summarizing`, and `completed`. For audio-backed recordings, the worker resolves the original local object path, runs `ffprobe`, persists original-audio probe metadata in `recording_audio_probes`, runs `ffmpeg` normalization to create a local WAV/PCM artifact, persists normalized metadata in `recording_normalized_audios`, calls deterministic fake transcription against the normalized audio path, calls deterministic fake summary providers, persists `recording_transcripts`, `recording_transcript_segments`, and `recording_summaries`, and then marks the recording `completed` with `completed_at`. If probe, normalization, transcription, summarization, or completion fails, the workflow schedules a best-effort `failed` status update with `failure_reason` and `failed_at` before returning the original error.
 
 ### Upload an audio-backed recording
 
@@ -375,7 +375,32 @@ Expected status body before the worker has completed the workflow:
 After the worker has processed the workflow successfully, the same endpoint should return:
 
 ```json
-{"id":"rec_...","workspace_id":"wsp_default","status":"completed"}
+{"id":"rec_...","workspace_id":"wsp_default","status":"completed","completed_at":"..."}
+```
+
+If processing fails, the status response includes a reason:
+
+```json
+{"id":"rec_...","workspace_id":"wsp_default","status":"failed","failure_reason":"transcribe audio: ...","failed_at":"..."}
+```
+
+Retry a failed audio-backed recording:
+
+```bash
+curl -i -X POST http://localhost:18080/workspaces/wsp_default/recordings/<id>/retry
+```
+
+Expected retry response:
+
+```json
+{
+  "recording": {
+    "id": "rec_...",
+    "workspace_id": "wsp_default",
+    "status": "uploaded"
+  },
+  "processing_enqueued": true
+}
 ```
 
 The current workflow status path is:
@@ -423,7 +448,7 @@ Apply missing local application migrations:
 make migrate
 ```
 
-`make migrate` runs `scripts/migrate-local.sh`. The script maintains a local `schema_migrations` table. The current application schema is represented by `backend/migrations/0001_baseline.up.sql` and recorded as baseline version `1`.
+`make migrate` runs `scripts/migrate-local.sh`. The script maintains a local `schema_migrations` table. The current baseline application schema is represented by `backend/migrations/0001_baseline.up.sql` and recorded as version `1`. Recording failure metadata is added by `backend/migrations/0002_add_recording_failure_metadata.up.sql` and recorded as version `2`.
 
 For older local databases that were created before `schema_migrations` existed, the script can recognize a complete pre-baseline schema and record `version='1'` without reapplying SQL. If a local database only contains part of the baseline schema, inspect or reset that local application database before running `make migrate` again.
 
@@ -433,7 +458,7 @@ Baseline migration `0001` seeds local dev identity data:
 - workspace: `wsp_default`
 - owner membership: `usr_dev` in `wsp_default`
 
-After the baseline is present, the script records `version='1'` in `schema_migrations`; future schema changes should be added as later migration versions instead of extending baseline version `1`.
+After the baseline is present, the script records `version='1'` in `schema_migrations`, then applies later migration versions such as `version='2'`. Future schema changes should be added as later migration versions instead of extending baseline version `1`.
 
 For local reset/testing, use the matching down migration only when you intentionally want to destroy local application schema/data. The normal local workflow should use `make migrate`.
 

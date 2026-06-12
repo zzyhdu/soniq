@@ -7,6 +7,7 @@ import {
   getRecordingDetails,
   getRecordingStatus,
   listRecordings,
+  retryRecording,
   uploadRecording,
 } from './recordings';
 
@@ -124,6 +125,24 @@ describe('recording reads', () => {
   });
 });
 
+describe('recording retry', () => {
+  it('posts to the workspace retry endpoint', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        recording: recordingFixture({ id: 'rec-failed', status: 'uploaded' }),
+        processing_enqueued: true,
+      }),
+    );
+
+    const result = await retryRecording('wsp_default', 'rec-failed', { fetch: fetchMock });
+
+    expect(result.processing_enqueued).toBe(true);
+    expect(fetchMock).toHaveBeenCalledWith('/workspaces/wsp_default/recordings/rec-failed/retry', {
+      method: 'POST',
+    });
+  });
+});
+
 describe('API errors', () => {
   it('turns JSON error responses into typed errors', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
@@ -148,6 +167,9 @@ type RecordingFixture = {
   status: string;
   workflow_type: string;
   language: string;
+  failure_reason?: string;
+  completed_at?: string;
+  failed_at?: string;
   created_at: string;
   updated_at: string;
 };

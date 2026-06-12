@@ -32,6 +32,13 @@ type RecordingReference struct {
 	RecordingID string
 }
 
+// RecordingFailure contains failure metadata to persist for a recording.
+type RecordingFailure struct {
+	WorkspaceID string
+	RecordingID string
+	Reason      string
+}
+
 // RecordingProcessingResult is the result returned after processing completes.
 type RecordingProcessingResult struct {
 	WorkspaceID string
@@ -281,8 +288,11 @@ func (a *RecordingProcessingActivities) CompleteRecordingProcessing(ctx context.
 }
 
 // FailRecordingProcessing persists a failed status transition.
-func (a *RecordingProcessingActivities) FailRecordingProcessing(ctx context.Context, recording RecordingReference) error {
-	_, err := a.updateStatus(recording, domain.RecordingStatusFailed)
+func (a *RecordingProcessingActivities) FailRecordingProcessing(ctx context.Context, failure RecordingFailure) error {
+	_, err := a.updateStatus(RecordingReference{
+		WorkspaceID: failure.WorkspaceID,
+		RecordingID: failure.RecordingID,
+	}, domain.RecordingStatusFailed, failure.Reason)
 	return err
 }
 
@@ -619,8 +629,22 @@ func (r FFProbeRunner) Probe(ctx context.Context, path string) (AudioProbeResult
 	if binary == "" {
 		binary = "ffprobe"
 	}
-	output, err := exec.CommandContext(ctx, binary, "-v", "error", "-print_format", "json", "-show_format", "-show_streams", path).Output()
+	stat, err := os.Stat(path)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return AudioProbeResult{}, fmt.Errorf("audio file not found: %s", path)
+		}
+		return AudioProbeResult{}, fmt.Errorf("stat audio file: %w", err)
+	}
+	if stat.IsDir() {
+		return AudioProbeResult{}, fmt.Errorf("audio path is a directory: %s", path)
+	}
+
+	output, err := exec.CommandContext(ctx, binary, "-v", "error", "-print_format", "json", "-show_format", "-show_streams", path).CombinedOutput()
+	if err != nil {
+		if detail := strings.TrimSpace(string(output)); detail != "" {
+			return AudioProbeResult{}, fmt.Errorf("run ffprobe: %s: %w", detail, err)
+		}
 		return AudioProbeResult{}, fmt.Errorf("run ffprobe: %w", err)
 	}
 	return parseFFProbeOutput(output, time.Now().UTC())
@@ -694,7 +718,7 @@ func parseIntOrZero(value string) int {
 	return parsed
 }
 
-func (a *RecordingProcessingActivities) updateStatus(recording RecordingReference, status domain.RecordingStatus) (domain.Recording, error) {
+func (a *RecordingProcessingActivities) updateStatus(recording RecordingReference, status domain.RecordingStatus, failureReason ...string) (domain.Recording, error) {
 	if recording.WorkspaceID == "" {
 		return domain.Recording{}, errors.New("workspace id is required")
 	}
@@ -704,10 +728,15 @@ func (a *RecordingProcessingActivities) updateStatus(recording RecordingReferenc
 	if a == nil || a.store == nil {
 		return domain.Recording{}, errors.New("recording store is required")
 	}
+	reason := ""
+	if len(failureReason) > 0 {
+		reason = failureReason[0]
+	}
 	updated, err := a.store.UpdateStatus(recordings.UpdateRecordingStatusInput{
-		WorkspaceID: recording.WorkspaceID,
-		ID:          recording.RecordingID,
-		Status:      status,
+		WorkspaceID:   recording.WorkspaceID,
+		ID:            recording.RecordingID,
+		Status:        status,
+		FailureReason: reason,
 	})
 	if err != nil {
 		return domain.Recording{}, err

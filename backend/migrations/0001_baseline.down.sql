@@ -1,7 +1,7 @@
 DO $$
 BEGIN
   IF to_regclass('public.schema_migrations') IS NOT NULL THEN
-    DELETE FROM schema_migrations WHERE version = '1';
+    DELETE FROM schema_migrations WHERE version IN ('1', '2');
   END IF;
 END $$;
 

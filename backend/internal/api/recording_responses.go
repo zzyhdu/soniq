@@ -19,6 +19,11 @@ type uploadRecordingResponse struct {
 	ProcessingEnqueued bool             `json:"processing_enqueued"`
 }
 
+type retryRecordingResponse struct {
+	Recording          recordingResponse `json:"recording"`
+	ProcessingEnqueued bool              `json:"processing_enqueued"`
+}
+
 type listRecordingsResponse struct {
 	Recordings []recordingResponse `json:"recordings"`
 }
@@ -33,6 +38,9 @@ type recordingResponse struct {
 	AudioObjectKey   string                 `json:"audio_object_key,omitempty"`
 	AudioContentType string                 `json:"audio_content_type,omitempty"`
 	AudioSizeBytes   int64                  `json:"audio_size_bytes,omitempty"`
+	FailureReason    string                 `json:"failure_reason,omitempty"`
+	CompletedAt      *time.Time             `json:"completed_at,omitempty"`
+	FailedAt         *time.Time             `json:"failed_at,omitempty"`
 	CreatedAt        time.Time              `json:"created_at"`
 	UpdatedAt        time.Time              `json:"updated_at"`
 }
@@ -79,6 +87,9 @@ func toRecordingResponse(recording domain.Recording) recordingResponse {
 		AudioObjectKey:   recording.AudioObjectKey,
 		AudioContentType: recording.AudioContentType,
 		AudioSizeBytes:   recording.AudioSizeBytes,
+		FailureReason:    recording.FailureReason,
+		CompletedAt:      recording.CompletedAt,
+		FailedAt:         recording.FailedAt,
 		CreatedAt:        recording.CreatedAt,
 		UpdatedAt:        recording.UpdatedAt,
 	}

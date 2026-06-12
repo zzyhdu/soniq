@@ -36,6 +36,9 @@ type Recording struct {
 	AudioObjectKey   string          `json:"audio_object_key,omitempty"`
 	AudioContentType string          `json:"audio_content_type,omitempty"`
 	AudioSizeBytes   int64           `json:"audio_size_bytes,omitempty"`
+	FailureReason    string          `json:"failure_reason,omitempty"`
+	CompletedAt      *time.Time      `json:"completed_at,omitempty"`
+	FailedAt         *time.Time      `json:"failed_at,omitempty"`
 	CreatedAt        time.Time       `json:"created_at"`
 	UpdatedAt        time.Time       `json:"updated_at"`
 }

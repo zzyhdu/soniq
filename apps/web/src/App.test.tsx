@@ -10,6 +10,7 @@ import { App } from './App';
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  window.history.replaceState(null, '', '/');
 });
 
 function renderApp() {
@@ -48,6 +49,16 @@ describe('App workspace recording flow', () => {
     expect(screen.getByText('Full transcript text.')).toBeInTheDocument();
   });
 
+  it('opens a recording from a bookmarkable hash route', async () => {
+    mockAppFetch();
+    window.history.replaceState(null, '', '/#/workspaces/wsp_default/recordings/rec_done');
+
+    renderApp();
+
+    expect(await screen.findByText('Weekly sync summary')).toBeInTheDocument();
+    expect(screen.getByText('Full transcript text.')).toBeInTheDocument();
+  });
+
   it('uploads into the selected workspace and refreshes recording history', async () => {
     const requests = mockAppFetch();
     const user = userEvent.setup();
@@ -81,6 +92,27 @@ describe('App workspace recording flow', () => {
     expect(await screen.findByRole('button', { name: /Team review/i })).toBeInTheDocument();
     expect(requests.some((request) => request.url === '/workspaces/wsp_team/recordings')).toBe(true);
   });
+
+  it('shows failed recording reasons and retries failed recordings', async () => {
+    const requests = mockAppFetch({ includeFailedRecording: true });
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(await screen.findByRole('button', { name: /Failed upload/i }));
+
+    expect(await screen.findByText(/transcribe audio: provider failed/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /^retry$/i }));
+
+    await waitFor(() => {
+      expect(requests.some((request) => (
+        request.method === 'POST' &&
+        request.url === '/workspaces/wsp_default/recordings/rec_failed/retry'
+      ))).toBe(true);
+    });
+    expect(await screen.findByText('Retry requested')).toBeInTheDocument();
+    expect(screen.queryByText('Upload created')).not.toBeInTheDocument();
+  });
 });
 
 type CapturedRequest = {
@@ -88,7 +120,7 @@ type CapturedRequest = {
   method: string;
 };
 
-function mockAppFetch(options: { includeTeamWorkspace?: boolean } = {}) {
+function mockAppFetch(options: { includeTeamWorkspace?: boolean; includeFailedRecording?: boolean } = {}) {
   const requests: CapturedRequest[] = [];
 
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
@@ -130,6 +162,14 @@ function mockAppFetch(options: { includeTeamWorkspace?: boolean } = {}) {
     if (url === '/workspaces/wsp_default/recordings' && method === 'GET') {
       return jsonResponse({
         recordings: [
+          ...(options.includeFailedRecording ? [
+            recordingFixture({
+              id: 'rec_failed',
+              title: 'Failed upload',
+              status: 'failed',
+              failure_reason: 'transcribe audio: provider failed',
+            }),
+          ] : []),
           recordingFixture({ id: 'rec_done', title: 'Weekly sync', status: 'completed' }),
         ],
       });
@@ -156,6 +196,22 @@ function mockAppFetch(options: { includeTeamWorkspace?: boolean } = {}) {
 
     if (url === '/workspaces/wsp_default/recordings/rec_uploaded/status') {
       return jsonResponse({ id: 'rec_uploaded', workspace_id: 'wsp_default', status: 'uploaded' });
+    }
+
+    if (url === '/workspaces/wsp_default/recordings/rec_failed/status') {
+      return jsonResponse({
+        id: 'rec_failed',
+        workspace_id: 'wsp_default',
+        status: 'failed',
+        failure_reason: 'transcribe audio: provider failed',
+      });
+    }
+
+    if (url === '/workspaces/wsp_default/recordings/rec_failed/retry' && method === 'POST') {
+      return jsonResponse({
+        recording: recordingFixture({ id: 'rec_failed', title: 'Failed upload', status: 'uploaded' }),
+        processing_enqueued: true,
+      });
     }
 
     if (url === '/workspaces/wsp_default/recordings/rec_done/details') {

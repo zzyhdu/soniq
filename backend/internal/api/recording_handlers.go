@@ -43,7 +43,7 @@ func workspaceByIDHandler(store RecordingStore, workspaceStore WorkspaceStore, a
 			uploadRecordingHandler(store, processor, objectStore, workspaceID)(w, r)
 			return
 		case strings.HasPrefix(rest, "/recordings/"):
-			recordingByIDHandler(store, workspaceID, strings.TrimPrefix(rest, "/recordings/"))(w, r)
+			recordingByIDHandler(store, processor, workspaceID, strings.TrimPrefix(rest, "/recordings/"))(w, r)
 			return
 		default:
 			http.NotFound(w, r)
@@ -189,21 +189,30 @@ func recordingAudioObjectKey(workspaceID string, filename string) string {
 	return "workspaces/" + workspaceID + "/recordings/" + time.Now().UTC().Format("20060102T150405.000000000Z") + "/" + name
 }
 
-func recordingByIDHandler(store RecordingStore, workspaceID string, path string) http.HandlerFunc {
+func recordingByIDHandler(store RecordingStore, processor RecordingProcessor, workspaceID string, path string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			w.Header().Set("Allow", http.MethodGet)
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
 		var wantsDetails bool
+		var wantsRetry bool
 		id, wantsStatus := strings.CutSuffix(path, "/status")
 		if !wantsStatus {
 			id, wantsDetails = strings.CutSuffix(path, "/details")
 		}
+		if !wantsStatus && !wantsDetails {
+			id, wantsRetry = strings.CutSuffix(path, "/retry")
+		}
 		if id == "" || strings.Contains(id, "/") {
 			http.NotFound(w, r)
+			return
+		}
+
+		if wantsRetry {
+			retryRecordingHandler(store, processor, workspaceID, id)(w, r)
+			return
+		}
+
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", http.MethodGet)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
@@ -220,13 +229,19 @@ func recordingByIDHandler(store RecordingStore, workspaceID string, path string)
 		if wantsStatus {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(struct {
-				ID          string                 `json:"id"`
-				WorkspaceID string                 `json:"workspace_id"`
-				Status      domain.RecordingStatus `json:"status"`
+				ID            string                 `json:"id"`
+				WorkspaceID   string                 `json:"workspace_id"`
+				Status        domain.RecordingStatus `json:"status"`
+				FailureReason string                 `json:"failure_reason,omitempty"`
+				CompletedAt   *time.Time             `json:"completed_at,omitempty"`
+				FailedAt      *time.Time             `json:"failed_at,omitempty"`
 			}{
-				ID:          recording.ID,
-				WorkspaceID: recording.WorkspaceID,
-				Status:      recording.Status,
+				ID:            recording.ID,
+				WorkspaceID:   recording.WorkspaceID,
+				Status:        recording.Status,
+				FailureReason: recording.FailureReason,
+				CompletedAt:   recording.CompletedAt,
+				FailedAt:      recording.FailedAt,
 			})
 			return
 		}
@@ -265,6 +280,66 @@ func recordingByIDHandler(store RecordingStore, workspaceID string, path string)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(recording)
+	}
+}
+
+func retryRecordingHandler(store RecordingStore, processor RecordingProcessor, workspaceID string, id string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		recording, ok, err := store.GetForWorkspace(recordings.GetRecordingInput{WorkspaceID: workspaceID, ID: id})
+		if err != nil {
+			http.Error(w, "get recording", http.StatusInternalServerError)
+			return
+		}
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		if recording.Status != domain.RecordingStatusFailed {
+			http.Error(w, "recording is not failed", http.StatusConflict)
+			return
+		}
+		if strings.TrimSpace(recording.AudioObjectKey) == "" {
+			http.Error(w, "recording has no audio to retry", http.StatusConflict)
+			return
+		}
+
+		retryStore, ok := store.(RecordingRetryStore)
+		if !ok {
+			http.Error(w, "recording retry is not configured", http.StatusInternalServerError)
+			return
+		}
+		resetRecording, err := retryStore.ResetForRetry(recordings.RetryRecordingInput{WorkspaceID: workspaceID, ID: id})
+		if err != nil {
+			http.Error(w, "reset recording retry", http.StatusInternalServerError)
+			return
+		}
+		processingEnqueued := true
+		if err := processor.Enqueue(resetRecording); err != nil {
+			processingEnqueued = false
+			failedRecording, failErr := retryStore.UpdateStatus(recordings.UpdateRecordingStatusInput{
+				WorkspaceID:   workspaceID,
+				ID:            id,
+				Status:        domain.RecordingStatusFailed,
+				FailureReason: "retry enqueue failed: " + err.Error(),
+			})
+			if failErr != nil {
+				http.Error(w, "mark retry enqueue failure", http.StatusInternalServerError)
+				return
+			}
+			resetRecording = failedRecording
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(retryRecordingResponse{
+			Recording:          toRecordingResponse(resetRecording),
+			ProcessingEnqueued: processingEnqueued,
+		})
 	}
 }
 
