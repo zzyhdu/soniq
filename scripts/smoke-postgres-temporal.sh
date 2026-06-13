@@ -5,13 +5,18 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="${COMPOSE_FILE:-compose.temporal.yml}"
 API_URL="${API_URL:-http://localhost:8080}"
 API_ADDRESS="${API_ADDRESS:-:8080}"
+AUTH_SESSION_TTL_HOURS="${AUTH_SESSION_TTL_HOURS:-720}"
+AUTH_COOKIE_SECURE="${AUTH_COOKIE_SECURE:-false}"
 TEMPORAL_NAMESPACE="${TEMPORAL_NAMESPACE:-default}"
 TEMPORAL_TASK_QUEUE="${TEMPORAL_TASK_QUEUE:-soniq-audio-pipeline}"
 POSTGRES_USER="${POSTGRES_USER:-soniq_user}"
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-soniq_password}"
 POSTGRES_DB="${POSTGRES_DB:-soniq}"
 POSTGRES_DSN="${POSTGRES_DSN:-postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@localhost:5432/$POSTGRES_DB?sslmode=disable}"
-SMOKE_WORKSPACE_ID="${SMOKE_WORKSPACE_ID:-wsp_default}"
+SMOKE_WORKSPACE_ID="${SMOKE_WORKSPACE_ID:-}"
+SMOKE_EMAIL="${SMOKE_EMAIL:-smoke@local.soniq}"
+SMOKE_DISPLAY_NAME="${SMOKE_DISPLAY_NAME:-Smoke Tester}"
+SMOKE_PASSWORD="${SMOKE_PASSWORD:-correct horse smoke}"
 STORAGE_PROVIDER="${STORAGE_PROVIDER:-local}"
 LOCAL_STORAGE_PATH="${LOCAL_STORAGE_PATH:-$ROOT_DIR/var/uploads/smoke}"
 TRANSCRIPTION_PROVIDER="${TRANSCRIPTION_PROVIDER:-fake_transcription}"
@@ -40,6 +45,7 @@ WORKER_PID=""
 LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/soniq-smoke.XXXXXX")"
 API_LOG="$LOG_DIR/api.log"
 WORKER_LOG="$LOG_DIR/worker.log"
+COOKIE_JAR="$LOG_DIR/cookies.txt"
 case "$LOCAL_STORAGE_PATH" in
   /*) EFFECTIVE_LOCAL_STORAGE_PATH="$LOCAL_STORAGE_PATH" ;;
   *) EFFECTIVE_LOCAL_STORAGE_PATH="$ROOT_DIR/$LOCAL_STORAGE_PATH" ;;
@@ -148,10 +154,47 @@ start_api() {
     TEMPORAL_TASK_QUEUE="$5" \
     STORAGE_PROVIDER="$6" \
     LOCAL_STORAGE_PATH="$7" \
+    AUTH_SESSION_TTL_HOURS="$8" \
+    AUTH_COOKIE_SECURE="$9" \
     make api
-  ' _ "$ROOT_DIR" "$API_ADDRESS" "$POSTGRES_DSN" "$TEMPORAL_NAMESPACE" "$TEMPORAL_TASK_QUEUE" "$STORAGE_PROVIDER" "$EFFECTIVE_LOCAL_STORAGE_PATH" >>"$API_LOG" 2>&1 &
+  ' _ "$ROOT_DIR" "$API_ADDRESS" "$POSTGRES_DSN" "$TEMPORAL_NAMESPACE" "$TEMPORAL_TASK_QUEUE" "$STORAGE_PROVIDER" "$EFFECTIVE_LOCAL_STORAGE_PATH" "$AUTH_SESSION_TTL_HOURS" "$AUTH_COOKIE_SECURE" >>"$API_LOG" 2>&1 &
   API_PID=$!
   wait_for_api
+}
+
+authenticate_api() {
+  local response_file status workspaces_response
+  response_file="$LOG_DIR/auth-response.json"
+
+  log "creating or signing in smoke user $SMOKE_EMAIL"
+  status="$(auth_json | curl -sS -o "$response_file" -w "%{http_code}" -c "$COOKIE_JAR" \
+    -H 'Content-Type: application/json' \
+    -X POST "$API_URL/auth/signup" \
+    --data-binary @-)"
+  if [[ "$status" == "201" ]]; then
+    log "created smoke user"
+  elif [[ "$status" == "409" ]]; then
+    status="$(auth_json | curl -sS -o "$response_file" -w "%{http_code}" -c "$COOKIE_JAR" \
+      -H 'Content-Type: application/json' \
+      -X POST "$API_URL/auth/signin" \
+      --data-binary @-)"
+    if [[ "$status" != "200" ]]; then
+      log "sign in failed with HTTP $status"
+      cat "$response_file"
+      return 1
+    fi
+    log "signed in existing smoke user"
+  else
+    log "signup failed with HTTP $status"
+    cat "$response_file"
+    return 1
+  fi
+
+  workspaces_response="$(curl -fsS -b "$COOKIE_JAR" "$API_URL/workspaces")"
+  if [[ -z "$SMOKE_WORKSPACE_ID" ]]; then
+    SMOKE_WORKSPACE_ID="$(printf '%s\n' "$workspaces_response" | extract_first_workspace_id)"
+  fi
+  log "using smoke workspace $SMOKE_WORKSPACE_ID"
 }
 
 stop_api() {
@@ -182,6 +225,23 @@ value = json.load(sys.stdin)
 for part in sys.argv[1].split("."):
     value = value[part]
 print(value)' "$field"
+}
+
+extract_first_workspace_id() {
+  python3 -c 'import json,sys
+data = json.load(sys.stdin)
+workspaces = data.get("workspaces") or []
+if not workspaces:
+    raise SystemExit("no workspaces returned for authenticated smoke user")
+print(workspaces[0]["id"])'
+}
+
+auth_json() {
+  python3 -c 'import json,sys
+payload = {"email": sys.argv[1], "password": sys.argv[2]}
+if sys.argv[3]:
+    payload["display_name"] = sys.argv[3]
+print(json.dumps(payload))' "$SMOKE_EMAIL" "$SMOKE_PASSWORD" "$SMOKE_DISPLAY_NAME"
 }
 
 assert_json_field_equals() {
@@ -382,6 +442,7 @@ main() {
 
   start_worker
   start_api
+  authenticate_api
 
   log "uploading recording audio via POST /workspaces/$SMOKE_WORKSPACE_ID/recordings/upload"
   local response recording_id workflow_id audio_object_key audio_size audio_file upload_title upload_language upload_filename upload_content_type
@@ -404,7 +465,7 @@ main() {
     ffmpeg -hide_banner -loglevel error -f lavfi -i sine=frequency=1000:duration=1 -ac 1 -ar 16000 -c:a pcm_s16le "$audio_file"
   fi
   audio_size="$(wc -c <"$audio_file" | tr -d ' ')"
-  response="$(curl -fsS -X POST "$API_URL/workspaces/$SMOKE_WORKSPACE_ID/recordings/upload" \
+  response="$(curl -fsS -b "$COOKIE_JAR" -X POST "$API_URL/workspaces/$SMOKE_WORKSPACE_ID/recordings/upload" \
     -F "title=$upload_title" \
     -F 'workflow_type=meeting' \
     -F "language=$upload_language" \
@@ -428,7 +489,7 @@ main() {
   assert_recording_workspace_in_db "$recording_id" "$SMOKE_WORKSPACE_ID"
 
   log "verifying GET /workspaces/$SMOKE_WORKSPACE_ID/recordings/$recording_id before API restart"
-  response="$(curl -fsS "$API_URL/workspaces/$SMOKE_WORKSPACE_ID/recordings/$recording_id")"
+  response="$(curl -fsS -b "$COOKIE_JAR" "$API_URL/workspaces/$SMOKE_WORKSPACE_ID/recordings/$recording_id")"
   assert_json_field_equals "$response" workspace_id "$SMOKE_WORKSPACE_ID"
   assert_json_field_equals "$response" audio_object_key "$audio_object_key"
   assert_json_field_equals "$response" audio_content_type "$upload_content_type"
@@ -439,13 +500,13 @@ main() {
   start_api
 
   log "verifying GET /workspaces/$SMOKE_WORKSPACE_ID/recordings/$recording_id after API restart"
-  response="$(curl -fsS "$API_URL/workspaces/$SMOKE_WORKSPACE_ID/recordings/$recording_id")"
+  response="$(curl -fsS -b "$COOKIE_JAR" "$API_URL/workspaces/$SMOKE_WORKSPACE_ID/recordings/$recording_id")"
   assert_json_field_equals "$response" workspace_id "$SMOKE_WORKSPACE_ID"
   assert_json_field_equals "$response" audio_object_key "$audio_object_key"
   assert_json_field_equals "$response" audio_content_type "$upload_content_type"
   assert_json_field_equals "$response" audio_size_bytes "$audio_size"
   assert_uploaded_object "$audio_object_key" "$audio_size"
-  curl -fsS "$API_URL/workspaces/$SMOKE_WORKSPACE_ID/recordings/$recording_id/status" >/dev/null
+  curl -fsS -b "$COOKIE_JAR" "$API_URL/workspaces/$SMOKE_WORKSPACE_ID/recordings/$recording_id/status" >/dev/null
 
   log "waiting for Temporal workflow completion"
   local describe_output=""

@@ -15,8 +15,10 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/zzyhdu/soniq/backend/internal/api"
+	"github.com/zzyhdu/soniq/backend/internal/auth"
 	"github.com/zzyhdu/soniq/backend/internal/config"
 	"github.com/zzyhdu/soniq/backend/internal/domain"
 	"github.com/zzyhdu/soniq/backend/internal/recordings"
@@ -27,6 +29,7 @@ import (
 func TestBuildHandlerCreatesRecordingSessionWithoutStartingWorkflow(t *testing.T) {
 	temporalClient := &temporalClientSpy{}
 	store := newBuildHandlerRecordingStoreSpy()
+	enableBuildHandlerPassword(t, store)
 	storeFactory := &appStoreFactorySpy{store: store}
 	cfg := config.Config{
 		APIAddress:        ":0",
@@ -60,6 +63,7 @@ func TestBuildHandlerCreatesRecordingSessionWithoutStartingWorkflow(t *testing.T
 
 	request := httptest.NewRequest(http.MethodPost, "/workspaces/wsp_default/recordings", strings.NewReader(`{"title":"Weekly sync","workflow_type":"meeting","language":"en"}`))
 	request.Header.Set("Content-Type", "application/json")
+	request.AddCookie(buildHandlerSessionCookie(t, handler))
 	response := httptest.NewRecorder()
 
 	handler.ServeHTTP(response, request)
@@ -79,6 +83,7 @@ func TestBuildHandlerCreatesRecordingSessionWithoutStartingWorkflow(t *testing.T
 func TestBuildHandlerWiresUploadEndpointToLocalObjectStorage(t *testing.T) {
 	temporalClient := &temporalClientSpy{}
 	store := newBuildHandlerRecordingStoreSpy()
+	enableBuildHandlerPassword(t, store)
 	storeFactory := &appStoreFactorySpy{store: store}
 	uploadRoot := t.TempDir()
 	cfg := config.Config{
@@ -103,6 +108,7 @@ func TestBuildHandlerWiresUploadEndpointToLocalObjectStorage(t *testing.T) {
 		"workflow_type": "meeting",
 		"language":      "en",
 	}, "audio", "weekly.wav", "audio/wav", "audio-bytes")
+	request.AddCookie(buildHandlerSessionCookie(t, handler))
 	response := httptest.NewRecorder()
 
 	handler.ServeHTTP(response, request)
@@ -190,6 +196,65 @@ func TestBuildHandlerCleanupClosesTemporalClient(t *testing.T) {
 	}
 }
 
+func TestBuildHandlerLoginSessionCanReadMe(t *testing.T) {
+	temporalClient := &temporalClientSpy{}
+	store := newBuildHandlerRecordingStoreSpy()
+	enableBuildHandlerPassword(t, store)
+	storeFactory := &appStoreFactorySpy{store: store}
+	cfg := config.Config{
+		AuthSessionTTLHours: 24,
+		PostgresDSN:         "postgres://custom_user:***@db:5432/custom?sslmode=disable",
+		TemporalAddress:     "temporal.example:7233",
+		TemporalNamespace:   "default",
+		TemporalTaskQueue:   "soniq-audio-pipeline",
+		StorageProvider:     "local",
+		LocalStoragePath:    t.TempDir(),
+	}
+
+	handler, cleanup, err := buildHandler(context.Background(), cfg, func(context.Context, config.Config) (temporalWorkflowClient, error) {
+		return temporalClient, nil
+	}, storeFactory.Open)
+	if err != nil {
+		t.Fatalf("buildHandler returned error: %v", err)
+	}
+	defer cleanup()
+
+	meRequest := httptest.NewRequest(http.MethodGet, "/me", nil)
+	meRequest.AddCookie(buildHandlerSessionCookie(t, handler))
+	meResponse := httptest.NewRecorder()
+	handler.ServeHTTP(meResponse, meRequest)
+	if meResponse.Code != http.StatusOK {
+		t.Fatalf("me status code = %d, want %d; body=%s", meResponse.Code, http.StatusOK, meResponse.Body.String())
+	}
+}
+
+func enableBuildHandlerPassword(t *testing.T, store *buildHandlerRecordingStoreSpy) {
+	t.Helper()
+
+	passwordHash, err := auth.HashPassword("correct horse")
+	if err != nil {
+		t.Fatalf("HashPassword returned error: %v", err)
+	}
+	store.auth.passwordHash = passwordHash
+}
+
+func buildHandlerSessionCookie(t *testing.T, handler http.Handler) *http.Cookie {
+	t.Helper()
+
+	loginRequest := httptest.NewRequest(http.MethodPost, "/auth/signin", strings.NewReader(`{"email":"dev@local.soniq","password":"correct horse"}`))
+	loginRequest.Header.Set("Content-Type", "application/json")
+	loginResponse := httptest.NewRecorder()
+	handler.ServeHTTP(loginResponse, loginRequest)
+	if loginResponse.Code != http.StatusOK {
+		t.Fatalf("login status code = %d, want %d; body=%s", loginResponse.Code, http.StatusOK, loginResponse.Body.String())
+	}
+	cookies := loginResponse.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Name != api.DefaultSessionCookieName {
+		t.Fatalf("login cookies = %+v, want session cookie", cookies)
+	}
+	return cookies[0]
+}
+
 func sameFunction(a, b interface{}) bool {
 	return reflect.ValueOf(a).Pointer() == reflect.ValueOf(b).Pointer()
 }
@@ -235,12 +300,16 @@ func (s *appStoreFactorySpy) Open(ctx context.Context, dsn string) (appStoreClie
 
 type buildHandlerRecordingStoreSpy struct {
 	stored map[string]domain.Recording
+	auth   *buildHandlerAuthStoreSpy
 	nextID int
 	closed bool
 }
 
 func newBuildHandlerRecordingStoreSpy() *buildHandlerRecordingStoreSpy {
-	return &buildHandlerRecordingStoreSpy{stored: make(map[string]domain.Recording)}
+	return &buildHandlerRecordingStoreSpy{
+		stored: make(map[string]domain.Recording),
+		auth:   newBuildHandlerAuthStoreSpy(),
+	}
 }
 
 func (s *buildHandlerRecordingStoreSpy) RecordingStore() api.RecordingDetailsStore {
@@ -249,6 +318,10 @@ func (s *buildHandlerRecordingStoreSpy) RecordingStore() api.RecordingDetailsSto
 
 func (s *buildHandlerRecordingStoreSpy) WorkspaceStore() api.WorkspaceStore {
 	return s
+}
+
+func (s *buildHandlerRecordingStoreSpy) AuthStore() appAuthStore {
+	return s.auth
 }
 
 func (s *buildHandlerRecordingStoreSpy) Create(input recordings.CreateRecordingInput) (domain.Recording, error) {
@@ -339,6 +412,64 @@ func (s *buildHandlerRecordingStoreSpy) GetWorkspaceForUser(_ context.Context, u
 
 func (s *buildHandlerRecordingStoreSpy) Close() {
 	s.closed = true
+}
+
+type buildHandlerAuthStoreSpy struct {
+	user         domain.User
+	passwordHash string
+	sessions     []auth.CreateSessionInput
+}
+
+func newBuildHandlerAuthStoreSpy() *buildHandlerAuthStoreSpy {
+	return &buildHandlerAuthStoreSpy{
+		user: domain.User{
+			ID:          "usr_dev",
+			Email:       "dev@local.soniq",
+			DisplayName: "Local Developer",
+		},
+	}
+}
+
+func (s *buildHandlerAuthStoreSpy) GetUserByEmail(_ context.Context, email string) (domain.User, string, bool, error) {
+	if email != s.user.Email {
+		return domain.User{}, "", false, nil
+	}
+	return s.user, s.passwordHash, true, nil
+}
+
+func (s *buildHandlerAuthStoreSpy) SignUp(_ context.Context, input auth.SignUpInput) (domain.User, error) {
+	s.user.Email = input.Email
+	s.user.DisplayName = input.DisplayName
+	s.passwordHash = input.PasswordHash
+	return s.user, nil
+}
+
+func (s *buildHandlerAuthStoreSpy) CreateSession(_ context.Context, input auth.CreateSessionInput) (auth.Session, error) {
+	s.sessions = append(s.sessions, input)
+	return auth.Session{
+		ID:        "ses_test",
+		UserID:    input.UserID,
+		TokenHash: input.TokenHash,
+		ExpiresAt: input.ExpiresAt,
+	}, nil
+}
+
+func (s *buildHandlerAuthStoreSpy) GetActiveSessionByTokenHash(_ context.Context, tokenHash string, now time.Time) (auth.Session, bool, error) {
+	for _, session := range s.sessions {
+		if session.TokenHash == tokenHash && session.ExpiresAt.After(now) {
+			return auth.Session{
+				ID:        "ses_test",
+				UserID:    session.UserID,
+				TokenHash: session.TokenHash,
+				ExpiresAt: session.ExpiresAt,
+			}, true, nil
+		}
+	}
+	return auth.Session{}, false, nil
+}
+
+func (s *buildHandlerAuthStoreSpy) RevokeSession(context.Context, string, time.Time) error {
+	return nil
 }
 
 type temporalClientSpy struct {

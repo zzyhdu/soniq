@@ -10,8 +10,8 @@ import (
 type Config struct {
 	AppEnv                                       string
 	PublicURL                                    string
-	AuthMode                                     string
-	DevUserID                                    string
+	AuthSessionTTLHours                          int64
+	AuthCookieSecure                             bool
 	APIAddress                                   string
 	PostgresDSN                                  string
 	TemporalAddress                              string
@@ -42,8 +42,8 @@ func LoadFromEnv() Config {
 	return Config{
 		AppEnv:                             envString("APP_ENV", "development"),
 		PublicURL:                          envString("APP_PUBLIC_URL", "http://localhost:8080"),
-		AuthMode:                           envString("AUTH_MODE", "dev"),
-		DevUserID:                          envString("DEV_USER_ID", "usr_dev"),
+		AuthSessionTTLHours:                envInt64("AUTH_SESSION_TTL_HOURS", 24*30),
+		AuthCookieSecure:                   envBool("AUTH_COOKIE_SECURE", false),
 		APIAddress:                         envString("API_ADDRESS", ":8080"),
 		PostgresDSN:                        envString("POSTGRES_DSN", "postgres://soniq_user:soniq_password@localhost:5432/soniq?sslmode=disable"),
 		TemporalAddress:                    envString("TEMPORAL_ADDRESS", "localhost:7233"),
@@ -75,14 +75,8 @@ func (c Config) ValidateForStartup() error {
 	if strings.TrimSpace(c.PostgresDSN) == "" {
 		return fmt.Errorf("POSTGRES_DSN is required")
 	}
-	if strings.TrimSpace(c.AuthMode) == "" {
-		return fmt.Errorf("AUTH_MODE is required")
-	}
-	if strings.TrimSpace(c.AuthMode) != "dev" {
-		return fmt.Errorf("unsupported AUTH_MODE %q", c.AuthMode)
-	}
-	if strings.TrimSpace(c.DevUserID) == "" {
-		return fmt.Errorf("DEV_USER_ID is required for dev auth mode")
+	if c.AuthSessionTTLHours <= 0 {
+		return fmt.Errorf("AUTH_SESSION_TTL_HOURS must be positive")
 	}
 	if strings.TrimSpace(c.TemporalTaskQueue) == "" {
 		return fmt.Errorf("TEMPORAL_TASK_QUEUE is required")

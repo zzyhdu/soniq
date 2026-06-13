@@ -26,6 +26,76 @@ paths:
           $ref: '#/components/responses/Error'
         default:
           $ref: '#/components/responses/Error'
+  /auth/signup:
+    post:
+      summary: Sign up with email and password
+      operationId: signUp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignUpRequest'
+      responses:
+        '201':
+          description: User account, default workspace, and session created.
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description: httpOnly `soniq_session` cookie.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthUserResponse'
+        '400':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+  /auth/signin:
+    post:
+      summary: Sign in with email and password
+      operationId: signIn
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignInRequest'
+      responses:
+        '200':
+          description: Sign-in accepted and session cookie issued.
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description: httpOnly `soniq_session` cookie.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthUserResponse'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+  /auth/signout:
+    post:
+      summary: Sign out current session
+      operationId: signOut
+      responses:
+        '204':
+          description: Session revoked when present and cookie cleared.
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description: Expired httpOnly `soniq_session` cookie.
+        default:
+          $ref: '#/components/responses/Error'
   /me:
     get:
       summary: Get current user
@@ -239,6 +309,11 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 components:
+  securitySchemes:
+    CookieAuth:
+      type: apiKey
+      in: cookie
+      name: soniq_session
   parameters:
     WorkspaceID:
       name: workspace_id
@@ -262,6 +337,38 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
   schemas:
+    AuthUserResponse:
+      type: object
+      required: [user]
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+    SignInRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 1024
+    SignUpRequest:
+      type: object
+      required: [email, display_name, password]
+      properties:
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+        password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 1024
     User:
       type: object
       required: [id, email, display_name, created_at, updated_at]

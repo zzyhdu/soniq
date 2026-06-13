@@ -34,6 +34,56 @@ function renderApp() {
 }
 
 describe('App workspace recording flow', () => {
+  it('shows login when the session is missing and loads the workspace after login', async () => {
+    const requests = mockPasswordAuthFetch();
+    const user = userEvent.setup();
+
+    renderApp();
+
+    expect(await screen.findByRole('heading', { name: /sign in/i })).toBeInTheDocument();
+    const submitButton = screen.getByRole('button', { name: /sign in/i });
+    await waitFor(() => expect(submitButton).toBeEnabled());
+    await user.type(screen.getByLabelText(/email/i), 'owner@local.soniq');
+    await user.type(screen.getByLabelText(/password/i), 'correct horse');
+    await user.click(submitButton);
+
+    expect(await screen.findByText('Local Developer')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /upload recording/i })).toBeInTheDocument();
+    expect(requests.some((request) => request.method === 'POST' && request.url === '/auth/signin')).toBe(true);
+  });
+
+  it('signs up and loads the new user workspace', async () => {
+    const requests = mockPasswordAuthFetch();
+    const user = userEvent.setup();
+
+    renderApp();
+
+    expect(await screen.findByRole('heading', { name: /sign in/i })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /^sign up$/i }));
+    expect(await screen.findByRole('heading', { name: /sign up/i })).toBeInTheDocument();
+    const submitButton = screen.getByRole('button', { name: /^sign up$/i });
+    await user.type(screen.getByLabelText(/email/i), 'owner@local.soniq');
+    await user.type(screen.getByLabelText(/display name/i), 'Owner');
+    await user.type(screen.getByLabelText(/password/i), 'correct horse');
+    await user.click(submitButton);
+
+    expect(await screen.findByText('Local Developer')).toBeInTheDocument();
+    expect(requests.some((request) => request.method === 'POST' && request.url === '/auth/signup')).toBe(true);
+  });
+
+  it('signs out and returns to the sign-in screen', async () => {
+    const requests = mockAppFetch();
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await screen.findByText('Local Developer');
+    await user.click(screen.getByRole('button', { name: /sign out/i }));
+
+    expect(await screen.findByRole('heading', { name: /sign in/i })).toBeInTheDocument();
+    expect(requests.some((request) => request.method === 'POST' && request.url === '/auth/signout')).toBe(true);
+  });
+
   it('loads user, workspaces, recording history, and selected recording details', async () => {
     mockAppFetch();
     const user = userEvent.setup();
@@ -122,6 +172,7 @@ type CapturedRequest = {
 
 function mockAppFetch(options: { includeTeamWorkspace?: boolean; includeFailedRecording?: boolean } = {}) {
   const requests: CapturedRequest[] = [];
+  let authenticated = true;
 
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const url = requestUrl(input);
@@ -129,6 +180,9 @@ function mockAppFetch(options: { includeTeamWorkspace?: boolean; includeFailedRe
     requests.push({ url, method });
 
     if (url === '/me') {
+      if (!authenticated) {
+        return jsonResponse('resolve current user', { status: 401, statusText: 'Unauthorized' });
+      }
       return jsonResponse({
         id: 'usr_dev',
         email: 'dev@local.soniq',
@@ -136,6 +190,11 @@ function mockAppFetch(options: { includeTeamWorkspace?: boolean; includeFailedRe
         created_at: '2026-06-11T00:00:00Z',
         updated_at: '2026-06-11T00:00:00Z',
       });
+    }
+
+    if (url === '/auth/signout' && method === 'POST') {
+      authenticated = false;
+      return new Response(null, { status: 204 });
     }
 
     if (url === '/workspaces') {
@@ -224,6 +283,56 @@ function mockAppFetch(options: { includeTeamWorkspace?: boolean; includeFailedRe
   return requests;
 }
 
+function mockPasswordAuthFetch() {
+  const requests: CapturedRequest[] = [];
+  let authenticated = false;
+
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    const url = requestUrl(input);
+    const method = init?.method ?? 'GET';
+    requests.push({ url, method });
+
+    if (url === '/me') {
+      if (!authenticated) {
+        return jsonResponse('resolve current user', { status: 401, statusText: 'Unauthorized' });
+      }
+      return jsonResponse(userFixture());
+    }
+
+    if (url === '/auth/signin' && method === 'POST') {
+      authenticated = true;
+      return jsonResponse({ user: userFixture() });
+    }
+
+    if (url === '/auth/signup' && method === 'POST') {
+      authenticated = true;
+      return jsonResponse({ user: userFixture() }, { status: 201 });
+    }
+
+    if (url === '/workspaces') {
+      return jsonResponse({
+        workspaces: [
+          {
+            id: 'wsp_default',
+            name: 'Default Workspace',
+            role: 'owner',
+            created_at: '2026-06-11T00:00:00Z',
+            updated_at: '2026-06-11T00:00:00Z',
+          },
+        ],
+      });
+    }
+
+    if (url === '/workspaces/wsp_default/recordings' && method === 'GET') {
+      return jsonResponse({ recordings: [] });
+    }
+
+    return jsonResponse('not found', { status: 404, statusText: 'Not Found' });
+  });
+
+  return requests;
+}
+
 function requestUrl(input: RequestInfo | URL): string {
   if (typeof input === 'string') {
     return input;
@@ -241,6 +350,16 @@ function jsonResponse(body: unknown, init?: ResponseInit): Response {
     headers: { 'Content-Type': 'application/json' },
     ...init,
   });
+}
+
+function userFixture() {
+  return {
+    id: 'usr_dev',
+    email: 'dev@local.soniq',
+    display_name: 'Local Developer',
+    created_at: '2026-06-11T00:00:00Z',
+    updated_at: '2026-06-11T00:00:00Z',
+  };
 }
 
 function recordingFixture(overrides: Partial<Record<string, string>> = {}) {

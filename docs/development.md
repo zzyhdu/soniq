@@ -2,10 +2,11 @@
 
 This document describes the current local backend and Web UI workflow for Soniq.
 
-Soniq is currently in the local dev-identity, workspace-scoped recording, Postgres-backed recording persistence, original-audio probe, normalized-audio artifact, fake transcription/summarization, and failed-recording retry milestone. The commands below intentionally run a small backend foundation:
+Soniq is currently in the password-session identity, workspace-scoped recording, Postgres-backed recording persistence, original-audio probe, normalized-audio artifact, fake transcription/summarization, and failed-recording retry milestone. The commands below intentionally run a small backend foundation:
 
 - the API exposes `GET /healthz`;
-- the API exposes dev identity endpoints: `GET /me` and `GET /workspaces`;
+- the API exposes identity endpoints: `GET /me` and `GET /workspaces`;
+- the API exposes `POST /auth/signup`, `POST /auth/signin`, and `POST /auth/signout` for email/password accounts backed by an httpOnly session cookie;
 - the API exposes workspace-scoped recording endpoints: `GET /workspaces/{workspace_id}/recordings`, `POST /workspaces/{workspace_id}/recordings`, `POST /workspaces/{workspace_id}/recordings/upload`, `GET /workspaces/{workspace_id}/recordings/{recording_id}`, `GET /workspaces/{workspace_id}/recordings/{recording_id}/status`, `GET /workspaces/{workspace_id}/recordings/{recording_id}/details`, and `POST /workspaces/{workspace_id}/recordings/{recording_id}/retry`;
 - the production API command uses Soniq Postgres for user, workspace, membership, and recording metadata persistence;
 - `POST /workspaces/{workspace_id}/recordings` creates metadata-only recordings without starting processing; `POST /workspaces/{workspace_id}/recordings/upload` accepts multipart audio, writes the original audio through an object-store seam, persists audio metadata, and then invokes the same injectable recording processor seam;
@@ -13,8 +14,8 @@ Soniq is currently in the local dev-identity, workspace-scoped recording, Postgr
 - the worker starts a real Temporal SDK worker, registers the recording processing workflow and Soniq Postgres-backed recording status/audio-probe/normalized-audio/transcript/summary activities, and polls the configured task queue;
 - local filesystem object storage is implemented for development; the worker resolves local object keys, runs `ffprobe` against uploaded original audio to persist probe metadata, and runs `ffmpeg` to write a deterministic normalized WAV/PCM artifact;
 - deterministic fake transcription and summarization providers are wired for local development verification; transcription reads the normalized audio artifact and persists transcript, transcript segment, and summary rows without external credentials;
-- the product Web UI in `apps/web` loads the dev user, selects a workspace, lists recording history, uploads audio through the Go API, exposes bookmarkable recording hash routes, polls processing status, displays failure reasons with retry, and displays completed transcript/summary results;
-- S3-compatible storage, real ASR providers, real LLM providers, and production authentication/RBAC are not implemented in this milestone.
+- the product Web UI in `apps/web` loads the current user, shows sign in/sign up forms when the API returns `401`, selects a workspace, lists recording history, uploads audio through the Go API, exposes bookmarkable recording hash routes, polls processing status, displays failure reasons with retry, and displays completed transcript/summary results;
+- S3-compatible storage, real ASR providers, real LLM providers, multi-user account management, invitations, password reset, and production RBAC are not implemented in this milestone.
 
 ## Prerequisites
 
@@ -99,7 +100,7 @@ To avoid opening several terminals manually, run the full smoke target from the 
 make smoke-postgres-temporal
 ```
 
-This target runs `scripts/smoke-postgres-temporal.sh`. The script starts the Compose infrastructure, applies missing Soniq application migrations through `make migrate`, starts the API and worker as temporary local background processes, generates and uploads a small valid WAV file through `POST /workspaces/wsp_default/recordings/upload`, verifies the workspace-scoped local object file and Postgres audio metadata, verifies `recordings.workspace_id='wsp_default'`, verifies the recording can be read from Postgres before and after an API restart, confirms the Temporal workflow reaches `COMPLETED`, verifies `recordings.status=completed`, verifies a `recording_audio_probes` row was persisted from real `ffprobe` output, verifies a `recording_normalized_audios` row and local `normalized.wav` artifact were persisted from real `ffmpeg` normalization, verifies configured transcription provider transcript/segment rows and summary rows were persisted, and then stops the API/worker processes it started.
+This target runs `scripts/smoke-postgres-temporal.sh`. The script starts the Compose infrastructure, applies missing Soniq application migrations through `make migrate`, starts the API and worker as temporary local background processes, signs up or signs in a smoke user, uploads a small valid WAV file through that user's workspace, verifies the workspace-scoped local object file and Postgres audio metadata, verifies the recording can be read from Postgres before and after an API restart, confirms the Temporal workflow reaches `COMPLETED`, verifies `recordings.status=completed`, verifies a `recording_audio_probes` row was persisted from real `ffprobe` output, verifies a `recording_normalized_audios` row and local `normalized.wav` artifact were persisted from real `ffmpeg` normalization, verifies configured transcription provider transcript/segment rows and summary rows were persisted, and then stops the API/worker processes it started.
 
 The script intentionally leaves the Compose infrastructure running by default so local Postgres and Temporal state remain available for follow-up debugging. To stop Compose services after the smoke run, set:
 
@@ -186,20 +187,29 @@ Content-Type: application/json
 
 ## Use the Recording API
 
-The identity, workspace, and recording endpoints now persist metadata in Soniq Postgres in the production API path. In local dev auth mode, every request resolves to `DEV_USER_ID=usr_dev`; baseline migration `0001` seeds `usr_dev`, `wsp_default`, and an owner membership. Records survive API process restarts as long as the local Postgres volume remains intact. Audio-backed recordings also write the original uploaded file under `LOCAL_STORAGE_PATH` through the local object-store provider; the worker later writes a sibling normalized artifact named `normalized.wav`.
+The identity, workspace, and recording endpoints now persist metadata in Soniq Postgres in the production API path. `POST /auth/signup` creates a new user, default workspace, owner membership, and login session; subsequent requests authenticate through the `soniq_session` httpOnly cookie backed by the `user_sessions` table. Records survive API process restarts as long as the local Postgres volume remains intact. Audio-backed recordings also write the original uploaded file under `LOCAL_STORAGE_PATH` through the local object-store provider; the worker later writes a sibling normalized artifact named `normalized.wav`.
 
 `POST /workspaces/{workspace_id}/recordings` creates a metadata-only recording row and returns that metadata record without enqueueing processing. After an audio-backed `POST /workspaces/{workspace_id}/recordings/upload` succeeds in Postgres, the API calls an injectable `RecordingProcessor` seam. In the production API command, that seam is wired to a Temporal-backed processor that starts `RecordingProcessingWorkflow` asynchronously with workflow ID `recording-processing-<recording_id>` on `TEMPORAL_TASK_QUEUE`. The upload HTTP response returns an explicit `{recording, processing_enqueued}` envelope; it does not wait for workflow completion. The worker consumes that workflow from the same task queue, uses Soniq Postgres-backed activities, and updates the recording status from `uploaded` through `processing`, `transcribing`, `summarizing`, and `completed`. For audio-backed recordings, the worker resolves the original local object path, runs `ffprobe`, persists original-audio probe metadata in `recording_audio_probes`, runs `ffmpeg` normalization to create a local WAV/PCM artifact, persists normalized metadata in `recording_normalized_audios`, calls deterministic fake transcription against the normalized audio path, calls deterministic fake summary providers, persists `recording_transcripts`, `recording_transcript_segments`, and `recording_summaries`, and then marks the recording `completed` with `completed_at`. If probe, normalization, transcription, summarization, or completion fails, the workflow schedules a best-effort `failed` status update with `failure_reason` and `failed_at` before returning the original error.
 
 ### Upload an audio-backed recording
 
-Use `POST /workspaces/wsp_default/recordings/upload` for recordings that include an original audio file:
+Use `POST /workspaces/{workspace_id}/recordings/upload` for recordings that include an original audio file. Sign up once, or use `/auth/signin` with the same cookie jar for an existing account:
 
 ```bash
+curl -i -c /tmp/soniq-cookies.txt \
+  -H 'Content-Type: application/json' \
+  -X POST http://localhost:8080/auth/signup \
+  -d '{"email":"owner@local.soniq","display_name":"Owner","password":"correct horse"}'
+
+WORKSPACE_ID="$(curl -fsS -b /tmp/soniq-cookies.txt http://localhost:8080/workspaces \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["workspaces"][0]["id"])')"
+
 ffmpeg -hide_banner -loglevel error \
   -f lavfi -i sine=frequency=1000:duration=1 \
   -ac 1 -ar 16000 -c:a pcm_s16le /tmp/soniq-demo.wav
 
-curl -i -X POST http://localhost:8080/workspaces/wsp_default/recordings/upload \
+curl -i -b /tmp/soniq-cookies.txt \
+  -X POST "http://localhost:8080/workspaces/${WORKSPACE_ID}/recordings/upload" \
   -F 'title=Weekly sync' \
   -F 'workflow_type=meeting' \
   -F 'language=en' \
@@ -209,7 +219,8 @@ curl -i -X POST http://localhost:8080/workspaces/wsp_default/recordings/upload \
 If you started the API on a custom port, use that port instead:
 
 ```bash
-curl -i -X POST http://localhost:18080/workspaces/wsp_default/recordings/upload \
+curl -i -b /tmp/soniq-cookies.txt \
+  -X POST "http://localhost:18080/workspaces/${WORKSPACE_ID}/recordings/upload" \
   -F 'title=Weekly sync' \
   -F 'workflow_type=meeting' \
   -F 'language=en' \
@@ -227,12 +238,12 @@ Content-Type: application/json
 {
   "recording": {
     "id": "rec_...",
-    "workspace_id": "wsp_default",
+    "workspace_id": "wsp_...",
     "title": "Weekly sync",
     "status": "uploaded",
     "workflow_type": "meeting",
     "language": "en",
-    "audio_object_key": "workspaces/wsp_default/recordings/.../soniq-demo.wav",
+    "audio_object_key": "workspaces/wsp_.../recordings/.../soniq-demo.wav",
     "audio_content_type": "audio/wav",
     "audio_size_bytes": 32078,
     "created_at": "...",
@@ -251,7 +262,7 @@ For the local provider, the uploaded file is stored at:
 With the default configuration, that means files are written under:
 
 ```txt
-var/uploads/workspaces/wsp_default/recordings/...
+var/uploads/workspaces/wsp_.../recordings/...
 ```
 
 The `var/` directory is ignored by git because it contains local runtime artifacts.
@@ -268,15 +279,16 @@ The probe, normalization, and fake transcription steps currently support local o
 
 ### Create a metadata-only recording
 
-Use `POST /workspaces/wsp_default/recordings` when you only want to create a recording metadata row. This endpoint does not upload audio and does not enqueue `RecordingProcessingWorkflow`:
+Use `POST /workspaces/{workspace_id}/recordings` when you only want to create a recording metadata row. This endpoint does not upload audio and does not enqueue `RecordingProcessingWorkflow`:
 
 ```bash
-curl -i -X POST http://localhost:18080/workspaces/wsp_default/recordings \
+curl -i -b /tmp/soniq-cookies.txt \
+  -X POST "http://localhost:18080/workspaces/${WORKSPACE_ID}/recordings" \
   -H 'Content-Type: application/json' \
   -d '{"title":"Weekly sync","workflow_type":"meeting","language":"en"}'
 ```
 
-Use `POST /workspaces/wsp_default/recordings/upload` for the Temporal processing path.
+Use `POST /workspaces/{workspace_id}/recordings/upload` for the Temporal processing path.
 
 ### Manual local Temporal smoke flow
 
@@ -310,10 +322,19 @@ Start the API on a local test port in another terminal:
 API_ADDRESS=:18080 make api
 ```
 
-Upload a local audio file from another terminal. This is the path that starts `RecordingProcessingWorkflow`:
+Create or sign in a local account, then upload a local audio file from another terminal. This is the path that starts `RecordingProcessingWorkflow`:
 
 ```bash
-curl -i -X POST http://localhost:18080/workspaces/wsp_default/recordings/upload \
+curl -i -c /tmp/soniq-cookies.txt \
+  -H 'Content-Type: application/json' \
+  -X POST http://localhost:18080/auth/signup \
+  -d '{"email":"owner@local.soniq","display_name":"Owner","password":"correct horse"}'
+
+WORKSPACE_ID="$(curl -fsS -b /tmp/soniq-cookies.txt http://localhost:18080/workspaces \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["workspaces"][0]["id"])')"
+
+curl -i -b /tmp/soniq-cookies.txt \
+  -X POST "http://localhost:18080/workspaces/${WORKSPACE_ID}/recordings/upload" \
   -F title='Weekly sync' \
   -F workflow_type=meeting \
   -F language=en \
@@ -331,12 +352,12 @@ Content-Type: application/json
 {
   "recording": {
     "id": "rec_...",
-    "workspace_id": "wsp_default",
+    "workspace_id": "wsp_...",
     "title": "Weekly sync",
     "status": "uploaded",
     "workflow_type": "meeting",
     "language": "en",
-    "audio_object_key": "workspaces/wsp_default/recordings/.../audio.wav",
+    "audio_object_key": "workspaces/wsp_.../recordings/.../audio.wav",
     "audio_content_type": "audio/wav",
     "audio_size_bytes": 12345,
     "created_at": "...",
@@ -355,7 +376,8 @@ recording-processing-<recording_id>
 Fetch the full recording:
 
 ```bash
-curl -i http://localhost:18080/workspaces/wsp_default/recordings/<id>
+curl -i -b /tmp/soniq-cookies.txt \
+  "http://localhost:18080/workspaces/${WORKSPACE_ID}/recordings/<id>"
 ```
 
 Because the production API path now uses Postgres, this lookup should still work after restarting only the API process, provided the local Postgres service and volume are still running.
@@ -363,31 +385,33 @@ Because the production API path now uses Postgres, this lookup should still work
 Fetch just the recording status:
 
 ```bash
-curl -i http://localhost:18080/workspaces/wsp_default/recordings/<id>/status
+curl -i -b /tmp/soniq-cookies.txt \
+  "http://localhost:18080/workspaces/${WORKSPACE_ID}/recordings/<id>/status"
 ```
 
 Expected status body before the worker has completed the workflow:
 
 ```json
-{"id":"rec_...","workspace_id":"wsp_default","status":"uploaded"}
+{"id":"rec_...","workspace_id":"wsp_...","status":"uploaded"}
 ```
 
 After the worker has processed the workflow successfully, the same endpoint should return:
 
 ```json
-{"id":"rec_...","workspace_id":"wsp_default","status":"completed","completed_at":"..."}
+{"id":"rec_...","workspace_id":"wsp_...","status":"completed","completed_at":"..."}
 ```
 
 If processing fails, the status response includes a reason:
 
 ```json
-{"id":"rec_...","workspace_id":"wsp_default","status":"failed","failure_reason":"transcribe audio: ...","failed_at":"..."}
+{"id":"rec_...","workspace_id":"wsp_...","status":"failed","failure_reason":"transcribe audio: ...","failed_at":"..."}
 ```
 
 Retry a failed audio-backed recording:
 
 ```bash
-curl -i -X POST http://localhost:18080/workspaces/wsp_default/recordings/<id>/retry
+curl -i -b /tmp/soniq-cookies.txt \
+  -X POST "http://localhost:18080/workspaces/${WORKSPACE_ID}/recordings/<id>/retry"
 ```
 
 Expected retry response:
@@ -396,7 +420,7 @@ Expected retry response:
 {
   "recording": {
     "id": "rec_...",
-    "workspace_id": "wsp_default",
+    "workspace_id": "wsp_...",
     "status": "uploaded"
   },
   "processing_enqueued": true
@@ -452,7 +476,7 @@ make migrate
 
 For older local databases that were created before `schema_migrations` existed, the script can recognize a complete pre-baseline schema and record `version='1'` without reapplying SQL. If a local database only contains part of the baseline schema, inspect or reset that local application database before running `make migrate` again.
 
-Baseline migration `0001` seeds local dev identity data:
+Baseline migration `0001` seeds legacy local fixture identity data:
 
 - user: `usr_dev`
 - workspace: `wsp_default`
@@ -541,7 +565,7 @@ Open the Vite URL, usually:
 http://localhost:5173
 ```
 
-The Vite dev server proxies `/healthz`, `/me`, `/workspaces/*`, and legacy `/recordings/*` to `http://localhost:8080`, so keep `make api` running while using the browser UI. Keep `make worker` running if you want Temporal processing to continue after upload.
+The Vite dev server proxies `/healthz`, `/auth/*`, `/me`, `/workspaces/*`, and legacy `/recordings/*` to `http://localhost:8080`, so keep `make api` running while using the browser UI. Keep `make worker` running if you want Temporal processing to continue after upload.
 
 Manual browser verification:
 
@@ -589,8 +613,8 @@ The current backend reads environment variables directly. Important local settin
 |---|---:|---|
 | `APP_ENV` | `development` | Runtime environment name. |
 | `APP_PUBLIC_URL` | `http://localhost:8080` | Public API URL used by clients and links. |
-| `AUTH_MODE` | `dev` | Local auth resolver mode. Only `dev` is implemented. |
-| `DEV_USER_ID` | `usr_dev` | User id returned by the dev auth resolver. Baseline migration `0001` seeds this user and `wsp_default`. |
+| `AUTH_SESSION_TTL_HOURS` | `720` | Session lifetime for email/password login cookies. |
+| `AUTH_COOKIE_SECURE` | `false` | Whether the `soniq_session` cookie is marked `Secure`. Keep `false` for local HTTP; use `true` behind HTTPS. |
 | `API_ADDRESS` | `:8080` | Local HTTP listen address for `make api`. |
 | `POSTGRES_DSN` | `postgres://soniq_user:***@localhost:5432/soniq?sslmode=disable` | Soniq application database used by `make api` for recording metadata persistence. |
 | `TEMPORAL_ADDRESS` | `localhost:7233` | Temporal server address used by `make api` and `make worker`. |
@@ -614,6 +638,18 @@ The current backend reads environment variables directly. Important local settin
 
 Do not commit real secrets. Keep real API keys and credentials in local environment files only.
 
+## Password Auth
+
+Email/password auth is the local API runtime mode. Apply Soniq application migrations first so `users.password_hash` and `user_sessions` exist:
+
+```bash
+make migrate
+make api
+```
+
+Then open the Web UI. If you do not have an account, use Sign up. It calls `POST /auth/signup`, creates a user, creates a default workspace, creates an owner membership, creates a `user_sessions` row, and sets the httpOnly `soniq_session` cookie. Existing users use `POST /auth/signin`; `POST /auth/signout` revokes the current session and clears the cookie.
+
+The password hasher is Argon2id with encoded per-password salt and parameters (`m=19456`, `t=2`, `p=1`), matching OWASP's current minimum recommendation. Passwords must be 8 to 1024 bytes. The database stores only `users.password_hash` and `user_sessions.token_hash`; the opaque session token only lives in the browser cookie.
 
 ## OpenAI-compatible ASR smoke modes
 
@@ -657,23 +693,24 @@ The current backend foundation provides:
 - a Go module under `backend/`;
 - a pnpm workspace with `apps/web` for the product Web UI and `packages/api-client` for shared typed recording API calls;
 - config loading and validation;
-- a standard-library HTTP router;
+- a chi HTTP router;
 - `GET /healthz`;
-- dev identity endpoints for `GET /me` and `GET /workspaces`;
+- identity endpoints for `GET /me` and `GET /workspaces`;
+- email/password auth endpoints for signup, signin, and signout;
 - Postgres-backed workspace-scoped recording endpoints for listing, metadata-only creation, audio upload, full-recording lookup, and status lookup;
 - completed-recording details lookup for transcript segments and summary results;
-- SQL migrations for `users`, `workspaces`, `workspace_members`, the `recordings` table, audio object metadata columns, `recording_audio_probes`, `recording_normalized_audios`, `recording_transcripts`, `recording_transcript_segments`, and `recording_summaries`;
+- SQL migrations for `users`, `workspaces`, `workspace_members`, `user_sessions`, the `recordings` table, failure metadata, audio object metadata columns, `recording_audio_probes`, `recording_normalized_audios`, `recording_transcripts`, `recording_transcript_segments`, and `recording_summaries`;
 - a local filesystem object-store provider selected with `STORAGE_PROVIDER=local` and rooted at `LOCAL_STORAGE_PATH`;
 - API and Temporal worker command entrypoints;
 - a Temporal-backed recording processor that starts `RecordingProcessingWorkflow` after successful audio upload requests;
 - a Temporal SDK recording processing workflow;
 - Soniq Postgres-backed activities for recording validation, durable status transitions, original-audio `ffprobe` metadata persistence, ffmpeg normalized-audio metadata persistence, fake transcription persistence from normalized audio, optional original uploaded audio deletion after successful transcription, and fake summary persistence;
 - root `Makefile` quality, migration, and smoke commands.
-- a local developer Web UI for workspace selection, recording history, upload, status polling, and completed transcript/summary display.
+- a local developer Web UI for password signup/signin, workspace selection, recording history, upload, status polling, and completed transcript/summary display.
 
 It does not yet provide:
 
 - MinIO/S3 storage integration;
 - real ASR or LLM provider calls;
-- production authentication/RBAC;
+- multi-user account management, invitations, password reset, and production RBAC;
 - recording management actions beyond listing, selecting, uploading, and viewing completed results.

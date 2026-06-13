@@ -10,8 +10,8 @@ func clearConfigEnv(t *testing.T) {
 	for _, key := range []string{
 		"APP_ENV",
 		"APP_PUBLIC_URL",
-		"AUTH_MODE",
-		"DEV_USER_ID",
+		"AUTH_SESSION_TTL_HOURS",
+		"AUTH_COOKIE_SECURE",
 		"API_ADDRESS",
 		"POSTGRES_DSN",
 		"TEMPORAL_ADDRESS",
@@ -60,11 +60,11 @@ func TestLoadFromEnvUsesDevelopmentDefaults(t *testing.T) {
 	if cfg.PublicURL != "http://localhost:8080" {
 		t.Fatalf("PublicURL = %q, want http://localhost:8080", cfg.PublicURL)
 	}
-	if cfg.AuthMode != "dev" {
-		t.Fatalf("AuthMode = %q, want dev", cfg.AuthMode)
+	if cfg.AuthSessionTTLHours != 720 {
+		t.Fatalf("AuthSessionTTLHours = %d, want 720", cfg.AuthSessionTTLHours)
 	}
-	if cfg.DevUserID != "usr_dev" {
-		t.Fatalf("DevUserID = %q, want usr_dev", cfg.DevUserID)
+	if cfg.AuthCookieSecure {
+		t.Fatal("AuthCookieSecure = true, want false")
 	}
 	if cfg.APIAddress != ":8080" {
 		t.Fatalf("APIAddress = %q, want :8080", cfg.APIAddress)
@@ -137,8 +137,8 @@ func TestLoadFromEnvUsesDevelopmentDefaults(t *testing.T) {
 func TestLoadFromEnvAppliesEnvironmentOverrides(t *testing.T) {
 	t.Setenv("APP_ENV", "test")
 	t.Setenv("APP_PUBLIC_URL", "http://127.0.0.1:9090")
-	t.Setenv("AUTH_MODE", "dev")
-	t.Setenv("DEV_USER_ID", "usr_custom")
+	t.Setenv("AUTH_SESSION_TTL_HOURS", "168")
+	t.Setenv("AUTH_COOKIE_SECURE", "true")
 	t.Setenv("API_ADDRESS", ":9090")
 	t.Setenv("POSTGRES_DSN", "postgres://custom_user:custom_password@db:5432/custom?sslmode=disable")
 	t.Setenv("TEMPORAL_ADDRESS", "temporal:7233")
@@ -171,11 +171,11 @@ func TestLoadFromEnvAppliesEnvironmentOverrides(t *testing.T) {
 	if cfg.PublicURL != "http://127.0.0.1:9090" {
 		t.Fatalf("PublicURL = %q, want override", cfg.PublicURL)
 	}
-	if cfg.AuthMode != "dev" {
-		t.Fatalf("AuthMode = %q, want dev", cfg.AuthMode)
+	if cfg.AuthSessionTTLHours != 168 {
+		t.Fatalf("AuthSessionTTLHours = %d, want 168", cfg.AuthSessionTTLHours)
 	}
-	if cfg.DevUserID != "usr_custom" {
-		t.Fatalf("DevUserID = %q, want usr_custom", cfg.DevUserID)
+	if !cfg.AuthCookieSecure {
+		t.Fatal("AuthCookieSecure = false, want true")
 	}
 	if cfg.APIAddress != ":9090" {
 		t.Fatalf("APIAddress = %q, want :9090", cfg.APIAddress)
@@ -288,22 +288,9 @@ func TestValidateForStartupRejectsEmptyLocalStoragePath(t *testing.T) {
 
 func TestValidateForStartupRejectsInvalidAuthConfig(t *testing.T) {
 	cfg := LoadFromEnv()
-	cfg.AuthMode = ""
+	cfg.AuthSessionTTLHours = 0
 	if err := cfg.ValidateForStartup(); err == nil {
-		t.Fatal("ValidateForStartup() error = nil, want missing auth mode error")
-	}
-
-	cfg = LoadFromEnv()
-	cfg.AuthMode = "oidc"
-	if err := cfg.ValidateForStartup(); err == nil {
-		t.Fatal("ValidateForStartup() error = nil, want unsupported auth mode error")
-	}
-
-	cfg = LoadFromEnv()
-	cfg.AuthMode = "dev"
-	cfg.DevUserID = ""
-	if err := cfg.ValidateForStartup(); err == nil {
-		t.Fatal("ValidateForStartup() error = nil, want missing dev user id error")
+		t.Fatal("ValidateForStartup() error = nil, want missing session ttl error")
 	}
 }
 

@@ -6,9 +6,11 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/zzyhdu/soniq/backend/internal/api"
+	authstore "github.com/zzyhdu/soniq/backend/internal/auth"
 	"github.com/zzyhdu/soniq/backend/internal/config"
 	storedb "github.com/zzyhdu/soniq/backend/internal/db"
 	"github.com/zzyhdu/soniq/backend/internal/processing"
@@ -47,7 +49,14 @@ type temporalClientFactory func(context.Context, config.Config) (temporalWorkflo
 type appStoreClient interface {
 	RecordingStore() api.RecordingDetailsStore
 	WorkspaceStore() api.WorkspaceStore
+	AuthStore() appAuthStore
 	Close()
+}
+
+type appAuthStore interface {
+	api.PasswordAuthStore
+	api.PasswordSessionStore
+	api.SessionLookupStore
 }
 
 type appStoreFactory func(context.Context, string) (appStoreClient, error)
@@ -73,13 +82,36 @@ func buildHandler(ctx context.Context, cfg config.Config, temporalFactory tempor
 		temporalClient.Close()
 		return nil, func() {}, err
 	}
-	handler := api.NewRouterWithStorageAndIdentity(appStore.RecordingStore(), appStore.WorkspaceStore(), api.NewDevAuthResolver(cfg.DevUserID), processor, objectStore)
+	authResolver, passwordAuthConfig, err := buildAuthDependencies(cfg, appStore)
+	if err != nil {
+		appStore.Close()
+		temporalClient.Close()
+		return nil, func() {}, err
+	}
+	handler := api.NewRouterWithStorageIdentityAndPasswordAuth(appStore.RecordingStore(), appStore.WorkspaceStore(), authResolver, processor, objectStore, passwordAuthConfig)
 	cleanup := func() {
 		appStore.Close()
 		temporalClient.Close()
 	}
 
 	return handler, cleanup, nil
+}
+
+func buildAuthDependencies(cfg config.Config, appStore appStoreClient) (api.AuthResolver, api.PasswordAuthConfig, error) {
+	authStore := appStore.AuthStore()
+	if authStore == nil {
+		return nil, api.PasswordAuthConfig{}, fmt.Errorf("password auth store is not configured")
+	}
+	sessionTTL := time.Duration(cfg.AuthSessionTTLHours) * time.Hour
+	if sessionTTL <= 0 {
+		sessionTTL = 30 * 24 * time.Hour
+	}
+	return api.NewSessionAuthResolver(authStore), api.PasswordAuthConfig{
+		PasswordStore: authStore,
+		SessionStore:  authStore,
+		SessionTTL:    sessionTTL,
+		CookieSecure:  cfg.AuthCookieSecure,
+	}, nil
 }
 
 func buildObjectStore(cfg config.Config) (storage.ObjectStore, error) {
@@ -111,6 +143,7 @@ func openPostgresAppStore(ctx context.Context, dsn string) (appStoreClient, erro
 	return &postgresAppStoreClient{
 		recordings: recordings.NewPostgresStore(executor),
 		workspaces: workspaces.NewPostgresStore(executor),
+		auth:       authstore.NewPostgresStore(executor),
 		pool:       pool,
 	}, nil
 }
@@ -130,6 +163,7 @@ func (e postgresExecutor) Query(ctx context.Context, query string, args ...any) 
 type postgresAppStoreClient struct {
 	recordings *recordings.PostgresStore
 	workspaces *workspaces.PostgresStore
+	auth       *authstore.PostgresStore
 	pool       *pgxpool.Pool
 }
 
@@ -139,6 +173,10 @@ func (s *postgresAppStoreClient) RecordingStore() api.RecordingDetailsStore {
 
 func (s *postgresAppStoreClient) WorkspaceStore() api.WorkspaceStore {
 	return s.workspaces
+}
+
+func (s *postgresAppStoreClient) AuthStore() appAuthStore {
+	return s.auth
 }
 
 func (s *postgresAppStoreClient) Close() {

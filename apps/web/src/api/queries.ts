@@ -5,7 +5,13 @@ import {
   listRecordings,
   listWorkspaces,
   retryRecording,
+  signIn,
+  signOut,
+  signUp,
+  SoniqApiError,
   type RecordingStatus,
+  type SignInInput,
+  type SignUpInput,
   type UploadRecordingInput,
   uploadRecording,
 } from '@soniq/api-client';
@@ -13,25 +19,42 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 export const RECORDING_STATUS_POLL_INTERVAL_MS = 1500;
 
-export function useMe() {
+export function useMe(enabled = true) {
   return useQuery({
     queryKey: ['me'],
     queryFn: () => getMe(),
+    enabled,
+    retry: (failureCount, error) => !isUnauthorizedApiError(error) && failureCount < 3,
   });
 }
 
-export function useWorkspaces() {
+export function useWorkspaces(enabled = true) {
   return useQuery({
     queryKey: ['workspaces'],
     queryFn: () => listWorkspaces(),
+    enabled,
   });
 }
 
-export function useRecordings(workspaceId: string | null | undefined) {
+export function useSignIn() {
+  return useAuthMutation((input: SignInInput) => signIn(input));
+}
+
+export function useSignUp() {
+  return useAuthMutation((input: SignUpInput) => signUp(input));
+}
+
+export function useSignOut() {
+  return useMutation({
+    mutationFn: () => signOut(),
+  });
+}
+
+export function useRecordings(workspaceId: string | null | undefined, enabled = true) {
   return useQuery({
     queryKey: ['workspaces', workspaceId, 'recordings'],
     queryFn: () => listRecordings(requireWorkspaceId(workspaceId)),
-    enabled: hasWorkspaceId(workspaceId),
+    enabled: enabled && hasWorkspaceId(workspaceId),
   });
 }
 
@@ -49,11 +72,15 @@ export function useUploadRecording(workspaceId: string | null | undefined) {
   });
 }
 
-export function useRecordingStatus(workspaceId: string | null | undefined, recordingId: string | null | undefined) {
+export function useRecordingStatus(
+  workspaceId: string | null | undefined,
+  recordingId: string | null | undefined,
+  enabled = true,
+) {
   return useQuery({
     queryKey: ['workspaces', workspaceId, 'recordings', recordingId, 'status'],
     queryFn: () => getRecordingStatus(requireWorkspaceId(workspaceId), requireRecordingId(recordingId)),
-    enabled: hasWorkspaceId(workspaceId) && hasRecordingId(recordingId),
+    enabled: enabled && hasWorkspaceId(workspaceId) && hasRecordingId(recordingId),
     refetchInterval: (query) => recordingStatusRefetchInterval(query.state.data?.status),
   });
 }
@@ -122,6 +149,16 @@ export function recordingStatusBadgeVariant(status: RecordingStatus): 'default' 
   }
 
   return 'secondary';
+}
+
+export function isUnauthorizedApiError(error: unknown) {
+  return error instanceof SoniqApiError && error.status === 401;
+}
+
+function useAuthMutation<TInput, TResponse>(mutationFn: (input: TInput) => Promise<TResponse>) {
+  return useMutation({
+    mutationFn,
+  });
 }
 
 function hasRecordingId(recordingId: string | null | undefined): recordingId is string {

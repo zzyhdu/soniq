@@ -6,6 +6,8 @@ CONFIG_ENV_KEYS := \
 	APP_ENV \
 	APP_PUBLIC_URL \
 	COMPOSE_FILE \
+	AUTH_SESSION_TTL_HOURS \
+	AUTH_COOKIE_SECURE \
 	API_ADDRESS \
 	POSTGRES_DSN \
 	POSTGRES_USER \
@@ -64,6 +66,8 @@ env-check:
 	@echo "env_file=$(if $(wildcard $(ENV_FILE)),$(ENV_FILE),not found)"
 	@echo "api_address=$(API_ADDRESS)"
 	@echo "compose_file=$(COMPOSE_FILE)"
+	@echo "auth_session_ttl_hours=$(AUTH_SESSION_TTL_HOURS)"
+	@echo "auth_cookie_secure=$(AUTH_COOKIE_SECURE)"
 	@echo "postgres_user=$(POSTGRES_USER)"
 	@echo "postgres_db=$(POSTGRES_DB)"
 	@echo "transcription_provider=$(TRANSCRIPTION_PROVIDER)"

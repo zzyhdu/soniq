@@ -150,12 +150,45 @@ apply_recording_failure_metadata_v2() {
   log "recorded recording failure metadata version 2"
 }
 
+password_sessions_present() {
+  [[ "$(psql_scalar "SELECT
+    to_regclass('public.user_sessions') IS NOT NULL
+    AND (
+      SELECT count(*) = 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'users'
+        AND column_name = 'password_hash'
+    )
+    AND to_regclass('public.user_sessions_user_id_idx') IS NOT NULL
+    AND to_regclass('public.user_sessions_expires_at_idx') IS NOT NULL")" == "t" ]]
+}
+
+apply_password_sessions_v3() {
+  if migration_applied "3"; then
+    log "password session schema version 3 already recorded; skipping"
+    return 0
+  fi
+
+  if password_sessions_present; then
+    log "password session schema already present; recording version 3"
+    record_migration "3"
+    return 0
+  fi
+
+  log "applying password session schema version 3"
+  psql_apply "backend/migrations/0003_add_password_sessions.up.sql"
+  record_migration "3"
+  log "recorded password session schema version 3"
+}
+
 main() {
   cd "$ROOT_DIR"
 
   ensure_schema_migrations_table
   apply_baseline_v1
   apply_recording_failure_metadata_v2
+  apply_password_sessions_v3
 
   log "local Soniq application migrations are up to date"
 }

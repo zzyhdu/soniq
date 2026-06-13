@@ -1,12 +1,17 @@
 import { useEffect, useState } from 'react';
 
-import { type UploadRecordingResponse } from '@soniq/api-client';
+import { type AuthUserResponse, type SignInInput, type SignUpInput, type UploadRecordingResponse } from '@soniq/api-client';
+import { useQueryClient } from '@tanstack/react-query';
 
 import {
+  isUnauthorizedApiError,
   useMe,
   useRecordingStatus,
   useRecordings,
   useRetryRecording,
+  useSignIn,
+  useSignOut,
+  useSignUp,
   useUploadRecording,
   useWorkspaces,
 } from '@/api/queries';
@@ -14,6 +19,7 @@ import { RecordingList } from '@/components/RecordingList';
 import { RecordingResults } from '@/components/RecordingResults';
 import { RecordingStatusPanel } from '@/components/RecordingStatusPanel';
 import { RecordingUploadForm } from '@/components/RecordingUploadForm';
+import { AuthGate } from '@/components/AuthGate';
 import { UserMenu } from '@/components/UserMenu';
 import { WorkspaceSwitcher } from '@/components/WorkspaceSwitcher';
 import { Badge } from '@/components/ui/badge';
@@ -21,12 +27,32 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 
 export function App() {
   const initialRoute = parseAppRoute();
-  const meQuery = useMe();
-  const workspacesQuery = useWorkspaces();
+  const queryClient = useQueryClient();
+  const [authState, setAuthState] = useState<AuthState>('checking');
+  const shouldResolveCurrentUser = authState !== 'signed_out';
+  const meQuery = useMe(shouldResolveCurrentUser);
+  const isAuthenticated = authState === 'authenticated';
+  const signInMutation = useSignIn();
+  const signUpMutation = useSignUp();
+  const signOutMutation = useSignOut();
+  const workspacesQuery = useWorkspaces(isAuthenticated && meQuery.data !== undefined);
   const workspaces = workspacesQuery.data?.workspaces ?? [];
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(initialRoute.workspaceId);
   const [selectedRecordingId, setSelectedRecordingId] = useState<string | null>(initialRoute.recordingId);
   const [latestProcessingRequest, setLatestProcessingRequest] = useState<LatestProcessingRequest | null>(null);
+
+  useEffect(() => {
+    if (!shouldResolveCurrentUser) {
+      return;
+    }
+    if (meQuery.data !== undefined) {
+      setAuthState('authenticated');
+      return;
+    }
+    if (isUnauthorizedApiError(meQuery.error)) {
+      setAuthState('signed_out');
+    }
+  }, [meQuery.data, meQuery.error, shouldResolveCurrentUser]);
 
   useEffect(() => {
     function syncRoute() {
@@ -58,13 +84,13 @@ export function App() {
     replaceAppRoute({ workspaceId: fallbackWorkspaceId, recordingId: null });
   }, [selectedWorkspaceId, workspaces]);
 
-  const recordingsQuery = useRecordings(selectedWorkspaceId);
+  const recordingsQuery = useRecordings(selectedWorkspaceId, isAuthenticated);
   const recordings = recordingsQuery.data?.recordings ?? [];
   const uploadRecordingMutation = useUploadRecording(selectedWorkspaceId);
   const retryRecordingMutation = useRetryRecording(selectedWorkspaceId, selectedRecordingId);
   const selectedRecording = recordings.find((recording) => recording.id === selectedRecordingId) ??
     (latestProcessingRequest?.recording.id === selectedRecordingId ? latestProcessingRequest.recording : undefined);
-  const statusQuery = useRecordingStatus(selectedWorkspaceId, selectedRecordingId);
+  const statusQuery = useRecordingStatus(selectedWorkspaceId, selectedRecordingId, isAuthenticated);
   const currentStatus = statusQuery.data?.status ?? selectedRecording?.status;
   const currentFailureReason = statusQuery.data?.failure_reason ?? selectedRecording?.failure_reason ?? null;
   const statusError = statusQuery.error instanceof Error ? statusQuery.error.message : null;
@@ -76,6 +102,30 @@ export function App() {
   const selectedProcessingEnqueued = latestProcessingRequest?.recording.id === selectedRecordingId
     ? latestProcessingRequest.processing_enqueued
     : undefined;
+
+  function resetSessionState() {
+    setSelectedWorkspaceId(null);
+    setSelectedRecordingId(null);
+    setLatestProcessingRequest(null);
+    replaceAppRoute({ workspaceId: null, recordingId: null });
+  }
+
+  function handleAuthenticated(response: AuthUserResponse) {
+    queryClient.clear();
+    queryClient.setQueryData(['me'], response.user);
+    resetSessionState();
+    setAuthState('authenticated');
+  }
+
+  async function handleSignIn(input: SignInInput) {
+    const response = await signInMutation.mutateAsync(input);
+    handleAuthenticated(response);
+  }
+
+  async function handleSignUp(input: SignUpInput) {
+    const response = await signUpMutation.mutateAsync(input);
+    handleAuthenticated(response);
+  }
 
   function handleSelectWorkspace(workspaceId: string) {
     setSelectedWorkspaceId(workspaceId);
@@ -107,6 +157,24 @@ export function App() {
     pushAppRoute({ workspaceId: response.recording.workspace_id, recordingId: response.recording.id });
   }
 
+  async function handleLogout() {
+    await signOutMutation.mutateAsync();
+    queryClient.clear();
+    resetSessionState();
+    setAuthState('signed_out');
+  }
+
+  if (authState === 'signed_out') {
+    return (
+      <AuthGate
+        isSubmitting={signInMutation.isPending || signUpMutation.isPending}
+        error={authErrorMessage(signInMutation.error ?? signUpMutation.error)}
+        onSignIn={handleSignIn}
+        onSignUp={handleSignUp}
+      />
+    );
+  }
+
   return (
     <main className="min-h-screen bg-muted/30 px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto flex max-w-7xl flex-col gap-6">
@@ -122,6 +190,8 @@ export function App() {
             user={meQuery.data}
             isLoading={meQuery.isPending}
             error={meError}
+            onLogout={handleLogout}
+            isLoggingOut={signOutMutation.isPending}
           />
         </header>
 
@@ -206,6 +276,8 @@ export function App() {
   );
 }
 
+type AuthState = 'checking' | 'authenticated' | 'signed_out';
+
 type AppRoute = {
   workspaceId: string | null;
   recordingId: string | null;
@@ -237,7 +309,9 @@ function replaceAppRoute(route: AppRoute) {
 }
 
 function writeAppRoute(route: AppRoute, replace: boolean) {
-  const hash = route.recordingId !== null
+  const hash = route.workspaceId === null
+    ? ''
+    : route.recordingId !== null
     ? `#/workspaces/${encodeURIComponent(route.workspaceId ?? '')}/recordings/${encodeURIComponent(route.recordingId)}`
     : `#/workspaces/${encodeURIComponent(route.workspaceId ?? '')}`;
   const url = `${window.location.pathname}${window.location.search}${hash}`;
@@ -246,4 +320,8 @@ function writeAppRoute(route: AppRoute, replace: boolean) {
     return;
   }
   window.history.pushState(null, '', url);
+}
+
+function authErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : null;
 }

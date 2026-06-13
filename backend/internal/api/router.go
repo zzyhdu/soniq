@@ -131,7 +131,7 @@ func NewRouterWithProcessor(store RecordingStore, processor RecordingProcessor) 
 
 // NewRouterWithIdentity builds the HTTP handler with recording, workspace, auth, and processor dependencies.
 func NewRouterWithIdentity(store RecordingStore, workspaceStore WorkspaceStore, authResolver AuthResolver, processor RecordingProcessor) http.Handler {
-	return newRouterWithDependencies(store, workspaceStore, authResolver, processor, nil)
+	return newRouterWithDependencies(store, workspaceStore, authResolver, processor, nil, nil)
 }
 
 // NewRouterWithStorage builds the HTTP handler with injected recording store, processor, and object storage dependencies.
@@ -141,10 +141,15 @@ func NewRouterWithStorage(store RecordingStore, processor RecordingProcessor, ob
 
 // NewRouterWithStorageAndIdentity builds the HTTP handler with all API dependencies.
 func NewRouterWithStorageAndIdentity(store RecordingStore, workspaceStore WorkspaceStore, authResolver AuthResolver, processor RecordingProcessor, objectStore storage.ObjectStore) http.Handler {
-	return newRouterWithDependencies(store, workspaceStore, authResolver, processor, objectStore)
+	return newRouterWithDependencies(store, workspaceStore, authResolver, processor, objectStore, nil)
 }
 
-func newRouterWithDependencies(store RecordingStore, workspaceStore WorkspaceStore, authResolver AuthResolver, processor RecordingProcessor, objectStore storage.ObjectStore) http.Handler {
+// NewRouterWithStorageIdentityAndPasswordAuth builds the HTTP handler with password auth endpoints enabled.
+func NewRouterWithStorageIdentityAndPasswordAuth(store RecordingStore, workspaceStore WorkspaceStore, authResolver AuthResolver, processor RecordingProcessor, objectStore storage.ObjectStore, authConfig PasswordAuthConfig) http.Handler {
+	return newRouterWithDependencies(store, workspaceStore, authResolver, processor, objectStore, &authConfig)
+}
+
+func newRouterWithDependencies(store RecordingStore, workspaceStore WorkspaceStore, authResolver AuthResolver, processor RecordingProcessor, objectStore storage.ObjectStore, authConfig *PasswordAuthConfig) http.Handler {
 	if processor == nil {
 		processor = noopRecordingProcessor{}
 	}
@@ -159,6 +164,11 @@ func newRouterWithDependencies(store RecordingStore, workspaceStore WorkspaceSto
 	router.MethodFunc(http.MethodGet, "/healthz", healthzHandler)
 	router.MethodFunc(http.MethodGet, "/openapi.yaml", openAPIHandler)
 	router.MethodFunc(http.MethodGet, "/api-console", apiConsoleHandler)
+	if authConfig != nil {
+		router.MethodFunc(http.MethodPost, "/auth/signup", signUpHandler(*authConfig))
+		router.MethodFunc(http.MethodPost, "/auth/signin", signInHandler(*authConfig))
+		router.MethodFunc(http.MethodPost, "/auth/signout", signOutHandler(*authConfig))
+	}
 	router.MethodFunc(http.MethodGet, "/me", meHandler(workspaceStore, authResolver))
 	router.MethodFunc(http.MethodGet, "/workspaces", workspacesHandler(workspaceStore, authResolver))
 
