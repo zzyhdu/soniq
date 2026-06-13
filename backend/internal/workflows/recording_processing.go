@@ -76,6 +76,10 @@ func RecordingProcessingWorkflow(ctx workflow.Context, input RecordingProcessing
 		_ = failRecording(shortActivityCtx, recording, "summarize recording", err)
 		return RecordingProcessingResult{}, err
 	}
+	if err := workflow.ExecuteActivity(longRunningActivityCtx, activities.GenerateMindMapActivityName, input.RecordingID).Get(longRunningActivityCtx, nil); err != nil {
+		_ = failRecording(shortActivityCtx, recording, "generate mind map", err)
+		return RecordingProcessingResult{}, err
+	}
 
 	var result RecordingProcessingResult
 	if err := workflow.ExecuteActivity(shortActivityCtx, activities.CompleteRecordingProcessingActivityName, recording).Get(shortActivityCtx, &result); err != nil {

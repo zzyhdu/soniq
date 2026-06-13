@@ -182,6 +182,36 @@ apply_password_sessions_v3() {
   log "recorded password session schema version 3"
 }
 
+recording_mind_maps_present() {
+  [[ "$(psql_scalar "SELECT
+    to_regclass('public.recording_mind_maps') IS NOT NULL
+    AND (
+      SELECT count(*) = 10
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'recording_mind_maps'
+        AND column_name IN ('recording_id', 'provider', 'model', 'title', 'root_json', 'content_markdown', 'raw_result_json', 'generated_at', 'created_at', 'updated_at')
+    )")" == "t" ]]
+}
+
+apply_recording_mind_maps_v4() {
+  if migration_applied "4"; then
+    log "recording mind maps version 4 already recorded; skipping"
+    return 0
+  fi
+
+  if recording_mind_maps_present; then
+    log "recording mind maps already present; recording version 4"
+    record_migration "4"
+    return 0
+  fi
+
+  log "applying recording mind maps version 4"
+  psql_apply "backend/migrations/0004_add_recording_mind_maps.up.sql"
+  record_migration "4"
+  log "recorded recording mind maps version 4"
+}
+
 main() {
   cd "$ROOT_DIR"
 
@@ -189,6 +219,7 @@ main() {
   apply_baseline_v1
   apply_recording_failure_metadata_v2
   apply_password_sessions_v3
+  apply_recording_mind_maps_v4
 
   log "local Soniq application migrations are up to date"
 }

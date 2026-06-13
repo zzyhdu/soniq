@@ -99,11 +99,27 @@ export type RecordingSummary = {
   summarized_at: string;
 };
 
+export type RecordingMindMapNode = {
+  label: string;
+  children?: RecordingMindMapNode[];
+};
+
+export type RecordingMindMap = {
+  recording_id: string;
+  provider: string;
+  model: string;
+  title: string;
+  root: RecordingMindMapNode;
+  content_markdown: string;
+  generated_at: string;
+};
+
 export type RecordingDetails = {
   recording: Recording;
   transcript?: RecordingTranscript | null;
   segments: RecordingTranscriptSegment[];
   summary?: RecordingSummary | null;
+  mind_map?: RecordingMindMap | null;
 };
 
 export async function listRecordings(

@@ -92,6 +92,7 @@ func registerRecordingProcessing(registry recordingProcessingRegistry, store act
 	registry.RegisterActivityWithOptions(activitySet.TranscribeRecordingAudio, activity.RegisterOptions{Name: activities.TranscribeRecordingAudioActivityName})
 	registry.RegisterActivityWithOptions(activitySet.MarkRecordingSummarizing, activity.RegisterOptions{Name: activities.MarkRecordingSummarizingActivityName})
 	registry.RegisterActivityWithOptions(activitySet.SummarizeRecording, activity.RegisterOptions{Name: activities.SummarizeRecordingActivityName})
+	registry.RegisterActivityWithOptions(activitySet.GenerateMindMap, activity.RegisterOptions{Name: activities.GenerateMindMapActivityName})
 	registry.RegisterActivityWithOptions(activitySet.DeleteOriginalRecordingAudio, activity.RegisterOptions{Name: activities.DeleteOriginalRecordingAudioActivityName})
 	registry.RegisterActivityWithOptions(activitySet.CompleteRecordingProcessing, activity.RegisterOptions{Name: activities.CompleteRecordingProcessingActivityName})
 	registry.RegisterActivityWithOptions(activitySet.FailRecordingProcessing, activity.RegisterOptions{Name: activities.FailRecordingProcessingActivityName})

@@ -56,11 +56,14 @@ type recordingDetailsFixture struct {
 	transcript    recordings.RecordingTranscript
 	segments      []recordings.RecordingTranscriptSegment
 	summary       recordings.RecordingSummary
+	mindMap       recordings.RecordingMindMap
 	hasTranscript bool
 	hasSummary    bool
+	hasMindMap    bool
 	transcriptErr error
 	segmentsErr   error
 	summaryErr    error
+	mindMapErr    error
 }
 
 type recordingOnlyStore struct {
@@ -245,6 +248,17 @@ func (s *fakeRecordingStore) GetSummary(recordingID string) (recordings.Recordin
 		return recordings.RecordingSummary{}, false, nil
 	}
 	return fixture.summary, true, nil
+}
+
+func (s *fakeRecordingStore) GetMindMap(recordingID string) (recordings.RecordingMindMap, bool, error) {
+	fixture, ok := s.details[recordingID]
+	if fixture.mindMapErr != nil {
+		return recordings.RecordingMindMap{}, false, fixture.mindMapErr
+	}
+	if !ok || !fixture.hasMindMap {
+		return recordings.RecordingMindMap{}, false, nil
+	}
+	return fixture.mindMap, true, nil
 }
 
 func (s recordingOnlyStore) Create(recordings.CreateRecordingInput) (domain.Recording, error) {
@@ -866,8 +880,18 @@ func TestGetRecordingDetailsReturnsTranscriptSegmentsAndSummary(t *testing.T) {
 			ContentMarkdown: "## 概览\n同步了测试计划。",
 			RawResultJSON:   []byte(`{"provider":"raw-summary"}`),
 		},
+		mindMap: recordings.RecordingMindMap{
+			RecordingID:     recording.ID,
+			Provider:        "openai_compatible_llm",
+			Model:           "qwen3.7-plus",
+			Title:           "Weekly sync mind map",
+			RootJSON:        []byte(`{"label":"Weekly sync","children":[{"label":"测试计划"}]}`),
+			ContentMarkdown: "- Weekly sync\n  - 测试计划",
+			RawResultJSON:   []byte(`{"provider":"raw-mind-map"}`),
+		},
 		hasTranscript: true,
 		hasSummary:    true,
+		hasMindMap:    true,
 	}
 	router := NewRouterWithStore(store)
 	request := httptest.NewRequest(http.MethodGet, "/workspaces/wsp_default/recordings/"+recording.ID+"/details", nil)
@@ -917,6 +941,17 @@ func TestGetRecordingDetailsReturnsTranscriptSegmentsAndSummary(t *testing.T) {
 	if summaryBody["recording_id"] != recording.ID || summaryBody["provider"] != "openai_compatible_llm" || summaryBody["overview"] == "" {
 		t.Fatalf("summary = %#v, want public summary DTO", summaryBody)
 	}
+	mindMapBody, ok := body["mind_map"].(map[string]any)
+	if !ok {
+		t.Fatalf("mind_map = %#v, want object", body["mind_map"])
+	}
+	if mindMapBody["RecordingID"] != nil || mindMapBody["RawResultJSON"] != nil || mindMapBody["raw_result_json"] != nil {
+		t.Fatalf("mind map leaked persistence/raw fields: %#v", mindMapBody)
+	}
+	mindMapRoot, ok := mindMapBody["root"].(map[string]any)
+	if !ok || mindMapRoot["label"] != "Weekly sync" {
+		t.Fatalf("mind map root = %#v, want public root DTO", mindMapBody["root"])
+	}
 }
 
 func TestGetRecordingDetailsReturnsInternalServerErrorWhenDetailsStoreMissing(t *testing.T) {
@@ -959,6 +994,10 @@ func TestGetRecordingDetailsReturnsInternalServerErrorWhenDetailsReadFails(t *te
 		{
 			name:    "summary read fails",
 			details: recordingDetailsFixture{summaryErr: errRecordingDetailsFailed},
+		},
+		{
+			name:    "mind map read fails",
+			details: recordingDetailsFixture{mindMapErr: errRecordingDetailsFailed},
 		},
 	}
 

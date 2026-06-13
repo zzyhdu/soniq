@@ -73,8 +73,8 @@ type LLMProvider interface {
 
 Current implementation:
 
-- `fake_llm`, a deterministic local summary provider used by default smoke tests to verify workflow/activity/persistence wiring without credentials.
-- `openai_compatible`, a real LLM adapter shape for explicit/manual compatible-provider runs.
+- `fake_llm`, a deterministic local summary and mind map provider used by default smoke tests to verify workflow/activity/persistence wiring without credentials.
+- `openai_compatible`, a real LLM adapter shape for explicit/manual compatible-provider summary and mind map runs.
 
 Initial real implementations:
 

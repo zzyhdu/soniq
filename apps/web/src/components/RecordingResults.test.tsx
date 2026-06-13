@@ -46,6 +46,8 @@ describe('RecordingResults', () => {
     expect(await screen.findByText('Weekly sync summary')).toBeInTheDocument();
     expect(screen.getByText('The meeting covered launch status.')).toBeInTheDocument();
     expect(screen.getAllByText(/Action item: finish the dashboard/i)).toHaveLength(2);
+    expect(screen.getByText('Weekly sync mind map')).toBeInTheDocument();
+    expect(screen.getByText('Launch status')).toBeInTheDocument();
   });
 
   it('renders transcript segments in segment index order', async () => {
@@ -68,11 +70,13 @@ describe('RecordingResults', () => {
       transcript: null,
       segments: [],
       summary: null,
+      mind_map: null,
     })));
 
     renderResults({ workspaceId: 'wsp_default', recordingId: 'rec-empty', enabled: true });
 
     expect(await screen.findByText('No summary available yet.')).toBeInTheDocument();
+    expect(screen.getByText('No mind map available yet.')).toBeInTheDocument();
     expect(screen.getByText('No transcript available yet.')).toBeInTheDocument();
   });
 });
@@ -118,6 +122,23 @@ function recordingDetails(overrides: Record<string, unknown> = {}) {
       overview: 'The meeting covered launch status.',
       content_markdown: 'Action item: finish the dashboard.',
       summarized_at: '2026-06-10T00:02:00Z',
+    },
+    mind_map: {
+      recording_id: 'rec-1',
+      provider: 'openai_compatible',
+      model: 'qwen3.7-plus',
+      title: 'Weekly sync mind map',
+      root: {
+        label: 'Weekly sync',
+        children: [
+          {
+            label: 'Launch status',
+            children: [{ label: 'Dashboard action items' }],
+          },
+        ],
+      },
+      content_markdown: '- Weekly sync\n  - Launch status\n    - Dashboard action items',
+      generated_at: '2026-06-10T00:03:00Z',
     },
     ...overrides,
   };

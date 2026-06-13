@@ -67,7 +67,7 @@ Deletion should cover:
 - database rows
 - object storage artifacts
 - workflow metadata where possible
-- derived transcript/summary artifacts if requested
+- derived transcript/summary/mind-map artifacts if requested
 
 Temporal history may retain workflow metadata for its retention window, so user-facing deletion docs must explain this clearly.
 

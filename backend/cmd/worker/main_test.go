@@ -37,6 +37,7 @@ func TestRegisterRecordingProcessingRegistersWorkflowAndActivities(t *testing.T)
 		activities.TranscribeRecordingAudioActivityName,
 		activities.MarkRecordingSummarizingActivityName,
 		activities.SummarizeRecordingActivityName,
+		activities.GenerateMindMapActivityName,
 		activities.DeleteOriginalRecordingAudioActivityName,
 		activities.CompleteRecordingProcessingActivityName,
 		activities.FailRecordingProcessingActivityName,
@@ -287,4 +288,12 @@ func (s *workerRecordingStoreSpy) GetTranscript(recordingID string) (recordings.
 
 func (s *workerRecordingStoreSpy) UpsertSummary(input recordings.UpsertSummaryInput) (recordings.RecordingSummary, error) {
 	return recordings.RecordingSummary{RecordingID: input.RecordingID}, nil
+}
+
+func (s *workerRecordingStoreSpy) GetSummary(recordingID string) (recordings.RecordingSummary, bool, error) {
+	return recordings.RecordingSummary{RecordingID: recordingID}, true, nil
+}
+
+func (s *workerRecordingStoreSpy) UpsertMindMap(input recordings.UpsertMindMapInput) (recordings.RecordingMindMap, error) {
+	return recordings.RecordingMindMap{RecordingID: input.RecordingID}, nil
 }

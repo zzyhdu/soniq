@@ -4,7 +4,7 @@ Soniq uses Temporal for durable audio processing workflows.
 
 ## Current implementation status
 
-The repository currently contains a local end-to-end Temporal processing foundation through original-audio probing, ffmpeg-based audio normalization, deterministic fake transcription, optional original-audio deletion after successful transcription, and deterministic fake summarization. The implemented boundary uses the real Temporal Go SDK and Temporal SDK testsuite, wires successful workspace-scoped audio uploads through a Temporal-backed recording processor, starts `RecordingProcessingWorkflow` asynchronously with workflow ID `recording-processing-<recording_id>`, and registers the workflow on the worker. The API supports metadata-only `POST /workspaces/{workspace_id}/recordings`, multipart `POST /workspaces/{workspace_id}/recordings/upload`, and failed recording retry through `POST /workspaces/{workspace_id}/recordings/{recording_id}/retry`; metadata-only requests only create recording rows, while upload and retry requests enqueue the workflow. The worker connects to Soniq application Postgres and registers store-backed recording activities under stable Temporal activity names, so the current workflow validates recordings by `workspace_id + recording_id`, persists status transitions through `uploaded -> processing -> transcribing -> summarizing -> completed` with workspace-scoped updates, runs `ffprobe` against the uploaded original audio, persists one `recording_audio_probes` row, normalizes audio to a local WAV/PCM artifact (`pcm_s16le`, 16 kHz, mono), persists one `recording_normalized_audios` row, persists `recording_transcripts` and `recording_transcript_segments` using the fake transcription provider against the normalized audio path, optionally deletes the original uploaded audio object when `PRIVACY_DELETE_ORIGINAL_AUDIO_AFTER_TRANSCRIPTION=true`, and persists `recording_summaries` using the fake summary provider, with a best-effort `failed` transition that records `failure_reason` and `failed_at` if probe/normalization/transcription/original-audio-deletion/summarization/completion fails. Real ASR providers, real LLM providers, provider webhooks, and S3-compatible object storage remain future milestones.
+The repository currently contains a local end-to-end Temporal processing foundation through original-audio probing, ffmpeg-based audio normalization, deterministic fake transcription, optional original-audio deletion after successful transcription, deterministic fake summarization, and deterministic fake mind map generation. The implemented boundary uses the real Temporal Go SDK and Temporal SDK testsuite, wires successful workspace-scoped audio uploads through a Temporal-backed recording processor, starts `RecordingProcessingWorkflow` asynchronously with workflow ID `recording-processing-<recording_id>`, and registers the workflow on the worker. The API supports metadata-only `POST /workspaces/{workspace_id}/recordings`, multipart `POST /workspaces/{workspace_id}/recordings/upload`, and failed recording retry through `POST /workspaces/{workspace_id}/recordings/{recording_id}/retry`; metadata-only requests only create recording rows, while upload and retry requests enqueue the workflow. The worker connects to Soniq application Postgres and registers store-backed recording activities under stable Temporal activity names, so the current workflow validates recordings by `workspace_id + recording_id`, persists status transitions through `uploaded -> processing -> transcribing -> summarizing -> completed` with workspace-scoped updates, runs `ffprobe` against the uploaded original audio, persists one `recording_audio_probes` row, normalizes audio to a local WAV/PCM artifact (`pcm_s16le`, 16 kHz, mono), persists one `recording_normalized_audios` row, persists `recording_transcripts` and `recording_transcript_segments` using the fake transcription provider against the normalized audio path, optionally deletes the original uploaded audio object when `PRIVACY_DELETE_ORIGINAL_AUDIO_AFTER_TRANSCRIPTION=true`, persists `recording_summaries`, and persists `recording_mind_maps` using the fake LLM provider, with a best-effort `failed` transition that records `failure_reason` and `failed_at` if probe/normalization/transcription/original-audio-deletion/summarization/mind-map generation/completion fails. Real ASR providers, real LLM providers, provider webhooks, and S3-compatible object storage remain future milestones.
 
 New uploaded original audio objects use workspace-scoped keys under `workspaces/{workspace_id}/recordings/`. Existing legacy `recordings/...` object keys remain readable by the local storage resolver as safe relative object keys.
 
@@ -46,6 +46,8 @@ DeleteOriginalRecordingAudio  // optional when privacy flag is true
 MarkRecordingSummarizing
   ↓
 SummarizeRecording        // deterministic fake provider for now
+  ↓
+GenerateMindMap          // deterministic fake provider for now
   ↓
 CompleteRecordingProcessing
 ```
@@ -92,6 +94,10 @@ optional original object delete when PRIVACY_DELETE_ORIGINAL_AUDIO_AFTER_TRANSCR
 fake summary provider
   ↓
 recording_summaries upsert
+  ↓
+fake mind map provider
+  ↓
+recording_mind_maps upsert
 ```
 
 The worker resolves local object keys under `LOCAL_STORAGE_PATH`, so the probe, normalization, and fake transcription steps are currently local-storage-only. The fake providers are deterministic local development providers used to verify workflow, activity, and persistence wiring without credentials. They are not real ASR or LLM integrations.
@@ -168,6 +174,7 @@ workspaces/{workspace_id}/recordings/{recording_id}/audio/original
 workspaces/{workspace_id}/recordings/{recording_id}/audio/normalized.wav
 workspaces/{workspace_id}/recordings/{recording_id}/transcripts/raw.v1.json
 workspaces/{workspace_id}/recordings/{recording_id}/summaries/summary.v1.json
+workspaces/{workspace_id}/recordings/{recording_id}/mind-maps/mind-map.v1.json
 ```
 
 A retried activity should overwrite or reuse the same output instead of creating unbounded duplicate artifacts.

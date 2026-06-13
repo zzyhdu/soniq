@@ -1030,6 +1030,115 @@ func TestPostgresStoreGetSummaryReturnsErrorForDatabaseFailure(t *testing.T) {
 	}
 }
 
+func TestPostgresStoreUpsertMindMapInsertsOrUpdatesMindMap(t *testing.T) {
+	generatedAt := time.Date(2026, 6, 6, 4, 5, 6, 0, time.UTC)
+	createdAt := generatedAt
+	updatedAt := generatedAt.Add(time.Second)
+	root := []byte(`{"label":"Weekly sync","children":[{"label":"Launch"}]}`)
+	raw := []byte(`{"title":"Weekly sync"}`)
+	db := newPostgresExecutorSpy(postgresRow(
+		"rec_mind_map",
+		"fake_llm",
+		"fake-mind-map-v1",
+		"Weekly sync",
+		root,
+		"- Weekly sync\n  - Launch",
+		raw,
+		generatedAt,
+		createdAt,
+		updatedAt,
+	))
+	store := NewPostgresStore(db)
+
+	mindMap, err := store.UpsertMindMap(UpsertMindMapInput{
+		RecordingID:     "rec_mind_map",
+		Provider:        "fake_llm",
+		Model:           "fake-mind-map-v1",
+		Title:           "Weekly sync",
+		RootJSON:        root,
+		ContentMarkdown: "- Weekly sync\n  - Launch",
+		RawResultJSON:   raw,
+		GeneratedAt:     generatedAt,
+	})
+	if err != nil {
+		t.Fatalf("UpsertMindMap returned error: %v", err)
+	}
+	if mindMap.RecordingID != "rec_mind_map" || mindMap.Provider != "fake_llm" || string(mindMap.RootJSON) != string(root) {
+		t.Fatalf("mind map = %+v, want persisted mind map", mindMap)
+	}
+	if got, want := len(db.calls), 1; got != want {
+		t.Fatalf("query calls = %d, want %d", got, want)
+	}
+	query := strings.ToLower(db.calls[0].query)
+	if !strings.Contains(query, "insert into recording_mind_maps") || !strings.Contains(query, "on conflict") || !strings.Contains(query, "returning") {
+		t.Fatalf("query = %q, want insert into recording_mind_maps on conflict returning", db.calls[0].query)
+	}
+	if got, want := len(db.calls[0].args), 10; got != want {
+		t.Fatalf("mind map upsert args = %d, want %d", got, want)
+	}
+}
+
+func TestPostgresStoreGetMindMapReturnsExistingMindMap(t *testing.T) {
+	generatedAt := time.Date(2026, 6, 6, 4, 5, 6, 0, time.UTC)
+	createdAt := generatedAt
+	updatedAt := generatedAt.Add(time.Second)
+	root := []byte(`{"label":"Weekly sync","children":[{"label":"Launch"}]}`)
+	raw := []byte(`{"title":"Weekly sync"}`)
+	db := newPostgresExecutorSpy(postgresRow(
+		"rec_mind_map",
+		"fake_llm",
+		"fake-mind-map-v1",
+		"Weekly sync",
+		root,
+		"- Weekly sync\n  - Launch",
+		raw,
+		generatedAt,
+		createdAt,
+		updatedAt,
+	))
+	store := NewPostgresStore(db)
+
+	mindMap, ok, err := store.GetMindMap("rec_mind_map")
+	if err != nil {
+		t.Fatalf("GetMindMap returned error: %v", err)
+	}
+	if !ok {
+		t.Fatal("GetMindMap(rec_mind_map) ok = false, want true")
+	}
+	if mindMap.RecordingID != "rec_mind_map" || string(mindMap.RootJSON) != string(root) {
+		t.Fatalf("mind map = %+v, want persisted mind map", mindMap)
+	}
+	query := strings.ToLower(db.calls[0].query)
+	if !strings.Contains(query, "select") || !strings.Contains(query, "from recording_mind_maps") {
+		t.Fatalf("query = %q, want select from recording_mind_maps", db.calls[0].query)
+	}
+}
+
+func TestPostgresStoreGetMindMapReturnsFalseForMissingRecording(t *testing.T) {
+	db := newPostgresExecutorSpy(postgresErrorRow(sql.ErrNoRows))
+	store := NewPostgresStore(db)
+	_, ok, err := store.GetMindMap("rec_missing")
+	if err != nil {
+		t.Fatalf("GetMindMap returned error: %v", err)
+	}
+	if ok {
+		t.Fatal("GetMindMap(rec_missing) ok = true, want false")
+	}
+}
+
+func TestPostgresStoreGetMindMapReturnsErrorForDatabaseFailure(t *testing.T) {
+	dbErr := errors.New("database unavailable")
+	db := newPostgresExecutorSpy(postgresErrorRow(dbErr))
+	store := NewPostgresStore(db)
+	_, ok, err := store.GetMindMap("rec_error")
+	if err == nil {
+		t.Fatal("GetMindMap returned nil error, want database error")
+	}
+	if ok {
+		t.Fatal("GetMindMap(rec_error) ok = true, want false")
+	}
+}
+
 func TestPostgresStoreUpsertNormalizedAudioInsertsOrUpdatesMetadata(t *testing.T) {
 	normalizedAt := time.Date(2026, 6, 6, 4, 5, 6, 0, time.UTC)
 	createdAt := normalizedAt

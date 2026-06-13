@@ -1,4 +1,4 @@
-import { type RecordingDetails, type RecordingTranscriptSegment } from '@soniq/api-client';
+import { type RecordingDetails, type RecordingMindMapNode, type RecordingTranscriptSegment } from '@soniq/api-client';
 
 import { useRecordingDetails } from '@/api/queries';
 import { Badge } from '@/components/ui/badge';
@@ -22,7 +22,7 @@ export function RecordingResults({ workspaceId, recordingId, enabled }: Recordin
       <Card aria-label="Recording results">
         <CardHeader>
           <CardTitle>Results</CardTitle>
-          <CardDescription>Loading transcript and summary.</CardDescription>
+          <CardDescription>Loading transcript, summary, and mind map.</CardDescription>
         </CardHeader>
       </Card>
     );
@@ -55,7 +55,7 @@ function RecordingResultsView({ details }: { details: RecordingDetails }) {
   const segments = [...details.segments].sort((a, b) => a.segment_index - b.segment_index);
 
   return (
-    <section className="grid gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]" aria-label="Recording results">
+    <section className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]" aria-label="Recording results">
       <Card>
         <CardHeader>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -84,6 +84,27 @@ function RecordingResultsView({ details }: { details: RecordingDetails }) {
       </Card>
 
       <Card>
+        <CardHeader>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1.5">
+              <CardTitle>Mind map</CardTitle>
+              <CardDescription>{details.mind_map?.title ?? details.recording.title}</CardDescription>
+            </div>
+            {details.mind_map !== null && details.mind_map !== undefined && (
+              <Badge variant="secondary">{details.mind_map.provider}</Badge>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {details.mind_map !== null && details.mind_map !== undefined ? (
+            <MindMapTree root={details.mind_map.root} />
+          ) : (
+            <p className="text-muted-foreground text-sm">No mind map available yet.</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="xl:col-span-2">
         <CardHeader>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="space-y-1.5">
@@ -120,6 +141,36 @@ function RecordingResultsView({ details }: { details: RecordingDetails }) {
         </CardContent>
       </Card>
     </section>
+  );
+}
+
+function MindMapTree({ root }: { root: RecordingMindMapNode }) {
+  return (
+    <div className="overflow-x-auto rounded-md border bg-background p-4">
+      <MindMapNodeView node={root} depth={0} />
+    </div>
+  );
+}
+
+function MindMapNodeView({ node, depth }: { node: RecordingMindMapNode; depth: number }) {
+  const children = node.children ?? [];
+
+  return (
+    <div className={depth === 0 ? 'min-w-[260px]' : 'border-l pl-4'} data-testid="mind-map-node">
+      <div className="flex items-start gap-2 py-1.5">
+        <span className="bg-primary mt-2 h-2 w-2 shrink-0 rounded-full" aria-hidden="true" />
+        <span className={depth === 0 ? 'text-base font-semibold leading-6' : 'text-sm leading-6'}>
+          {node.label}
+        </span>
+      </div>
+      {children.length > 0 && (
+        <div className="ml-1.5 space-y-1">
+          {children.map((child, index) => (
+            <MindMapNodeView key={`${depth}-${index}-${child.label}`} node={child} depth={depth + 1} />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

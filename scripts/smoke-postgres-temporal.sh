@@ -376,9 +376,9 @@ assert_recording_normalized_audio_in_db() {
   fi
 }
 
-assert_recording_transcript_summary_in_db() {
+assert_recording_transcript_summary_mind_map_in_db() {
   local recording_id="$1"
-  local transcript_row segment_count summary_row
+  local transcript_row segment_count summary_row mind_map_row
   transcript_row="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
     psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -AtF $'\t' -c "SELECT provider, model, language, (length(text) > 0), jsonb_typeof(raw_result_json) FROM recording_transcripts WHERE recording_id = '$recording_id'")"
   if [[ -z "$transcript_row" ]]; then
@@ -421,6 +421,19 @@ assert_recording_transcript_summary_in_db() {
   fi
   if [[ -n "$EXPECTED_SUMMARY_MODEL" && "$summary_model" != "$EXPECTED_SUMMARY_MODEL" ]]; then
     log "unexpected DB summary model: $summary_model, want $EXPECTED_SUMMARY_MODEL"
+    return 1
+  fi
+
+  mind_map_row="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
+    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -AtF $'\t' -c "SELECT provider, model, (length(title) > 0), jsonb_typeof(root_json), (length(content_markdown) > 0), jsonb_typeof(raw_result_json) FROM recording_mind_maps WHERE recording_id = '$recording_id'")"
+  if [[ -z "$mind_map_row" ]]; then
+    log "recording mind map row missing for $recording_id"
+    return 1
+  fi
+
+  IFS=$'\t' read -r mind_map_provider mind_map_model mind_map_has_title mind_map_root_json_type mind_map_has_content mind_map_raw_json_type <<<"$mind_map_row"
+  if [[ -z "$mind_map_provider" || -z "$mind_map_model" || "$mind_map_has_title" != "t" || "$mind_map_root_json_type" != "object" || "$mind_map_has_content" != "t" || "$mind_map_raw_json_type" != "object" ]]; then
+    log "unexpected DB mind map row: $mind_map_row"
     return 1
   fi
 }
@@ -538,8 +551,8 @@ main() {
       log "recording audio probe metadata persisted: $recording_id"
       assert_recording_normalized_audio_in_db "$recording_id"
       log "recording normalized audio persisted: $recording_id"
-      assert_recording_transcript_summary_in_db "$recording_id"
-      log "recording transcript and summary persisted: $recording_id"
+      assert_recording_transcript_summary_mind_map_in_db "$recording_id"
+      log "recording transcript, summary, and mind map persisted: $recording_id"
       log "recording persisted across API restart: $recording_id"
       return 0
     fi

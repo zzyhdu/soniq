@@ -513,6 +513,69 @@ WHERE recording_id = $1`,
 	return summary, true, nil
 }
 
+// UpsertMindMap stores or replaces the latest mind map for a recording.
+func (s *PostgresStore) UpsertMindMap(input UpsertMindMapInput) (RecordingMindMap, error) {
+	if err := validateMindMapInput(input); err != nil {
+		return RecordingMindMap{}, err
+	}
+	if s == nil || s.db == nil {
+		return RecordingMindMap{}, fmt.Errorf("postgres recording store requires database executor")
+	}
+	now := time.Now().UTC()
+	var mindMap RecordingMindMap
+	row := s.db.QueryRow(
+		context.Background(),
+		`INSERT INTO recording_mind_maps (recording_id, provider, model, title, root_json, content_markdown, raw_result_json, generated_at, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+ON CONFLICT (recording_id) DO UPDATE
+SET provider = EXCLUDED.provider,
+    model = EXCLUDED.model,
+    title = EXCLUDED.title,
+    root_json = EXCLUDED.root_json,
+    content_markdown = EXCLUDED.content_markdown,
+    raw_result_json = EXCLUDED.raw_result_json,
+    generated_at = EXCLUDED.generated_at,
+    updated_at = EXCLUDED.updated_at
+RETURNING recording_id, provider, model, title, root_json, content_markdown, raw_result_json, generated_at, created_at, updated_at`,
+		input.RecordingID,
+		input.Provider,
+		input.Model,
+		input.Title,
+		append([]byte(nil), input.RootJSON...),
+		input.ContentMarkdown,
+		append([]byte(nil), input.RawResultJSON...),
+		input.GeneratedAt,
+		now,
+		now,
+	)
+	if err := scanMindMap(row, &mindMap); err != nil {
+		return RecordingMindMap{}, fmt.Errorf("upsert recording mind map: %w", err)
+	}
+	return mindMap, nil
+}
+
+// GetMindMap returns the latest mind map by recording id.
+func (s *PostgresStore) GetMindMap(recordingID string) (RecordingMindMap, bool, error) {
+	if s == nil || s.db == nil {
+		return RecordingMindMap{}, false, fmt.Errorf("postgres recording store requires database executor")
+	}
+	var mindMap RecordingMindMap
+	row := s.db.QueryRow(
+		context.Background(),
+		`SELECT recording_id, provider, model, title, root_json, content_markdown, raw_result_json, generated_at, created_at, updated_at
+FROM recording_mind_maps
+WHERE recording_id = $1`,
+		recordingID,
+	)
+	if err := scanMindMap(row, &mindMap); err != nil {
+		if errors.Is(err, sql.ErrNoRows) || errors.Is(err, pgx.ErrNoRows) {
+			return RecordingMindMap{}, false, nil
+		}
+		return RecordingMindMap{}, false, fmt.Errorf("get recording mind map: %w", err)
+	}
+	return mindMap, true, nil
+}
+
 func scanNormalizedAudio(row storedb.PostgresRow, normalized *RecordingNormalizedAudio) error {
 	return row.Scan(
 		&normalized.RecordingID,
@@ -540,6 +603,10 @@ func scanTranscriptSegment(row storedb.PostgresRow, segment *RecordingTranscript
 
 func scanSummary(row storedb.PostgresRow, summary *RecordingSummary) error {
 	return row.Scan(&summary.RecordingID, &summary.Provider, &summary.Model, &summary.Type, &summary.Title, &summary.Overview, &summary.ContentMarkdown, &summary.RawResultJSON, &summary.SummarizedAt, &summary.CreatedAt, &summary.UpdatedAt)
+}
+
+func scanMindMap(row storedb.PostgresRow, mindMap *RecordingMindMap) error {
+	return row.Scan(&mindMap.RecordingID, &mindMap.Provider, &mindMap.Model, &mindMap.Title, &mindMap.RootJSON, &mindMap.ContentMarkdown, &mindMap.RawResultJSON, &mindMap.GeneratedAt, &mindMap.CreatedAt, &mindMap.UpdatedAt)
 }
 
 func scanRecording(row storedb.PostgresRow, recording *domain.Recording) error {

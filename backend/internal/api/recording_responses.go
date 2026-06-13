@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/zzyhdu/soniq/backend/internal/domain"
@@ -12,6 +13,7 @@ type recordingDetailsResponse struct {
 	Transcript *recordingTranscriptResponse `json:"transcript"`
 	Segments   []recordingSegmentResponse   `json:"segments"`
 	Summary    *recordingSummaryResponse    `json:"summary"`
+	MindMap    *recordingMindMapResponse    `json:"mind_map"`
 }
 
 type uploadRecordingResponse struct {
@@ -76,6 +78,16 @@ type recordingSummaryResponse struct {
 	SummarizedAt    time.Time           `json:"summarized_at"`
 }
 
+type recordingMindMapResponse struct {
+	RecordingID     string          `json:"recording_id"`
+	Provider        string          `json:"provider"`
+	Model           string          `json:"model"`
+	Title           string          `json:"title"`
+	Root            json.RawMessage `json:"root"`
+	ContentMarkdown string          `json:"content_markdown"`
+	GeneratedAt     time.Time       `json:"generated_at"`
+}
+
 func toRecordingResponse(recording domain.Recording) recordingResponse {
 	return recordingResponse{
 		ID:               recording.ID,
@@ -133,5 +145,17 @@ func toRecordingSummaryResponse(summary recordings.RecordingSummary) *recordingS
 		Overview:        summary.Overview,
 		ContentMarkdown: summary.ContentMarkdown,
 		SummarizedAt:    summary.SummarizedAt,
+	}
+}
+
+func toRecordingMindMapResponse(mindMap recordings.RecordingMindMap) *recordingMindMapResponse {
+	return &recordingMindMapResponse{
+		RecordingID:     mindMap.RecordingID,
+		Provider:        mindMap.Provider,
+		Model:           mindMap.Model,
+		Title:           mindMap.Title,
+		Root:            json.RawMessage(append([]byte(nil), mindMap.RootJSON...)),
+		ContentMarkdown: mindMap.ContentMarkdown,
+		GeneratedAt:     mindMap.GeneratedAt,
 	}
 }

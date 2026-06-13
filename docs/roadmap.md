@@ -9,13 +9,13 @@ Completed foundation milestones:
 - Go backend skeleton with `GET /healthz`.
 - Postgres-backed workspace-scoped recording API: `POST /workspaces/{workspace_id}/recordings`, `POST /workspaces/{workspace_id}/recordings/upload`, `GET /workspaces/{workspace_id}/recordings/{recording_id}`, `GET /workspaces/{workspace_id}/recordings/{recording_id}/status`, and `POST /workspaces/{workspace_id}/recordings/{recording_id}/retry`.
 - Local filesystem object storage for uploaded recording audio.
-- Temporal workflow with Postgres-backed recording status, audio-probe, audio-normalization, fake transcription, and fake summarization activities.
+- Temporal workflow with Postgres-backed recording status, audio-probe, audio-normalization, fake transcription, fake summarization, and fake mind map activities.
 - Temporal worker registration with Soniq Postgres-backed activities.
 - API-to-Temporal workflow start: successful audio uploads start `RecordingProcessingWorkflow` asynchronously; metadata-only recording creation does not enqueue processing.
 - Local Temporal development environment: Docker Compose services, Makefile targets, docs, and a full smoke helper.
-- Verified local smoke path: API → local object store → Soniq Postgres → Temporal → worker → `ffprobe` → `recording_audio_probes` → `ffmpeg` → `recording_normalized_audios` + local `normalized.wav` → fake transcription → `recording_transcripts`/segments → fake summary → `recording_summaries` → `recordings.status=completed`. This is a real pipeline/infrastructure smoke; only the model providers are deterministic fakes by default.
+- Verified local smoke path: API -> local object store -> Soniq Postgres -> Temporal -> worker -> `ffprobe` -> `recording_audio_probes` -> `ffmpeg` -> `recording_normalized_audios` + local `normalized.wav` -> fake transcription -> `recording_transcripts`/segments -> fake summary -> `recording_summaries` -> fake mind map -> `recording_mind_maps` -> `recordings.status=completed`. This is a real pipeline/infrastructure smoke; only the model providers are deterministic fakes by default.
 - Backend-owned OpenAPI + Scalar API Console served at `/openapi.yaml` and `/api-console`, with same-origin browser "Try it" support for upload, status, and details endpoints.
-- Basic product Web UI foundation under `apps/web`: pnpm workspace, typed `@soniq/api-client`, Vite React app shell, Tailwind/shadcn primitives, upload form, bookmarkable recording hash routes, processing status polling, failed-recording retry, and completed transcript/summary display.
+- Basic product Web UI foundation under `apps/web`: pnpm workspace, typed `@soniq/api-client`, Vite React app shell, Tailwind/shadcn primitives, upload form, bookmarkable recording hash routes, processing status polling, failed-recording retry, and completed transcript/summary/mind-map display.
 
 The next focus is choosing the next product direction: provider productization, broader Web UI result browsing, or another user-facing workflow on top of the working local pipeline.
 
@@ -101,11 +101,11 @@ Status: complete for provider-neutral local fake-provider foundation.
 
 Completed scope:
 
-- `recording_transcripts`, `recording_transcript_segments`, `recording_summaries`, and `recording_normalized_audios` persistence.
+- `recording_transcripts`, `recording_transcript_segments`, `recording_summaries`, `recording_mind_maps`, and `recording_normalized_audios` persistence.
 - Workflow status transitions through `processing`, `transcribing`, `summarizing`, and `completed`.
 - Original-audio probe plus ffmpeg normalization to WAV/PCM (`pcm_s16le`, 16 kHz, mono).
-- Deterministic local fake transcription and summary providers wired into worker registration; transcription requires normalized audio metadata and reads the normalized local path.
-- Full local smoke verifies probe metadata, normalized audio metadata and artifact, transcript rows, segment rows, summary rows, Temporal `COMPLETED`, and `recordings.status=completed`.
+- Deterministic local fake transcription, summary, and mind map providers wired into worker registration; transcription requires normalized audio metadata and reads the normalized local path.
+- Full local smoke verifies probe metadata, normalized audio metadata and artifact, transcript rows, segment rows, summary rows, mind map rows, Temporal `COMPLETED`, and `recordings.status=completed`.
 
 Remaining future scope:
 

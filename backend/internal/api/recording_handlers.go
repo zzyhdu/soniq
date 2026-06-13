@@ -294,6 +294,14 @@ func getRecordingDetailsHandler(store RecordingStore) http.HandlerFunc {
 		if hasSummary {
 			details.Summary = toRecordingSummaryResponse(summary)
 		}
+		mindMap, hasMindMap, err := detailsStore.GetMindMap(id)
+		if err != nil {
+			writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "get recording mind map")
+			return
+		}
+		if hasMindMap {
+			details.MindMap = toRecordingMindMapResponse(mindMap)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(details)
 	}

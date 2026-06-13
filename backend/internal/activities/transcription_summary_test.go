@@ -3,6 +3,7 @@ package activities
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,6 +20,7 @@ type transcriptionSummaryStoreSpy struct {
 	transcriptErr      error
 	transcripts        []recordings.UpsertTranscriptInput
 	summaries          []recordings.UpsertSummaryInput
+	mindMaps           []recordings.UpsertMindMapInput
 }
 
 func (s *transcriptionSummaryStoreSpy) Get(id string) (domain.Recording, bool, error) {
@@ -109,6 +111,40 @@ func (s *transcriptionSummaryStoreSpy) UpsertSummary(input recordings.UpsertSumm
 	}, nil
 }
 
+func (s *transcriptionSummaryStoreSpy) GetSummary(recordingID string) (recordings.RecordingSummary, bool, error) {
+	for i := len(s.summaries) - 1; i >= 0; i-- {
+		summary := s.summaries[i]
+		if summary.RecordingID == recordingID {
+			return recordings.RecordingSummary{
+				RecordingID:     summary.RecordingID,
+				Provider:        summary.Provider,
+				Model:           summary.Model,
+				Type:            summary.Type,
+				Title:           summary.Title,
+				Overview:        summary.Overview,
+				ContentMarkdown: summary.ContentMarkdown,
+				RawResultJSON:   append([]byte(nil), summary.RawResultJSON...),
+				SummarizedAt:    summary.SummarizedAt,
+			}, true, nil
+		}
+	}
+	return recordings.RecordingSummary{}, false, nil
+}
+
+func (s *transcriptionSummaryStoreSpy) UpsertMindMap(input recordings.UpsertMindMapInput) (recordings.RecordingMindMap, error) {
+	s.mindMaps = append(s.mindMaps, input)
+	return recordings.RecordingMindMap{
+		RecordingID:     input.RecordingID,
+		Provider:        input.Provider,
+		Model:           input.Model,
+		Title:           input.Title,
+		RootJSON:        append([]byte(nil), input.RootJSON...),
+		ContentMarkdown: input.ContentMarkdown,
+		RawResultJSON:   append([]byte(nil), input.RawResultJSON...),
+		GeneratedAt:     input.GeneratedAt,
+	}, nil
+}
+
 type transcriptionProviderSpy struct {
 	requests []TranscriptionRequest
 	result   TranscriptionResult
@@ -135,6 +171,21 @@ func (p *summaryProviderSpy) Summarize(ctx context.Context, request SummaryReque
 		return SummaryResult{}, p.err
 	}
 	return p.result, nil
+}
+
+type mindMapProviderSpy struct {
+	summaryProviderSpy
+	mindMapRequests []MindMapRequest
+	mindMapResult   MindMapResult
+	mindMapErr      error
+}
+
+func (p *mindMapProviderSpy) GenerateMindMap(ctx context.Context, request MindMapRequest) (MindMapResult, error) {
+	p.mindMapRequests = append(p.mindMapRequests, request)
+	if p.mindMapErr != nil {
+		return MindMapResult{}, p.mindMapErr
+	}
+	return p.mindMapResult, nil
 }
 
 type objectStoreSpy struct {
@@ -371,5 +422,67 @@ func TestRecordingProcessingActivitiesSummarizeRecordingReturnsProviderErrorWith
 	}
 	if len(store.summaries) != 0 {
 		t.Fatalf("stored summaries = %d, want 0 after provider error", len(store.summaries))
+	}
+}
+
+func TestRecordingProcessingActivitiesGenerateMindMapPersistsMindMap(t *testing.T) {
+	generatedAt := time.Date(2026, 6, 6, 6, 7, 8, 0, time.UTC)
+	store := &transcriptionSummaryStoreSpy{
+		recordings: map[string]domain.Recording{
+			"rec_mind_map": {ID: "rec_mind_map", Title: "Weekly sync", WorkflowType: domain.WorkflowTypeMeeting, Language: "en"},
+		},
+		transcript: recordings.RecordingTranscript{RecordingID: "rec_mind_map", Language: "en", Text: "launch status and dashboard action items"},
+		summaries: []recordings.UpsertSummaryInput{{
+			RecordingID:     "rec_mind_map",
+			Provider:        "fake_llm",
+			Model:           "fake-summary-v1",
+			Type:            domain.WorkflowTypeMeeting,
+			Title:           "Weekly sync",
+			Overview:        "launch status",
+			ContentMarkdown: "# Weekly sync\n\nLaunch status and dashboard action items.",
+			RawResultJSON:   []byte(`{"overview":"launch status"}`),
+			SummarizedAt:    generatedAt.Add(-time.Minute),
+		}},
+	}
+	provider := &mindMapProviderSpy{mindMapResult: MindMapResult{
+		Provider: "fake_llm",
+		Model:    "fake-mind-map-v1",
+		Title:    "Weekly sync",
+		Root: MindMapNode{
+			Label: "Weekly sync",
+			Children: []MindMapNode{{
+				Label:    "Launch status",
+				Children: []MindMapNode{{Label: "Dashboard action items"}},
+			}},
+		},
+		ContentMarkdown: "- Weekly sync\n  - Launch status\n    - Dashboard action items",
+		RawResultJSON:   []byte(`{"title":"Weekly sync"}`),
+		GeneratedAt:     generatedAt,
+	}}
+	activities := NewRecordingProcessingActivitiesWithPipeline(store, &localPathResolverSpy{}, &audioProbeRunnerSpy{}, &transcriptionProviderSpy{}, provider)
+
+	if err := activities.GenerateMindMap(context.Background(), "rec_mind_map"); err != nil {
+		t.Fatalf("GenerateMindMap returned error: %v", err)
+	}
+
+	if len(provider.mindMapRequests) != 1 {
+		t.Fatalf("mind map provider requests = %d, want 1", len(provider.mindMapRequests))
+	}
+	request := provider.mindMapRequests[0]
+	if request.RecordingID != "rec_mind_map" || request.TranscriptText != "launch status and dashboard action items" || !strings.Contains(request.SummaryMarkdown, "Launch status") {
+		t.Fatalf("mind map request = %+v, want recording metadata, transcript, and summary", request)
+	}
+	if len(store.mindMaps) != 1 {
+		t.Fatalf("stored mind maps = %d, want 1", len(store.mindMaps))
+	}
+	mindMap := store.mindMaps[0]
+	if mindMap.RecordingID != "rec_mind_map" || mindMap.Provider != "fake_llm" || !strings.Contains(string(mindMap.RootJSON), "Dashboard action items") {
+		t.Fatalf("stored mind map = %+v, want provider mind map", mindMap)
+	}
+}
+
+func TestRecordingProcessingActivitiesGenerateMindMapRequiresDependencies(t *testing.T) {
+	if err := NewRecordingProcessingActivitiesWithPipeline(&transcriptionSummaryStoreSpy{}, &localPathResolverSpy{}, &audioProbeRunnerSpy{}, &transcriptionProviderSpy{}, &summaryProviderSpy{}).GenerateMindMap(context.Background(), "rec_mind_map"); err == nil {
+		t.Fatal("GenerateMindMap returned nil error, want mind map provider required error")
 	}
 }

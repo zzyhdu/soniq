@@ -401,6 +401,10 @@ func (s *buildHandlerRecordingStoreSpy) GetSummary(string) (recordings.Recording
 	return recordings.RecordingSummary{}, false, nil
 }
 
+func (s *buildHandlerRecordingStoreSpy) GetMindMap(string) (recordings.RecordingMindMap, bool, error) {
+	return recordings.RecordingMindMap{}, false, nil
+}
+
 func (s *buildHandlerRecordingStoreSpy) GetUser(_ context.Context, userID string) (domain.User, bool, error) {
 	if userID != "usr_dev" {
 		return domain.User{}, false, nil

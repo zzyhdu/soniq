@@ -68,7 +68,7 @@ Examples:
 - Run ffmpeg.
 - Call ASR providers.
 - Call LLM providers.
-- Persist transcript/summary rows.
+- Persist transcript, summary, and mind map rows.
 - Send webhooks/notifications.
 
 Activities must be idempotent because Temporal can retry them.
@@ -98,6 +98,7 @@ audio_chunk
 transcript_raw
 transcript_clean
 summary
+mind_map
 title
 action_items
 export

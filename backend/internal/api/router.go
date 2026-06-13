@@ -27,6 +27,7 @@ type RecordingDetailsStore interface {
 	GetTranscript(recordingID string) (recordings.RecordingTranscript, bool, error)
 	ListTranscriptSegments(recordingID string) ([]recordings.RecordingTranscriptSegment, error)
 	GetSummary(recordingID string) (recordings.RecordingSummary, bool, error)
+	GetMindMap(recordingID string) (recordings.RecordingMindMap, bool, error)
 }
 
 // RecordingRetryStore is the optional persistence seam for resetting failed recordings before retry.

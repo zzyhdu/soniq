@@ -180,6 +180,32 @@ type UpsertSummaryInput struct {
 	SummarizedAt    time.Time
 }
 
+// RecordingMindMap contains the latest mind map for a recording.
+type RecordingMindMap struct {
+	RecordingID     string
+	Provider        string
+	Model           string
+	Title           string
+	RootJSON        []byte
+	ContentMarkdown string
+	RawResultJSON   []byte
+	GeneratedAt     time.Time
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
+// UpsertMindMapInput contains mind map data to persist for a recording.
+type UpsertMindMapInput struct {
+	RecordingID     string
+	Provider        string
+	Model           string
+	Title           string
+	RootJSON        []byte
+	ContentMarkdown string
+	RawResultJSON   []byte
+	GeneratedAt     time.Time
+}
+
 func validateStatusUpdateInput(input UpdateRecordingStatusInput) error {
 	if input.ID == "" {
 		return fmt.Errorf("recording id is required")
@@ -322,6 +348,28 @@ func validateSummaryInput(input UpsertSummaryInput) error {
 	}
 	if input.SummarizedAt.IsZero() {
 		return fmt.Errorf("summary timestamp is required")
+	}
+	return nil
+}
+
+func validateMindMapInput(input UpsertMindMapInput) error {
+	if input.RecordingID == "" {
+		return fmt.Errorf("recording id is required")
+	}
+	if input.Provider == "" {
+		return fmt.Errorf("mind map provider is required")
+	}
+	if len(input.RootJSON) == 0 {
+		return fmt.Errorf("mind map root json is required")
+	}
+	if input.ContentMarkdown == "" {
+		return fmt.Errorf("mind map markdown is required")
+	}
+	if len(input.RawResultJSON) == 0 {
+		return fmt.Errorf("mind map raw json is required")
+	}
+	if input.GeneratedAt.IsZero() {
+		return fmt.Errorf("mind map timestamp is required")
 	}
 	return nil
 }

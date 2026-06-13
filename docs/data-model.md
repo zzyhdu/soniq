@@ -158,5 +158,6 @@ The current application Postgres schema is intentionally smaller than the long-t
 - `recording_transcripts` for the latest provider-neutral transcript per recording.
 - `recording_transcript_segments` for ordered transcript segments.
 - `recording_summaries` for the latest provider-neutral summary per recording.
+- `recording_mind_maps` for the latest provider-neutral mind map per recording.
 
 A generic `Artifact` table, workspace/user tenancy tables, workflow run history, and retention policy tables are still future scope. Temporal's internal database remains separate from Soniq application Postgres.

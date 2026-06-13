@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Soniq API
   version: 0.1.0
-  description: Local-first API for identity, workspaces, recording uploads, processing status, and transcript/summary results.
+  description: Local-first API for identity, workspaces, recording uploads, processing status, and transcript/summary/mind-map results.
   license:
     name: Apache-2.0
     url: https://www.apache.org/licenses/LICENSE-2.0.html
@@ -323,7 +323,7 @@ paths:
   /workspaces/{workspace_id}/recordings/{recording_id}/details:
     get:
       summary: Get recording details
-      description: Returns recording metadata with transcript, transcript segments, and summary when available.
+      description: Returns recording metadata with transcript, transcript segments, summary, and mind map when available.
       operationId: getRecordingDetails
       parameters:
         - $ref: '#/components/parameters/WorkspaceID'
@@ -613,6 +613,35 @@ components:
         summarized_at:
           type: string
           format: date-time
+    RecordingMindMapNode:
+      type: object
+      required: [label]
+      properties:
+        label:
+          type: string
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecordingMindMapNode'
+    RecordingMindMap:
+      type: object
+      required: [recording_id, provider, model, title, root, content_markdown, generated_at]
+      properties:
+        recording_id:
+          type: string
+        provider:
+          type: string
+        model:
+          type: string
+        title:
+          type: string
+        root:
+          $ref: '#/components/schemas/RecordingMindMapNode'
+        content_markdown:
+          type: string
+        generated_at:
+          type: string
+          format: date-time
     RecordingDetails:
       type: object
       required: [recording, segments]
@@ -630,6 +659,10 @@ components:
         summary:
           anyOf:
             - $ref: '#/components/schemas/RecordingSummary'
+            - type: 'null'
+        mind_map:
+          anyOf:
+            - $ref: '#/components/schemas/RecordingMindMap'
             - type: 'null'
     HealthzResponse:
       type: object

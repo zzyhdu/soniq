@@ -55,6 +55,7 @@ const (
 	TranscribeRecordingAudioActivityName     = "TranscribeRecordingAudioActivity"
 	MarkRecordingSummarizingActivityName     = "MarkRecordingSummarizingActivity"
 	SummarizeRecordingActivityName           = "SummarizeRecordingActivity"
+	GenerateMindMapActivityName              = "GenerateMindMapActivity"
 	DeleteOriginalRecordingAudioActivityName = "DeleteOriginalRecordingAudioActivity"
 	CompleteRecordingProcessingActivityName  = "CompleteRecordingProcessingActivity"
 	FailRecordingProcessingActivityName      = "FailRecordingProcessingActivity"
@@ -83,6 +84,12 @@ type TranscriptStore interface {
 // SummaryStore is the summary persistence seam used by summarization activities.
 type SummaryStore interface {
 	UpsertSummary(input recordings.UpsertSummaryInput) (recordings.RecordingSummary, error)
+	GetSummary(recordingID string) (recordings.RecordingSummary, bool, error)
+}
+
+// MindMapStore is the mind map persistence seam used by mind map activities.
+type MindMapStore interface {
+	UpsertMindMap(input recordings.UpsertMindMapInput) (recordings.RecordingMindMap, error)
 }
 
 // PipelineStore is the complete persistence seam used by the transcription/summarization pipeline.
@@ -178,6 +185,38 @@ type SummaryResult struct {
 	SummarizedAt    time.Time
 }
 
+// MindMapProvider converts transcript/summary text into a structured mind map.
+type MindMapProvider interface {
+	GenerateMindMap(ctx context.Context, request MindMapRequest) (MindMapResult, error)
+}
+
+// MindMapRequest contains provider-neutral mind map input.
+type MindMapRequest struct {
+	RecordingID     string
+	Title           string
+	WorkflowType    domain.WorkflowType
+	Language        string
+	TranscriptText  string
+	SummaryMarkdown string
+}
+
+// MindMapNode is the provider-neutral tree node exposed by generated mind maps.
+type MindMapNode struct {
+	Label    string        `json:"label"`
+	Children []MindMapNode `json:"children,omitempty"`
+}
+
+// MindMapResult contains provider-neutral mind map output.
+type MindMapResult struct {
+	Provider        string
+	Model           string
+	Title           string
+	Root            MindMapNode
+	ContentMarkdown string
+	RawResultJSON   []byte
+	GeneratedAt     time.Time
+}
+
 // FFProbeRunner runs the ffprobe binary.
 type FFProbeRunner struct {
 	Binary string
@@ -189,12 +228,14 @@ type RecordingProcessingActivities struct {
 	normalizedAudioStore  NormalizedAudioStore
 	transcriptStore       TranscriptStore
 	summaryStore          SummaryStore
+	mindMapStore          MindMapStore
 	objectStore           storage.ObjectStore
 	pathResolver          LocalObjectPathResolver
 	probeRunner           AudioProbeRunner
 	normalizeRunner       AudioNormalizeRunner
 	transcriptionProvider TranscriptionProvider
 	summaryProvider       SummaryProvider
+	mindMapProvider       MindMapProvider
 }
 
 // NewRecordingProcessingActivities creates store-backed recording processing activities.
@@ -209,14 +250,18 @@ func NewRecordingProcessingActivitiesWithAudioProbe(store RecordingStore, resolv
 
 // NewRecordingProcessingActivitiesWithPipeline creates recording processing activities with all local pipeline dependencies.
 func NewRecordingProcessingActivitiesWithPipeline(store PipelineStore, resolver LocalObjectPathResolver, runner AudioProbeRunner, transcriptionProvider TranscriptionProvider, summaryProvider SummaryProvider) *RecordingProcessingActivities {
+	mindMapStore, _ := any(store).(MindMapStore)
+	mindMapProvider, _ := summaryProvider.(MindMapProvider)
 	return &RecordingProcessingActivities{
 		store:                 store,
 		transcriptStore:       store,
 		summaryStore:          store,
+		mindMapStore:          mindMapStore,
 		pathResolver:          resolver,
 		probeRunner:           runner,
 		transcriptionProvider: transcriptionProvider,
 		summaryProvider:       summaryProvider,
+		mindMapProvider:       mindMapProvider,
 	}
 }
 
@@ -573,6 +618,78 @@ func (a *RecordingProcessingActivities) SummarizeRecording(ctx context.Context, 
 	return nil
 }
 
+// GenerateMindMap generates and persists a structured mind map from the transcript and summary.
+func (a *RecordingProcessingActivities) GenerateMindMap(ctx context.Context, recordingID string) error {
+	if recordingID == "" {
+		return errors.New("recording id is required")
+	}
+	if a == nil || a.store == nil {
+		return errors.New("recording store is required")
+	}
+	if a.transcriptStore == nil {
+		return errors.New("transcript store is required")
+	}
+	if a.summaryStore == nil {
+		return errors.New("summary store is required")
+	}
+	if a.mindMapStore == nil {
+		return errors.New("mind map store is required")
+	}
+	if a.mindMapProvider == nil {
+		return errors.New("mind map provider is required")
+	}
+	recording, ok, err := a.store.Get(recordingID)
+	if err != nil {
+		return fmt.Errorf("get recording: %w", err)
+	}
+	if !ok {
+		return fmt.Errorf("recording not found: %s", recordingID)
+	}
+	transcript, ok, err := a.transcriptStore.GetTranscript(recordingID)
+	if err != nil {
+		return fmt.Errorf("get recording transcript: %w", err)
+	}
+	if !ok {
+		return fmt.Errorf("recording transcript not found: %s", recordingID)
+	}
+	summary, ok, err := a.summaryStore.GetSummary(recordingID)
+	if err != nil {
+		return fmt.Errorf("get recording summary: %w", err)
+	}
+	if !ok {
+		return fmt.Errorf("recording summary not found: %s", recordingID)
+	}
+	result, err := a.mindMapProvider.GenerateMindMap(ctx, MindMapRequest{
+		RecordingID:     recordingID,
+		Title:           recording.Title,
+		WorkflowType:    recording.WorkflowType,
+		Language:        recording.Language,
+		TranscriptText:  transcript.Text,
+		SummaryMarkdown: summary.ContentMarkdown,
+	})
+	if err != nil {
+		return fmt.Errorf("generate recording mind map: %w", err)
+	}
+	rootJSON, err := json.Marshal(result.Root)
+	if err != nil {
+		return fmt.Errorf("marshal recording mind map root: %w", err)
+	}
+	_, err = a.mindMapStore.UpsertMindMap(recordings.UpsertMindMapInput{
+		RecordingID:     recordingID,
+		Provider:        result.Provider,
+		Model:           result.Model,
+		Title:           result.Title,
+		RootJSON:        rootJSON,
+		ContentMarkdown: result.ContentMarkdown,
+		RawResultJSON:   append([]byte(nil), result.RawResultJSON...),
+		GeneratedAt:     result.GeneratedAt,
+	})
+	if err != nil {
+		return fmt.Errorf("persist recording mind map: %w", err)
+	}
+	return nil
+}
+
 // FakeTranscriptionProvider is a deterministic local transcription provider for tests and smoke runs.
 type FakeTranscriptionProvider struct{}
 
@@ -621,6 +738,39 @@ func (p FakeSummaryProvider) Summarize(ctx context.Context, request SummaryReque
 		ContentMarkdown: markdown,
 		RawResultJSON:   raw,
 		SummarizedAt:    time.Now().UTC(),
+	}, nil
+}
+
+// GenerateMindMap creates a deterministic local mind map for tests and smoke runs.
+func (p FakeSummaryProvider) GenerateMindMap(ctx context.Context, request MindMapRequest) (MindMapResult, error) {
+	title := strings.TrimSpace(request.Title)
+	if title == "" {
+		title = request.RecordingID
+	}
+	overview := strings.TrimSpace(request.SummaryMarkdown)
+	if overview == "" {
+		overview = strings.TrimSpace(request.TranscriptText)
+	}
+	overview = truncateRunes(overview, 80)
+	if overview == "" {
+		overview = "No transcript text available."
+	}
+	root := MindMapNode{
+		Label: title,
+		Children: []MindMapNode{
+			{Label: "Overview", Children: []MindMapNode{{Label: overview}}},
+			{Label: "Workflow", Children: []MindMapNode{{Label: string(request.WorkflowType)}}},
+		},
+	}
+	raw, _ := json.Marshal(map[string]any{"title": title, "root": root})
+	return MindMapResult{
+		Provider:        "fake_llm",
+		Model:           "fake-mind-map-v1",
+		Title:           title,
+		Root:            root,
+		ContentMarkdown: mindMapMarkdown(root),
+		RawResultJSON:   raw,
+		GeneratedAt:     time.Now().UTC(),
 	}, nil
 }
 

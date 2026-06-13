@@ -129,3 +129,61 @@ func TestOpenAICompatibleSummaryProviderDoesNotLeakAPIKeyOnHTTPError(t *testing.
 		t.Fatalf("error leaked API key: %v", err)
 	}
 }
+
+func TestOpenAICompatibleSummaryProviderGeneratesMindMapFromJSON(t *testing.T) {
+	var capturedPath string
+	var capturedBody openAICompatibleSummaryRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		if err := json.NewDecoder(r.Body).Decode(&capturedBody); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		response := openAICompatibleSummaryResponse{
+			ID:    "chatcmpl-test",
+			Model: "qwen-plus",
+			Choices: []openAICompatibleSummaryChoice{{
+				Message: openAICompatibleSummaryMessage{
+					Role:    "assistant",
+					Content: "```json\n{\"title\":\"例会思维导图\",\"root\":{\"label\":\"例会\",\"children\":[{\"label\":\"测试计划\",\"children\":[{\"label\":\"检查转写质量\"}]}]}}\n```",
+				},
+			}},
+		}
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			t.Fatalf("encode response: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	provider := OpenAICompatibleSummaryProvider{
+		BaseURL: server.URL + "/v1",
+		APIKey:  "summary-secret",
+		Model:   "qwen-plus",
+	}
+	result, err := provider.GenerateMindMap(context.Background(), MindMapRequest{
+		RecordingID:     "rec_123",
+		Title:           "四人例会",
+		WorkflowType:    domain.WorkflowTypeMeeting,
+		Language:        "zh",
+		TranscriptText:  "大家同步测试计划。",
+		SummaryMarkdown: "## 概览\n同步了语音转录测试计划。",
+	})
+	if err != nil {
+		t.Fatalf("GenerateMindMap returned error: %v", err)
+	}
+	if capturedPath != "/v1/chat/completions" {
+		t.Fatalf("path = %q, want chat completions path", capturedPath)
+	}
+	if capturedBody.Model != "qwen-plus" || !strings.Contains(capturedBody.Messages[len(capturedBody.Messages)-1].Content, "大家同步测试计划") {
+		t.Fatalf("captured body = %+v, want model and transcript prompt", capturedBody)
+	}
+	if result.Provider != "openai_compatible_llm" || result.Title != "例会思维导图" {
+		t.Fatalf("result provider/title = %s/%s, want openai-compatible mind map", result.Provider, result.Title)
+	}
+	if result.Root.Label != "例会" || len(result.Root.Children) != 1 {
+		t.Fatalf("root = %+v, want parsed mind map tree", result.Root)
+	}
+	if !strings.Contains(result.ContentMarkdown, "检查转写质量") {
+		t.Fatalf("markdown = %q, want generated outline", result.ContentMarkdown)
+	}
+}
