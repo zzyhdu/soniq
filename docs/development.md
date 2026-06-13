@@ -100,7 +100,9 @@ To avoid opening several terminals manually, run the full smoke target from the 
 make smoke-postgres-temporal
 ```
 
-This target runs `scripts/smoke-postgres-temporal.sh`. The script starts the Compose infrastructure, applies missing Soniq application migrations through `make migrate`, starts the API and worker as temporary local background processes, signs up or signs in a smoke user, uploads a small valid WAV file through that user's workspace, verifies the workspace-scoped local object file and Postgres audio metadata, verifies the recording can be read from Postgres before and after an API restart, confirms the Temporal workflow reaches `COMPLETED`, verifies `recordings.status=completed`, verifies a `recording_audio_probes` row was persisted from real `ffprobe` output, verifies a `recording_normalized_audios` row and local `normalized.wav` artifact were persisted from real `ffmpeg` normalization, verifies configured transcription provider transcript/segment rows and summary rows were persisted, and then stops the API/worker processes it started.
+This target runs `scripts/smoke-postgres-temporal.sh`. The script starts the Compose infrastructure, applies missing Soniq application migrations through `make migrate`, starts the API and worker as temporary local background processes, signs up or signs in a smoke user, uploads a small valid WAV file through that user's workspace, verifies the workspace-scoped local object file and Postgres audio metadata, verifies the recording can be read from Postgres before and after an API restart, confirms the Temporal workflow reaches `COMPLETED`, verifies `recordings.status=completed`, verifies a `recording_audio_probes` row was persisted from real `ffprobe` output, verifies a `recording_normalized_audios` row and local `normalized.wav` artifact were persisted from real `ffmpeg` normalization, verifies deterministic fake transcription/summary rows were persisted, and then stops the API/worker processes it started.
+
+By default this smoke target forces `TRANSCRIPTION_PROVIDER=fake_transcription` and `LLM_PROVIDER=fake_llm`, even if `.env` selects real external providers. This keeps the baseline smoke deterministic and independent of provider credentials, network availability, quota, and model behavior.
 
 The script intentionally leaves the Compose infrastructure running by default so local Postgres and Temporal state remain available for follow-up debugging. To stop Compose services after the smoke run, set:
 
@@ -114,10 +116,15 @@ If an API is already listening on `localhost:8080`, the script refuses to run be
 API_URL=http://localhost:18080 API_ADDRESS=:18080 make smoke-postgres-temporal
 ```
 
-If your local `.env` selects a real external ASR/LLM provider, force the deterministic local fake providers for the default smoke:
+To intentionally run the smoke flow against real external providers, opt in explicitly and use an audio file with real speech:
 
 ```bash
-TRANSCRIPTION_PROVIDER=fake_transcription LLM_PROVIDER=fake_llm make smoke-postgres-temporal
+SMOKE_EXTERNAL_PROVIDERS=1 \
+TRANSCRIPTION_PROVIDER=dashscope_asr \
+LLM_PROVIDER=openai_compatible \
+SMOKE_AUDIO_FILE=/path/to/speech.wav \
+SMOKE_AUDIO_CONTENT_TYPE=audio/wav \
+make smoke-postgres-temporal
 ```
 
 ## Run the API skeleton
