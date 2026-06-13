@@ -161,6 +161,9 @@ func newRouterWithDependencies(store RecordingStore, workspaceStore WorkspaceSto
 	}
 
 	router := chi.NewRouter()
+	if authConfig != nil {
+		router.Use(csrfProtectionMiddleware(*authConfig))
+	}
 	router.MethodFunc(http.MethodGet, "/healthz", healthzHandler)
 	router.MethodFunc(http.MethodGet, "/openapi.yaml", openAPIHandler)
 	router.MethodFunc(http.MethodGet, "/api-console", apiConsoleHandler)
@@ -169,61 +172,25 @@ func newRouterWithDependencies(store RecordingStore, workspaceStore WorkspaceSto
 		router.MethodFunc(http.MethodPost, "/auth/signin", signInHandler(*authConfig))
 		router.MethodFunc(http.MethodPost, "/auth/signout", signOutHandler(*authConfig))
 	}
-	router.MethodFunc(http.MethodGet, "/me", meHandler(workspaceStore, authResolver))
-	router.MethodFunc(http.MethodGet, "/workspaces", workspacesHandler(workspaceStore, authResolver))
 
-	router.Route("/workspaces/{workspace_id}", func(router chi.Router) {
-		router.MethodFunc(http.MethodGet, "/recordings", withAuthorizedWorkspace(workspaceStore, authResolver, func(w http.ResponseWriter, r *http.Request, workspaceID string) {
-			listRecordingsHandler(store, workspaceID)(w, r)
-		}))
-		router.MethodFunc(http.MethodPost, "/recordings", withAuthorizedWorkspace(workspaceStore, authResolver, func(w http.ResponseWriter, r *http.Request, workspaceID string) {
-			createRecordingHandler(store, workspaceID)(w, r)
-		}))
-		router.MethodFunc(http.MethodPost, "/recordings/upload", withAuthorizedWorkspace(workspaceStore, authResolver, func(w http.ResponseWriter, r *http.Request, workspaceID string) {
-			uploadRecordingHandler(store, processor, objectStore, workspaceID)(w, r)
-		}))
-		router.MethodFunc(http.MethodGet, "/recordings/{recording_id}", withAuthorizedRecording(workspaceStore, authResolver, func(w http.ResponseWriter, r *http.Request, workspaceID string, recordingID string) {
-			getRecordingHandler(store, workspaceID, recordingID)(w, r)
-		}))
-		router.MethodFunc(http.MethodGet, "/recordings/{recording_id}/status", withAuthorizedRecording(workspaceStore, authResolver, func(w http.ResponseWriter, r *http.Request, workspaceID string, recordingID string) {
-			getRecordingStatusHandler(store, workspaceID, recordingID)(w, r)
-		}))
-		router.MethodFunc(http.MethodGet, "/recordings/{recording_id}/details", withAuthorizedRecording(workspaceStore, authResolver, func(w http.ResponseWriter, r *http.Request, workspaceID string, recordingID string) {
-			getRecordingDetailsHandler(store, workspaceID, recordingID)(w, r)
-		}))
-		router.MethodFunc(http.MethodPost, "/recordings/{recording_id}/retry", withAuthorizedRecording(workspaceStore, authResolver, func(w http.ResponseWriter, r *http.Request, workspaceID string, recordingID string) {
-			retryRecordingHandler(store, processor, workspaceID, recordingID)(w, r)
-		}))
+	router.Group(func(router chi.Router) {
+		router.Use(requireAuth(authResolver))
+
+		router.MethodFunc(http.MethodGet, "/me", meHandler(workspaceStore))
+		router.MethodFunc(http.MethodGet, "/workspaces", workspacesHandler(workspaceStore))
+
+		router.Route("/workspaces/{workspace_id}", func(router chi.Router) {
+			router.Use(requireWorkspace(workspaceStore))
+
+			router.MethodFunc(http.MethodGet, "/recordings", listRecordingsHandler(store))
+			router.MethodFunc(http.MethodPost, "/recordings", createRecordingHandler(store))
+			router.MethodFunc(http.MethodPost, "/recordings/upload", uploadRecordingHandler(store, processor, objectStore))
+			router.MethodFunc(http.MethodGet, "/recordings/{recording_id}", getRecordingHandler(store))
+			router.MethodFunc(http.MethodGet, "/recordings/{recording_id}/status", getRecordingStatusHandler(store))
+			router.MethodFunc(http.MethodGet, "/recordings/{recording_id}/details", getRecordingDetailsHandler(store))
+			router.MethodFunc(http.MethodPost, "/recordings/{recording_id}/retry", retryRecordingHandler(store, processor))
+		})
 	})
 
 	return router
-}
-
-type workspaceRouteHandler func(http.ResponseWriter, *http.Request, string)
-
-type recordingRouteHandler func(http.ResponseWriter, *http.Request, string, string)
-
-func withAuthorizedWorkspace(workspaceStore WorkspaceStore, authResolver AuthResolver, next workspaceRouteHandler) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		workspaceID := chi.URLParam(r, "workspace_id")
-		if workspaceID == "" {
-			writeAPIError(w, http.StatusNotFound, errorCodeNotFound, "not found")
-			return
-		}
-		if !authorizeWorkspace(w, r, workspaceStore, authResolver, workspaceID) {
-			return
-		}
-		next(w, r, workspaceID)
-	}
-}
-
-func withAuthorizedRecording(workspaceStore WorkspaceStore, authResolver AuthResolver, next recordingRouteHandler) http.HandlerFunc {
-	return withAuthorizedWorkspace(workspaceStore, authResolver, func(w http.ResponseWriter, r *http.Request, workspaceID string) {
-		recordingID := chi.URLParam(r, "recording_id")
-		if recordingID == "" {
-			writeAPIError(w, http.StatusNotFound, errorCodeNotFound, "not found")
-			return
-		}
-		next(w, r, workspaceID, recordingID)
-	})
 }

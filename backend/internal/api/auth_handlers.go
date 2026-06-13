@@ -28,12 +28,13 @@ type PasswordSessionStore interface {
 
 // PasswordAuthConfig configures public email/password auth endpoints.
 type PasswordAuthConfig struct {
-	PasswordStore PasswordAuthStore
-	SessionStore  PasswordSessionStore
-	SessionTTL    time.Duration
-	CookieName    string
-	CookieSecure  bool
-	Now           func() time.Time
+	PasswordStore  PasswordAuthStore
+	SessionStore   PasswordSessionStore
+	SessionTTL     time.Duration
+	CookieName     string
+	CSRFCookieName string
+	CookieSecure   bool
+	Now            func() time.Time
 }
 
 type authUserResponse struct {
@@ -151,6 +152,7 @@ func signOutHandler(config PasswordAuthConfig) http.HandlerFunc {
 		}
 		cookieName := authCookieName(config)
 		clearSessionCookie(w, config)
+		clearCSRFCookie(w, config)
 		if cookie, err := r.Cookie(cookieName); err == nil && strings.TrimSpace(cookie.Value) != "" && config.SessionStore != nil {
 			if err := config.SessionStore.RevokeSession(r.Context(), auth.HashSessionToken(cookie.Value), authNow(config)); err != nil {
 				writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "revoke session")
@@ -190,7 +192,13 @@ func issueSessionCookie(w http.ResponseWriter, r *http.Request, config PasswordA
 		writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "create session")
 		return false
 	}
+	csrfToken, err := newCSRFToken(token)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "create csrf token")
+		return false
+	}
 	setSessionCookie(w, config, token, expiresAt)
+	setCSRFCookie(w, config, csrfToken, expiresAt)
 	return true
 }
 

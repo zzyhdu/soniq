@@ -16,10 +16,14 @@ import (
 
 const maxUploadRequestBytes = 100 << 20 // 100 MiB
 
-func createRecordingHandler(store RecordingStore, workspaceID string) http.HandlerFunc {
+func createRecordingHandler(store RecordingStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeMethodNotAllowed(w, http.MethodPost)
+			return
+		}
+		workspace, ok := workspaceFromRequest(w, r)
+		if !ok {
 			return
 		}
 
@@ -34,7 +38,7 @@ func createRecordingHandler(store RecordingStore, workspaceID string) http.Handl
 		}
 
 		recording, err := store.Create(recordings.CreateRecordingInput{
-			WorkspaceID:  workspaceID,
+			WorkspaceID:  workspace.ID,
 			Title:        request.Title,
 			WorkflowType: domain.WorkflowType(request.WorkflowType),
 			Language:     request.Language,
@@ -49,10 +53,14 @@ func createRecordingHandler(store RecordingStore, workspaceID string) http.Handl
 	}
 }
 
-func listRecordingsHandler(store RecordingStore, workspaceID string) http.HandlerFunc {
+func listRecordingsHandler(store RecordingStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			writeMethodNotAllowed(w, http.MethodGet)
+			return
+		}
+		workspace, ok := workspaceFromRequest(w, r)
+		if !ok {
 			return
 		}
 		limit := 50
@@ -65,7 +73,7 @@ func listRecordingsHandler(store RecordingStore, workspaceID string) http.Handle
 			limit = parsed
 		}
 		recordingRows, err := store.ListByWorkspace(recordings.ListRecordingsInput{
-			WorkspaceID: workspaceID,
+			WorkspaceID: workspace.ID,
 			Limit:       limit,
 		})
 		if err != nil {
@@ -81,10 +89,14 @@ func listRecordingsHandler(store RecordingStore, workspaceID string) http.Handle
 	}
 }
 
-func uploadRecordingHandler(store RecordingStore, processor RecordingProcessor, objectStore storage.ObjectStore, workspaceID string) http.HandlerFunc {
+func uploadRecordingHandler(store RecordingStore, processor RecordingProcessor, objectStore storage.ObjectStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeMethodNotAllowed(w, http.MethodPost)
+			return
+		}
+		workspace, ok := workspaceFromRequest(w, r)
+		if !ok {
 			return
 		}
 		if objectStore == nil {
@@ -111,7 +123,7 @@ func uploadRecordingHandler(store RecordingStore, processor RecordingProcessor, 
 		defer file.Close()
 
 		contentType := header.Header.Get("Content-Type")
-		objectKey := recordingAudioObjectKey(workspaceID, header.Filename)
+		objectKey := recordingAudioObjectKey(workspace.ID, header.Filename)
 		putResult, err := objectStore.PutObject(r.Context(), storage.PutObjectInput{
 			Key:         objectKey,
 			Body:        file,
@@ -123,7 +135,7 @@ func uploadRecordingHandler(store RecordingStore, processor RecordingProcessor, 
 		}
 
 		recording, err := store.Create(recordings.CreateRecordingInput{
-			WorkspaceID:      workspaceID,
+			WorkspaceID:      workspace.ID,
 			Title:            r.FormValue("title"),
 			WorkflowType:     domain.WorkflowType(r.FormValue("workflow_type")),
 			Language:         r.FormValue("language"),
@@ -155,14 +167,22 @@ func recordingAudioObjectKey(workspaceID string, filename string) string {
 	return "workspaces/" + workspaceID + "/recordings/" + time.Now().UTC().Format("20060102T150405.000000000Z") + "/" + name
 }
 
-func getRecordingHandler(store RecordingStore, workspaceID string, id string) http.HandlerFunc {
+func getRecordingHandler(store RecordingStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			writeMethodNotAllowed(w, http.MethodGet)
 			return
 		}
+		workspace, ok := workspaceFromRequest(w, r)
+		if !ok {
+			return
+		}
+		id, ok := recordingIDFromRequest(w, r)
+		if !ok {
+			return
+		}
 
-		recording, ok, err := store.GetForWorkspace(recordings.GetRecordingInput{WorkspaceID: workspaceID, ID: id})
+		recording, ok, err := store.GetForWorkspace(recordings.GetRecordingInput{WorkspaceID: workspace.ID, ID: id})
 		if err != nil {
 			writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "get recording")
 			return
@@ -177,14 +197,22 @@ func getRecordingHandler(store RecordingStore, workspaceID string, id string) ht
 	}
 }
 
-func getRecordingStatusHandler(store RecordingStore, workspaceID string, id string) http.HandlerFunc {
+func getRecordingStatusHandler(store RecordingStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			writeMethodNotAllowed(w, http.MethodGet)
 			return
 		}
+		workspace, ok := workspaceFromRequest(w, r)
+		if !ok {
+			return
+		}
+		id, ok := recordingIDFromRequest(w, r)
+		if !ok {
+			return
+		}
 
-		recording, ok, err := store.GetForWorkspace(recordings.GetRecordingInput{WorkspaceID: workspaceID, ID: id})
+		recording, ok, err := store.GetForWorkspace(recordings.GetRecordingInput{WorkspaceID: workspace.ID, ID: id})
 		if err != nil {
 			writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "get recording")
 			return
@@ -213,14 +241,22 @@ func getRecordingStatusHandler(store RecordingStore, workspaceID string, id stri
 	}
 }
 
-func getRecordingDetailsHandler(store RecordingStore, workspaceID string, id string) http.HandlerFunc {
+func getRecordingDetailsHandler(store RecordingStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			writeMethodNotAllowed(w, http.MethodGet)
 			return
 		}
+		workspace, ok := workspaceFromRequest(w, r)
+		if !ok {
+			return
+		}
+		id, ok := recordingIDFromRequest(w, r)
+		if !ok {
+			return
+		}
 
-		recording, ok, err := store.GetForWorkspace(recordings.GetRecordingInput{WorkspaceID: workspaceID, ID: id})
+		recording, ok, err := store.GetForWorkspace(recordings.GetRecordingInput{WorkspaceID: workspace.ID, ID: id})
 		if err != nil {
 			writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "get recording")
 			return
@@ -263,14 +299,22 @@ func getRecordingDetailsHandler(store RecordingStore, workspaceID string, id str
 	}
 }
 
-func retryRecordingHandler(store RecordingStore, processor RecordingProcessor, workspaceID string, id string) http.HandlerFunc {
+func retryRecordingHandler(store RecordingStore, processor RecordingProcessor) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeMethodNotAllowed(w, http.MethodPost)
 			return
 		}
+		workspace, ok := workspaceFromRequest(w, r)
+		if !ok {
+			return
+		}
+		id, ok := recordingIDFromRequest(w, r)
+		if !ok {
+			return
+		}
 
-		recording, ok, err := store.GetForWorkspace(recordings.GetRecordingInput{WorkspaceID: workspaceID, ID: id})
+		recording, ok, err := store.GetForWorkspace(recordings.GetRecordingInput{WorkspaceID: workspace.ID, ID: id})
 		if err != nil {
 			writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "get recording")
 			return
@@ -293,7 +337,7 @@ func retryRecordingHandler(store RecordingStore, processor RecordingProcessor, w
 			writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "recording retry is not configured")
 			return
 		}
-		resetRecording, err := retryStore.ResetForRetry(recordings.RetryRecordingInput{WorkspaceID: workspaceID, ID: id})
+		resetRecording, err := retryStore.ResetForRetry(recordings.RetryRecordingInput{WorkspaceID: workspace.ID, ID: id})
 		if err != nil {
 			writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "reset recording retry")
 			return
@@ -302,7 +346,7 @@ func retryRecordingHandler(store RecordingStore, processor RecordingProcessor, w
 		if err := processor.Enqueue(resetRecording); err != nil {
 			processingEnqueued = false
 			failedRecording, failErr := retryStore.UpdateStatus(recordings.UpdateRecordingStatusInput{
-				WorkspaceID:   workspaceID,
+				WorkspaceID:   workspace.ID,
 				ID:            id,
 				Status:        domain.RecordingStatusFailed,
 				FailureReason: "retry enqueue failed: " + err.Error(),
@@ -320,21 +364,4 @@ func retryRecordingHandler(store RecordingStore, processor RecordingProcessor, w
 			ProcessingEnqueued: processingEnqueued,
 		})
 	}
-}
-
-func authorizeWorkspace(w http.ResponseWriter, r *http.Request, workspaceStore WorkspaceStore, authResolver AuthResolver, workspaceID string) bool {
-	currentUser, ok := resolveCurrentUser(w, r, authResolver)
-	if !ok {
-		return false
-	}
-	_, found, err := workspaceStore.GetWorkspaceForUser(r.Context(), currentUser.UserID, workspaceID)
-	if err != nil {
-		writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "get workspace")
-		return false
-	}
-	if !found {
-		writeAPIError(w, http.StatusNotFound, errorCodeNotFound, "not found")
-		return false
-	}
-	return true
 }

@@ -3,9 +3,13 @@ export type SoniqApiClientOptions = {
   fetch?: typeof fetch;
 };
 
+export const CSRF_HEADER_NAME = 'X-CSRF-Token';
+export const CSRF_COOKIE_NAME = 'soniq_csrf';
+
 export type SoniqErrorCode =
   | 'unauthenticated'
   | 'invalid_credentials'
+  | 'invalid_csrf_token'
   | 'user_already_exists'
   | 'validation_failed'
   | 'forbidden'
@@ -60,7 +64,7 @@ export async function requestJSON<T>(
   options: SoniqApiClientOptions,
 ): Promise<T> {
   const fetchImpl = options.fetch ?? globalThis.fetch;
-  const response = await fetchImpl(buildUrl(path, options.baseUrl), init);
+  const response = await fetchImpl(buildUrl(path, options.baseUrl), withCSRFHeader(init));
   const body = await parseResponseBody(response);
 
   if (!response.ok) {
@@ -96,6 +100,81 @@ function errorCode(body: unknown): SoniqErrorCode | UnknownSoniqErrorCode | unde
   }
 
   return undefined;
+}
+
+function withCSRFHeader(init: RequestInit): RequestInit {
+  if (!isUnsafeMethod(init.method)) {
+    return init;
+  }
+  if (hasHeader(init.headers, CSRF_HEADER_NAME)) {
+    return init;
+  }
+
+  const token = readCookie(CSRF_COOKIE_NAME);
+  if (token === null) {
+    return init;
+  }
+
+  return {
+    ...init,
+    headers: appendHeader(init.headers, CSRF_HEADER_NAME, token),
+  };
+}
+
+function appendHeader(headers: HeadersInit | undefined, name: string, value: string): HeadersInit {
+  if (headers === undefined) {
+    return { [name]: value };
+  }
+  if (typeof Headers !== 'undefined' && headers instanceof Headers) {
+    const nextHeaders = new Headers(headers);
+    nextHeaders.set(name, value);
+    return nextHeaders;
+  }
+  if (Array.isArray(headers)) {
+    return [...headers, [name, value]];
+  }
+
+  return { ...headers, [name]: value };
+}
+
+function hasHeader(headers: HeadersInit | undefined, name: string): boolean {
+  if (headers === undefined) {
+    return false;
+  }
+  const normalizedName = name.toLowerCase();
+  if (typeof Headers !== 'undefined' && headers instanceof Headers) {
+    return headers.has(name);
+  }
+  if (Array.isArray(headers)) {
+    return headers.some(([headerName]) => headerName.toLowerCase() === normalizedName);
+  }
+
+  return Object.keys(headers).some((headerName) => headerName.toLowerCase() === normalizedName);
+}
+
+function isUnsafeMethod(method: string | undefined): boolean {
+  const normalizedMethod = method?.toUpperCase() ?? 'GET';
+  return normalizedMethod !== 'GET' &&
+    normalizedMethod !== 'HEAD' &&
+    normalizedMethod !== 'OPTIONS' &&
+    normalizedMethod !== 'TRACE';
+}
+
+function readCookie(name: string): string | null {
+  if (typeof document === 'undefined') {
+    return null;
+  }
+
+  const prefix = `${name}=`;
+  const cookie = document.cookie
+    .split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(prefix));
+  if (cookie === undefined) {
+    return null;
+  }
+
+  return decodeURIComponent(cookie.slice(prefix.length));
 }
 
 function errorMessage(body: unknown, response: Response): string {

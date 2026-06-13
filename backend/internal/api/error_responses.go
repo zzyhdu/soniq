@@ -10,6 +10,7 @@ type apiErrorCode string
 const (
 	errorCodeUnauthenticated      apiErrorCode = "unauthenticated"
 	errorCodeInvalidCredentials   apiErrorCode = "invalid_credentials"
+	errorCodeInvalidCSRFToken     apiErrorCode = "invalid_csrf_token"
 	errorCodeUserAlreadyExists    apiErrorCode = "user_already_exists"
 	errorCodeValidationFailed     apiErrorCode = "validation_failed"
 	errorCodeForbidden            apiErrorCode = "forbidden"

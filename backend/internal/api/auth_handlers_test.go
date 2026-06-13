@@ -33,6 +33,7 @@ func TestSignUpCreatesUserAndSessionCookie(t *testing.T) {
 		t.Fatal("signup password hash does not verify password")
 	}
 	assertSessionCookie(t, response.Result(), "soniq_test")
+	assertCSRFCookie(t, response.Result(), "soniq_test_csrf")
 	if got, want := len(authStore.sessions), 1; got != want {
 		t.Fatalf("created sessions = %d, want %d", got, want)
 	}
@@ -63,6 +64,7 @@ func TestSignInCreatesSessionCookie(t *testing.T) {
 		t.Fatalf("user id = %q, want usr_dev", body.User.ID)
 	}
 	assertSessionCookie(t, response.Result(), "soniq_test")
+	assertCSRFCookie(t, response.Result(), "soniq_test_csrf")
 	if got, want := len(authStore.sessions), 1; got != want {
 		t.Fatalf("created sessions = %d, want %d", got, want)
 	}
@@ -104,7 +106,7 @@ func TestSignOutRevokesSessionAndClearsCookie(t *testing.T) {
 	authStore := newPasswordAuthStoreSpy()
 	router := NewRouterWithStorageIdentityAndPasswordAuth(unconfiguredRecordingStore{}, defaultDevWorkspaceStore{}, NewDevAuthResolver("usr_dev"), nil, nil, passwordAuthTestConfig(authStore))
 	request := httptest.NewRequest(http.MethodPost, "/auth/signout", nil)
-	request.AddCookie(&http.Cookie{Name: "soniq_test", Value: "opaque-token"})
+	addCSRFProtectedSession(t, request, "soniq_test", "soniq_test_csrf", "opaque-token")
 	response := httptest.NewRecorder()
 
 	router.ServeHTTP(response, request)
@@ -115,10 +117,8 @@ func TestSignOutRevokesSessionAndClearsCookie(t *testing.T) {
 	if authStore.revokedTokenHash != auth.HashSessionToken("opaque-token") {
 		t.Fatal("logout did not revoke hashed session token")
 	}
-	cookies := response.Result().Cookies()
-	if len(cookies) != 1 || cookies[0].Name != "soniq_test" || cookies[0].MaxAge != -1 {
-		t.Fatalf("clear cookie = %+v, want expired soniq_test cookie", cookies)
-	}
+	assertExpiredCookie(t, response.Result(), "soniq_test")
+	assertExpiredCookie(t, response.Result(), "soniq_test_csrf")
 }
 
 func TestSignOutClearsCookieWhenSessionRevokeFails(t *testing.T) {
@@ -126,7 +126,7 @@ func TestSignOutClearsCookieWhenSessionRevokeFails(t *testing.T) {
 	authStore.revokeErr = errors.New("database unavailable")
 	router := NewRouterWithStorageIdentityAndPasswordAuth(unconfiguredRecordingStore{}, defaultDevWorkspaceStore{}, NewDevAuthResolver("usr_dev"), nil, nil, passwordAuthTestConfig(authStore))
 	request := httptest.NewRequest(http.MethodPost, "/auth/signout", nil)
-	request.AddCookie(&http.Cookie{Name: "soniq_test", Value: "opaque-token"})
+	addCSRFProtectedSession(t, request, "soniq_test", "soniq_test_csrf", "opaque-token")
 	response := httptest.NewRecorder()
 
 	router.ServeHTTP(response, request)
@@ -134,18 +134,59 @@ func TestSignOutClearsCookieWhenSessionRevokeFails(t *testing.T) {
 	if response.Code != http.StatusInternalServerError {
 		t.Fatalf("status code = %d, want %d", response.Code, http.StatusInternalServerError)
 	}
-	cookies := response.Result().Cookies()
-	if len(cookies) != 1 || cookies[0].Name != "soniq_test" || cookies[0].MaxAge != -1 {
-		t.Fatalf("clear cookie = %+v, want expired soniq_test cookie", cookies)
+	assertExpiredCookie(t, response.Result(), "soniq_test")
+	assertExpiredCookie(t, response.Result(), "soniq_test_csrf")
+}
+
+func TestUnsafeSessionRequestRejectsMissingCSRFToken(t *testing.T) {
+	authStore := newPasswordAuthStoreSpy()
+	router := NewRouterWithStorageIdentityAndPasswordAuth(unconfiguredRecordingStore{}, defaultDevWorkspaceStore{}, NewDevAuthResolver("usr_dev"), nil, nil, passwordAuthTestConfig(authStore))
+	request := httptest.NewRequest(http.MethodPost, "/auth/signout", nil)
+	request.AddCookie(&http.Cookie{Name: "soniq_test", Value: "opaque-token"})
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status code = %d, want %d", response.Code, http.StatusForbidden)
+	}
+	var body apiErrorResponse
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body.Code != errorCodeInvalidCSRFToken || body.Status != http.StatusForbidden {
+		t.Fatalf("error body = %+v, want invalid_csrf_token 403", body)
+	}
+	if authStore.revokedTokenHash != "" {
+		t.Fatal("logout revoked session despite missing csrf token")
+	}
+}
+
+func TestSafeSessionRequestIssuesCSRFToken(t *testing.T) {
+	authStore := newPasswordAuthStoreSpy()
+	router := NewRouterWithStorageIdentityAndPasswordAuth(unconfiguredRecordingStore{}, defaultDevWorkspaceStore{}, NewDevAuthResolver("usr_dev"), nil, nil, passwordAuthTestConfig(authStore))
+	request := httptest.NewRequest(http.MethodGet, "/me", nil)
+	request.AddCookie(&http.Cookie{Name: "soniq_test", Value: "opaque-token"})
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusOK, response.Body.String())
+	}
+	cookie := assertCSRFCookie(t, response.Result(), "soniq_test_csrf")
+	if !validCSRFToken("opaque-token", cookie.Value) {
+		t.Fatal("csrf cookie is not bound to the session token")
 	}
 }
 
 func passwordAuthTestConfig(store *passwordAuthStoreSpy) PasswordAuthConfig {
 	return PasswordAuthConfig{
-		PasswordStore: store,
-		SessionStore:  store,
-		SessionTTL:    time.Hour,
-		CookieName:    "soniq_test",
+		PasswordStore:  store,
+		SessionStore:   store,
+		SessionTTL:     time.Hour,
+		CookieName:     "soniq_test",
+		CSRFCookieName: "soniq_test_csrf",
 		Now: func() time.Time {
 			return time.Date(2026, 6, 12, 1, 2, 3, 0, time.UTC)
 		},
@@ -156,10 +197,10 @@ func assertSessionCookie(t *testing.T, response *http.Response, cookieName strin
 	t.Helper()
 
 	cookies := response.Cookies()
-	if len(cookies) != 1 {
-		t.Fatalf("cookies = %d, want 1", len(cookies))
+	cookie := findCookie(cookies, cookieName)
+	if cookie == nil {
+		t.Fatalf("cookies = %+v, want %s cookie", cookies, cookieName)
 	}
-	cookie := cookies[0]
 	if cookie.Name != cookieName {
 		t.Fatalf("cookie name = %q, want %q", cookie.Name, cookieName)
 	}
@@ -172,6 +213,56 @@ func assertSessionCookie(t *testing.T, response *http.Response, cookieName strin
 	if cookie.SameSite != http.SameSiteLaxMode {
 		t.Fatalf("cookie SameSite = %d, want lax", cookie.SameSite)
 	}
+}
+
+func assertCSRFCookie(t *testing.T, response *http.Response, cookieName string) *http.Cookie {
+	t.Helper()
+
+	cookies := response.Cookies()
+	cookie := findCookie(cookies, cookieName)
+	if cookie == nil {
+		t.Fatalf("cookies = %+v, want %s cookie", cookies, cookieName)
+	}
+	if cookie.Value == "" {
+		t.Fatal("csrf cookie value is empty")
+	}
+	if cookie.HttpOnly {
+		t.Fatal("csrf cookie HttpOnly = true, want false")
+	}
+	if cookie.SameSite != http.SameSiteLaxMode {
+		t.Fatalf("csrf cookie SameSite = %d, want lax", cookie.SameSite)
+	}
+	return cookie
+}
+
+func assertExpiredCookie(t *testing.T, response *http.Response, cookieName string) {
+	t.Helper()
+
+	cookie := findCookie(response.Cookies(), cookieName)
+	if cookie == nil || cookie.MaxAge != -1 {
+		t.Fatalf("clear cookie = %+v, want expired %s cookie", response.Cookies(), cookieName)
+	}
+}
+
+func addCSRFProtectedSession(t *testing.T, request *http.Request, sessionCookieName string, csrfCookieName string, sessionToken string) {
+	t.Helper()
+
+	csrfToken, err := newCSRFToken(sessionToken)
+	if err != nil {
+		t.Fatalf("newCSRFToken returned error: %v", err)
+	}
+	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sessionToken})
+	request.AddCookie(&http.Cookie{Name: csrfCookieName, Value: csrfToken})
+	request.Header.Set(CSRFHeaderName, csrfToken)
+}
+
+func findCookie(cookies []*http.Cookie, name string) *http.Cookie {
+	for _, cookie := range cookies {
+		if cookie.Name == name {
+			return cookie
+		}
+	}
+	return nil
 }
 
 type passwordAuthStoreSpy struct {

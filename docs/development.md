@@ -187,7 +187,7 @@ Content-Type: application/json
 
 ## Use the Recording API
 
-The identity, workspace, and recording endpoints now persist metadata in Soniq Postgres in the production API path. `POST /auth/signup` creates a new user, default workspace, owner membership, and login session; subsequent requests authenticate through the `soniq_session` httpOnly cookie backed by the `user_sessions` table. Records survive API process restarts as long as the local Postgres volume remains intact. Audio-backed recordings also write the original uploaded file under `LOCAL_STORAGE_PATH` through the local object-store provider; the worker later writes a sibling normalized artifact named `normalized.wav`.
+The identity, workspace, and recording endpoints now persist metadata in Soniq Postgres in the production API path. `POST /auth/signup` creates a new user, default workspace, owner membership, and login session; subsequent requests authenticate through the `soniq_session` httpOnly cookie backed by the `user_sessions` table. Unsafe authenticated requests also require `X-CSRF-Token` copied from the readable `soniq_csrf` cookie. Records survive API process restarts as long as the local Postgres volume remains intact. Audio-backed recordings also write the original uploaded file under `LOCAL_STORAGE_PATH` through the local object-store provider; the worker later writes a sibling normalized artifact named `normalized.wav`.
 
 `POST /workspaces/{workspace_id}/recordings` creates a metadata-only recording row and returns that metadata record without enqueueing processing. After an audio-backed `POST /workspaces/{workspace_id}/recordings/upload` succeeds in Postgres, the API calls an injectable `RecordingProcessor` seam. In the production API command, that seam is wired to a Temporal-backed processor that starts `RecordingProcessingWorkflow` asynchronously with workflow ID `recording-processing-<recording_id>` on `TEMPORAL_TASK_QUEUE`. The upload HTTP response returns an explicit `{recording, processing_enqueued}` envelope; it does not wait for workflow completion. The worker consumes that workflow from the same task queue, uses Soniq Postgres-backed activities, and updates the recording status from `uploaded` through `processing`, `transcribing`, `summarizing`, and `completed`. For audio-backed recordings, the worker resolves the original local object path, runs `ffprobe`, persists original-audio probe metadata in `recording_audio_probes`, runs `ffmpeg` normalization to create a local WAV/PCM artifact, persists normalized metadata in `recording_normalized_audios`, calls deterministic fake transcription against the normalized audio path, calls deterministic fake summary providers, persists `recording_transcripts`, `recording_transcript_segments`, and `recording_summaries`, and then marks the recording `completed` with `completed_at`. If probe, normalization, transcription, summarization, or completion fails, the workflow schedules a best-effort `failed` status update with `failure_reason` and `failed_at` before returning the original error.
 
@@ -203,6 +203,7 @@ curl -i -c /tmp/soniq-cookies.txt \
 
 WORKSPACE_ID="$(curl -fsS -b /tmp/soniq-cookies.txt http://localhost:8080/workspaces \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["workspaces"][0]["id"])')"
+CSRF_TOKEN="$(awk '$0 !~ /^#/ && $6 == "soniq_csrf" { token = $7 } END { print token }' /tmp/soniq-cookies.txt)"
 
 ffmpeg -hide_banner -loglevel error \
   -f lavfi -i sine=frequency=1000:duration=1 \
@@ -210,6 +211,7 @@ ffmpeg -hide_banner -loglevel error \
 
 curl -i -b /tmp/soniq-cookies.txt \
   -X POST "http://localhost:8080/workspaces/${WORKSPACE_ID}/recordings/upload" \
+  -H "X-CSRF-Token: ${CSRF_TOKEN}" \
   -F 'title=Weekly sync' \
   -F 'workflow_type=meeting' \
   -F 'language=en' \
@@ -221,6 +223,7 @@ If you started the API on a custom port, use that port instead:
 ```bash
 curl -i -b /tmp/soniq-cookies.txt \
   -X POST "http://localhost:18080/workspaces/${WORKSPACE_ID}/recordings/upload" \
+  -H "X-CSRF-Token: ${CSRF_TOKEN}" \
   -F 'title=Weekly sync' \
   -F 'workflow_type=meeting' \
   -F 'language=en' \
@@ -284,6 +287,7 @@ Use `POST /workspaces/{workspace_id}/recordings` when you only want to create a 
 ```bash
 curl -i -b /tmp/soniq-cookies.txt \
   -X POST "http://localhost:18080/workspaces/${WORKSPACE_ID}/recordings" \
+  -H "X-CSRF-Token: ${CSRF_TOKEN}" \
   -H 'Content-Type: application/json' \
   -d '{"title":"Weekly sync","workflow_type":"meeting","language":"en"}'
 ```
@@ -332,9 +336,11 @@ curl -i -c /tmp/soniq-cookies.txt \
 
 WORKSPACE_ID="$(curl -fsS -b /tmp/soniq-cookies.txt http://localhost:18080/workspaces \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["workspaces"][0]["id"])')"
+CSRF_TOKEN="$(awk '$0 !~ /^#/ && $6 == "soniq_csrf" { token = $7 } END { print token }' /tmp/soniq-cookies.txt)"
 
 curl -i -b /tmp/soniq-cookies.txt \
   -X POST "http://localhost:18080/workspaces/${WORKSPACE_ID}/recordings/upload" \
+  -H "X-CSRF-Token: ${CSRF_TOKEN}" \
   -F title='Weekly sync' \
   -F workflow_type=meeting \
   -F language=en \
@@ -411,6 +417,7 @@ Retry a failed audio-backed recording:
 
 ```bash
 curl -i -b /tmp/soniq-cookies.txt \
+  -H "X-CSRF-Token: ${CSRF_TOKEN}" \
   -X POST "http://localhost:18080/workspaces/${WORKSPACE_ID}/recordings/<id>/retry"
 ```
 
@@ -647,7 +654,7 @@ make migrate
 make api
 ```
 
-Then open the Web UI. If you do not have an account, use Sign up. It calls `POST /auth/signup`, creates a user, creates a default workspace, creates an owner membership, creates a `user_sessions` row, and sets the httpOnly `soniq_session` cookie. Existing users use `POST /auth/signin`; `POST /auth/signout` revokes the current session and clears the cookie.
+Then open the Web UI. If you do not have an account, use Sign up. It calls `POST /auth/signup`, creates a user, creates a default workspace, creates an owner membership, creates a `user_sessions` row, and sets the httpOnly `soniq_session` cookie plus readable `soniq_csrf` cookie. Existing users use `POST /auth/signin`; `POST /auth/signout` revokes the current session and clears both cookies.
 
 The password hasher is Argon2id with encoded per-password salt and parameters (`m=19456`, `t=2`, `p=1`), matching OWASP's current minimum recommendation. Passwords must be 8 to 1024 bytes. The database stores only `users.password_hash` and `user_sessions.token_hash`; the opaque session token only lives in the browser cookie.
 

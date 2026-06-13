@@ -236,6 +236,10 @@ if not workspaces:
 print(workspaces[0]["id"])'
 }
 
+csrf_token() {
+  awk '$0 !~ /^#/ && $6 == "soniq_csrf" { token = $7 } END { if (token == "") exit 1; print token }' "$COOKIE_JAR"
+}
+
 auth_json() {
   python3 -c 'import json,sys
 payload = {"email": sys.argv[1], "password": sys.argv[2]}
@@ -445,7 +449,7 @@ main() {
   authenticate_api
 
   log "uploading recording audio via POST /workspaces/$SMOKE_WORKSPACE_ID/recordings/upload"
-  local response recording_id workflow_id audio_object_key audio_size audio_file upload_title upload_language upload_filename upload_content_type
+  local response recording_id workflow_id audio_object_key audio_size audio_file upload_title upload_language upload_filename upload_content_type csrf_token_value
   audio_file="$LOG_DIR/weekly.wav"
   upload_title="${SMOKE_TITLE:-Weekly sync}"
   upload_language="${SMOKE_LANGUAGE:-en}"
@@ -465,7 +469,9 @@ main() {
     ffmpeg -hide_banner -loglevel error -f lavfi -i sine=frequency=1000:duration=1 -ac 1 -ar 16000 -c:a pcm_s16le "$audio_file"
   fi
   audio_size="$(wc -c <"$audio_file" | tr -d ' ')"
+  csrf_token_value="$(csrf_token)"
   response="$(curl -fsS -b "$COOKIE_JAR" -X POST "$API_URL/workspaces/$SMOKE_WORKSPACE_ID/recordings/upload" \
+    -H "X-CSRF-Token: $csrf_token_value" \
     -F "title=$upload_title" \
     -F 'workflow_type=meeting' \
     -F "language=$upload_language" \

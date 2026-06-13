@@ -32,6 +32,10 @@ if not workspaces:
 print(workspaces[0]["id"])'
 }
 
+csrf_token() {
+  awk '$0 !~ /^#/ && $6 == "soniq_csrf" { token = $7 } END { if (token == "") exit 1; print token }' "$COOKIE_JAR"
+}
+
 auth_response="$TMP_DIR/auth-response.json"
 status="$(auth_json | curl -sS -o "$auth_response" -w "%{http_code}" -c "$COOKIE_JAR" \
   -H 'Content-Type: application/json' \
@@ -53,7 +57,9 @@ fi
 
 ffmpeg -hide_banner -loglevel error -f lavfi -i sine=frequency=1000:duration=1 -ac 1 -ar 16000 -c:a pcm_s16le "$AUDIO_FILE"
 
+csrf_token_value="$(csrf_token)"
 response="$(curl -fsS -b "$COOKIE_JAR" -X POST "${API_URL}/workspaces/${SMOKE_WORKSPACE_ID}/recordings/upload" \
+  -H "X-CSRF-Token: $csrf_token_value" \
   -F title='Weekly sync' \
   -F workflow_type=meeting \
   -F language=en \

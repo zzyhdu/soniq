@@ -63,7 +63,7 @@ func TestBuildHandlerCreatesRecordingSessionWithoutStartingWorkflow(t *testing.T
 
 	request := httptest.NewRequest(http.MethodPost, "/workspaces/wsp_default/recordings", strings.NewReader(`{"title":"Weekly sync","workflow_type":"meeting","language":"en"}`))
 	request.Header.Set("Content-Type", "application/json")
-	request.AddCookie(buildHandlerSessionCookie(t, handler))
+	addHandlerAuth(t, request, buildHandlerAuthCookies(t, handler))
 	response := httptest.NewRecorder()
 
 	handler.ServeHTTP(response, request)
@@ -108,7 +108,7 @@ func TestBuildHandlerWiresUploadEndpointToLocalObjectStorage(t *testing.T) {
 		"workflow_type": "meeting",
 		"language":      "en",
 	}, "audio", "weekly.wav", "audio/wav", "audio-bytes")
-	request.AddCookie(buildHandlerSessionCookie(t, handler))
+	addHandlerAuth(t, request, buildHandlerAuthCookies(t, handler))
 	response := httptest.NewRecorder()
 
 	handler.ServeHTTP(response, request)
@@ -220,7 +220,7 @@ func TestBuildHandlerLoginSessionCanReadMe(t *testing.T) {
 	defer cleanup()
 
 	meRequest := httptest.NewRequest(http.MethodGet, "/me", nil)
-	meRequest.AddCookie(buildHandlerSessionCookie(t, handler))
+	meRequest.AddCookie(buildHandlerAuthCookies(t, handler).session)
 	meResponse := httptest.NewRecorder()
 	handler.ServeHTTP(meResponse, meRequest)
 	if meResponse.Code != http.StatusOK {
@@ -238,7 +238,12 @@ func enableBuildHandlerPassword(t *testing.T, store *buildHandlerRecordingStoreS
 	store.auth.passwordHash = passwordHash
 }
 
-func buildHandlerSessionCookie(t *testing.T, handler http.Handler) *http.Cookie {
+type handlerAuthCookies struct {
+	session *http.Cookie
+	csrf    *http.Cookie
+}
+
+func buildHandlerAuthCookies(t *testing.T, handler http.Handler) handlerAuthCookies {
 	t.Helper()
 
 	loginRequest := httptest.NewRequest(http.MethodPost, "/auth/signin", strings.NewReader(`{"email":"dev@local.soniq","password":"correct horse"}`))
@@ -249,10 +254,27 @@ func buildHandlerSessionCookie(t *testing.T, handler http.Handler) *http.Cookie 
 		t.Fatalf("login status code = %d, want %d; body=%s", loginResponse.Code, http.StatusOK, loginResponse.Body.String())
 	}
 	cookies := loginResponse.Result().Cookies()
-	if len(cookies) != 1 || cookies[0].Name != api.DefaultSessionCookieName {
-		t.Fatalf("login cookies = %+v, want session cookie", cookies)
+	var authCookies handlerAuthCookies
+	for _, cookie := range cookies {
+		switch cookie.Name {
+		case api.DefaultSessionCookieName:
+			authCookies.session = cookie
+		case api.DefaultCSRFCookieName:
+			authCookies.csrf = cookie
+		}
 	}
-	return cookies[0]
+	if authCookies.session == nil || authCookies.csrf == nil {
+		t.Fatalf("login cookies = %+v, want session and csrf cookies", cookies)
+	}
+	return authCookies
+}
+
+func addHandlerAuth(t *testing.T, request *http.Request, authCookies handlerAuthCookies) {
+	t.Helper()
+
+	request.AddCookie(authCookies.session)
+	request.AddCookie(authCookies.csrf)
+	request.Header.Set(api.CSRFHeaderName, authCookies.csrf.Value)
 }
 
 func sameFunction(a, b interface{}) bool {

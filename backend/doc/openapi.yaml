@@ -46,7 +46,7 @@ paths:
             Set-Cookie:
               schema:
                 type: string
-              description: httpOnly `soniq_session` cookie.
+              description: httpOnly `soniq_session` cookie and readable `soniq_csrf` cookie.
           content:
             application/json:
               schema:
@@ -75,7 +75,7 @@ paths:
             Set-Cookie:
               schema:
                 type: string
-              description: httpOnly `soniq_session` cookie.
+              description: httpOnly `soniq_session` cookie and readable `soniq_csrf` cookie.
           content:
             application/json:
               schema:
@@ -90,6 +90,11 @@ paths:
     post:
       summary: Sign out current session
       operationId: signOut
+      security:
+        - CookieAuth: []
+          CSRFToken: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
       responses:
         '204':
           description: Session revoked when present and cookie cleared.
@@ -97,7 +102,9 @@ paths:
             Set-Cookie:
               schema:
                 type: string
-              description: Expired httpOnly `soniq_session` cookie.
+              description: Expired `soniq_session` and `soniq_csrf` cookies.
+        '403':
+          $ref: '#/components/responses/Error'
         default:
           $ref: '#/components/responses/Error'
   /me:
@@ -165,8 +172,12 @@ paths:
       summary: Create recording metadata
       description: Creates a recording session in a workspace without uploading audio or starting processing.
       operationId: createRecording
+      security:
+        - CookieAuth: []
+          CSRFToken: []
       parameters:
         - $ref: '#/components/parameters/WorkspaceID'
+        - $ref: '#/components/parameters/CSRFToken'
       requestBody:
         required: true
         content:
@@ -184,6 +195,8 @@ paths:
           $ref: '#/components/responses/Error'
         '401':
           $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
         '404':
           $ref: '#/components/responses/Error'
         default:
@@ -193,8 +206,12 @@ paths:
       summary: Upload recording audio
       description: Uploads audio into a workspace, creates a recording, and starts processing.
       operationId: uploadRecording
+      security:
+        - CookieAuth: []
+          CSRFToken: []
       parameters:
         - $ref: '#/components/parameters/WorkspaceID'
+        - $ref: '#/components/parameters/CSRFToken'
       requestBody:
         required: true
         content:
@@ -223,6 +240,8 @@ paths:
         '400':
           $ref: '#/components/responses/Error'
         '401':
+          $ref: '#/components/responses/Error'
+        '403':
           $ref: '#/components/responses/Error'
         '404':
           $ref: '#/components/responses/Error'
@@ -273,9 +292,13 @@ paths:
       summary: Retry failed recording processing
       description: Resets a failed audio-backed recording and attempts to enqueue processing again.
       operationId: retryRecording
+      security:
+        - CookieAuth: []
+          CSRFToken: []
       parameters:
         - $ref: '#/components/parameters/WorkspaceID'
         - $ref: '#/components/parameters/RecordingID'
+        - $ref: '#/components/parameters/CSRFToken'
       responses:
         '200':
           description: Recording retry was requested.
@@ -284,6 +307,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/RetryRecordingResponse'
         '401':
+          $ref: '#/components/responses/Error'
+        '403':
           $ref: '#/components/responses/Error'
         '404':
           $ref: '#/components/responses/Error'
@@ -318,6 +343,11 @@ components:
       type: apiKey
       in: cookie
       name: soniq_session
+    CSRFToken:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+      description: Required for unsafe authenticated requests. The value comes from the readable `soniq_csrf` cookie.
   parameters:
     WorkspaceID:
       name: workspace_id
@@ -333,6 +363,13 @@ components:
       schema:
         type: string
       description: Recording identifier.
+    CSRFToken:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      schema:
+        type: string
+      description: CSRF token copied from the `soniq_csrf` cookie.
   responses:
     Error:
       description: Error response.
@@ -609,6 +646,7 @@ components:
           enum:
             - unauthenticated
             - invalid_credentials
+            - invalid_csrf_token
             - user_already_exists
             - validation_failed
             - forbidden

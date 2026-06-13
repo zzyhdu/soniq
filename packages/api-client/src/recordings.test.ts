@@ -90,6 +90,32 @@ describe('recording writes', () => {
       body: JSON.stringify({ workflow_type: 'meeting', title: 'Weekly standup', language: 'en' }),
     });
   });
+
+  it('adds a csrf header to unsafe browser requests', async () => {
+    vi.stubGlobal('document', { cookie: 'soniq_csrf=csrf-token' });
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(recordingFixture({ id: 'rec-created' }), { status: 201 }),
+    );
+
+    try {
+      await createRecording(
+        'wsp_default',
+        { workflow_type: 'meeting', title: 'Weekly standup', language: 'en' },
+        { fetch: fetchMock },
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    expect(fetchMock).toHaveBeenCalledWith('/workspaces/wsp_default/recordings', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': 'csrf-token',
+      },
+      body: JSON.stringify({ workflow_type: 'meeting', title: 'Weekly standup', language: 'en' }),
+    });
+  });
 });
 
 describe('recording reads', () => {
