@@ -52,6 +52,21 @@ describe('App workspace recording flow', () => {
     expect(requests.some((request) => request.method === 'POST' && request.url === '/auth/signin')).toBe(true);
   });
 
+  it('shows auth errors without leaving the sign-in screen', async () => {
+    mockPasswordAuthFetch({ rejectSignIn: true });
+    const user = userEvent.setup();
+
+    renderApp();
+
+    const submitButton = await screen.findByRole('button', { name: /sign in/i });
+    await user.type(screen.getByLabelText(/email/i), 'owner@local.soniq');
+    await user.type(screen.getByLabelText(/password/i), 'wrong horse');
+    await user.click(submitButton);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('invalid email or password');
+    expect(screen.getByRole('heading', { name: /sign in/i })).toBeInTheDocument();
+  });
+
   it('signs up and loads the new user workspace', async () => {
     const requests = mockPasswordAuthFetch();
     const user = userEvent.setup();
@@ -84,6 +99,27 @@ describe('App workspace recording flow', () => {
     expect(requests.some((request) => request.method === 'POST' && request.url === '/auth/signout')).toBe(true);
   });
 
+  it('clears browser state when signout revoke fails', async () => {
+    const requests = mockAppFetch({ signOutFails: true });
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await screen.findByText('Local Developer');
+    await user.click(screen.getByRole('button', { name: /sign out/i }));
+
+    expect(await screen.findByRole('heading', { name: /sign in/i })).toBeInTheDocument();
+    expect(requests.some((request) => request.method === 'POST' && request.url === '/auth/signout')).toBe(true);
+  });
+
+  it('returns to sign in when a protected query is unauthorized', async () => {
+    mockAppFetch({ workspacesUnauthorized: true });
+
+    renderApp();
+
+    expect(await screen.findByRole('heading', { name: /sign in/i })).toBeInTheDocument();
+  });
+
   it('loads user, workspaces, recording history, and selected recording details', async () => {
     mockAppFetch();
     const user = userEvent.setup();
@@ -97,6 +133,17 @@ describe('App workspace recording flow', () => {
 
     expect(await screen.findByText('Weekly sync summary')).toBeInTheDocument();
     expect(screen.getByText('Full transcript text.')).toBeInTheDocument();
+  });
+
+  it('returns to sign in when recording details are unauthorized', async () => {
+    mockAppFetch({ detailsUnauthorized: true });
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(await screen.findByRole('button', { name: /Weekly sync/i }));
+
+    expect(await screen.findByRole('heading', { name: /sign in/i })).toBeInTheDocument();
   });
 
   it('opens a recording from a bookmarkable hash route', async () => {
@@ -170,7 +217,13 @@ type CapturedRequest = {
   method: string;
 };
 
-function mockAppFetch(options: { includeTeamWorkspace?: boolean; includeFailedRecording?: boolean } = {}) {
+function mockAppFetch(options: {
+  detailsUnauthorized?: boolean;
+  includeTeamWorkspace?: boolean;
+  includeFailedRecording?: boolean;
+  signOutFails?: boolean;
+  workspacesUnauthorized?: boolean;
+} = {}) {
   const requests: CapturedRequest[] = [];
   let authenticated = true;
 
@@ -181,7 +234,10 @@ function mockAppFetch(options: { includeTeamWorkspace?: boolean; includeFailedRe
 
     if (url === '/me') {
       if (!authenticated) {
-        return jsonResponse('resolve current user', { status: 401, statusText: 'Unauthorized' });
+        return jsonResponse(apiError('unauthenticated', 'resolve current user', 401), {
+          status: 401,
+          statusText: 'Unauthorized',
+        });
       }
       return jsonResponse({
         id: 'usr_dev',
@@ -194,10 +250,22 @@ function mockAppFetch(options: { includeTeamWorkspace?: boolean; includeFailedRe
 
     if (url === '/auth/signout' && method === 'POST') {
       authenticated = false;
+      if (options.signOutFails) {
+        return jsonResponse(apiError('internal_error', 'revoke session', 500), {
+          status: 500,
+          statusText: 'Internal Server Error',
+        });
+      }
       return new Response(null, { status: 204 });
     }
 
     if (url === '/workspaces') {
+      if (options.workspacesUnauthorized) {
+        return jsonResponse(apiError('unauthenticated', 'resolve current user', 401), {
+          status: 401,
+          statusText: 'Unauthorized',
+        });
+      }
       return jsonResponse({
         workspaces: [
           {
@@ -274,6 +342,12 @@ function mockAppFetch(options: { includeTeamWorkspace?: boolean; includeFailedRe
     }
 
     if (url === '/workspaces/wsp_default/recordings/rec_done/details') {
+      if (options.detailsUnauthorized) {
+        return jsonResponse(apiError('unauthenticated', 'resolve current user', 401), {
+          status: 401,
+          statusText: 'Unauthorized',
+        });
+      }
       return jsonResponse(recordingDetails());
     }
 
@@ -283,7 +357,7 @@ function mockAppFetch(options: { includeTeamWorkspace?: boolean; includeFailedRe
   return requests;
 }
 
-function mockPasswordAuthFetch() {
+function mockPasswordAuthFetch(options: { rejectSignIn?: boolean } = {}) {
   const requests: CapturedRequest[] = [];
   let authenticated = false;
 
@@ -294,12 +368,21 @@ function mockPasswordAuthFetch() {
 
     if (url === '/me') {
       if (!authenticated) {
-        return jsonResponse('resolve current user', { status: 401, statusText: 'Unauthorized' });
+        return jsonResponse(apiError('unauthenticated', 'resolve current user', 401), {
+          status: 401,
+          statusText: 'Unauthorized',
+        });
       }
       return jsonResponse(userFixture());
     }
 
     if (url === '/auth/signin' && method === 'POST') {
+      if (options.rejectSignIn) {
+        return jsonResponse(apiError('invalid_credentials', 'invalid email or password', 401), {
+          status: 401,
+          statusText: 'Unauthorized',
+        });
+      }
       authenticated = true;
       return jsonResponse({ user: userFixture() });
     }
@@ -350,6 +433,10 @@ function jsonResponse(body: unknown, init?: ResponseInit): Response {
     headers: { 'Content-Type': 'application/json' },
     ...init,
   });
+}
+
+function apiError(code: string, message: string, status: number) {
+  return { code, message, status };
 }
 
 function userFixture() {

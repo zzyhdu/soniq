@@ -9,8 +9,7 @@ import (
 
 func openAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w, http.MethodGet)
 		return
 	}
 	serveEmbeddedFile(w, apidocs.OpenAPI, "application/yaml; charset=utf-8")
@@ -18,8 +17,7 @@ func openAPIHandler(w http.ResponseWriter, r *http.Request) {
 
 func apiConsoleHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w, http.MethodGet)
 		return
 	}
 	serveEmbeddedFile(w, apidocs.APIConsole, "text/html; charset=utf-8")
@@ -32,8 +30,7 @@ func serveEmbeddedFile(w http.ResponseWriter, body []byte, contentType string) {
 
 func healthzHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w, http.MethodGet)
 		return
 	}
 

@@ -207,7 +207,7 @@ func withAuthorizedWorkspace(workspaceStore WorkspaceStore, authResolver AuthRes
 	return func(w http.ResponseWriter, r *http.Request) {
 		workspaceID := chi.URLParam(r, "workspace_id")
 		if workspaceID == "" {
-			http.NotFound(w, r)
+			writeAPIError(w, http.StatusNotFound, errorCodeNotFound, "not found")
 			return
 		}
 		if !authorizeWorkspace(w, r, workspaceStore, authResolver, workspaceID) {
@@ -221,7 +221,7 @@ func withAuthorizedRecording(workspaceStore WorkspaceStore, authResolver AuthRes
 	return withAuthorizedWorkspace(workspaceStore, authResolver, func(w http.ResponseWriter, r *http.Request, workspaceID string) {
 		recordingID := chi.URLParam(r, "recording_id")
 		if recordingID == "" {
-			http.NotFound(w, r)
+			writeAPIError(w, http.StatusNotFound, errorCodeNotFound, "not found")
 			return
 		}
 		next(w, r, workspaceID, recordingID)

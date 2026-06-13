@@ -9,8 +9,7 @@ import (
 func meHandler(workspaceStore WorkspaceStore, authResolver AuthResolver) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			w.Header().Set("Allow", http.MethodGet)
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w, http.MethodGet)
 			return
 		}
 		currentUser, ok := resolveCurrentUser(w, r, authResolver)
@@ -19,11 +18,11 @@ func meHandler(workspaceStore WorkspaceStore, authResolver AuthResolver) http.Ha
 		}
 		user, found, err := workspaceStore.GetUser(r.Context(), currentUser.UserID)
 		if err != nil {
-			http.Error(w, "get current user", http.StatusInternalServerError)
+			writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "get current user")
 			return
 		}
 		if !found {
-			http.NotFound(w, r)
+			writeAPIError(w, http.StatusNotFound, errorCodeNotFound, "not found")
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -34,8 +33,7 @@ func meHandler(workspaceStore WorkspaceStore, authResolver AuthResolver) http.Ha
 func workspacesHandler(workspaceStore WorkspaceStore, authResolver AuthResolver) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			w.Header().Set("Allow", http.MethodGet)
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w, http.MethodGet)
 			return
 		}
 		currentUser, ok := resolveCurrentUser(w, r, authResolver)
@@ -44,7 +42,7 @@ func workspacesHandler(workspaceStore WorkspaceStore, authResolver AuthResolver)
 		}
 		workspaces, err := workspaceStore.ListWorkspacesForUser(r.Context(), currentUser.UserID)
 		if err != nil {
-			http.Error(w, "list workspaces", http.StatusInternalServerError)
+			writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "list workspaces")
 			return
 		}
 		response := listWorkspacesResponse{Workspaces: make([]workspaceResponse, 0, len(workspaces))}
@@ -59,11 +57,11 @@ func workspacesHandler(workspaceStore WorkspaceStore, authResolver AuthResolver)
 func resolveCurrentUser(w http.ResponseWriter, r *http.Request, authResolver AuthResolver) (CurrentUser, bool) {
 	currentUser, err := authResolver.ResolveCurrentUser(r)
 	if err != nil {
-		http.Error(w, "resolve current user", http.StatusUnauthorized)
+		writeAPIError(w, http.StatusUnauthorized, errorCodeUnauthenticated, "resolve current user")
 		return CurrentUser{}, false
 	}
 	if strings.TrimSpace(currentUser.UserID) == "" {
-		http.Error(w, "current user is required", http.StatusUnauthorized)
+		writeAPIError(w, http.StatusUnauthorized, errorCodeUnauthenticated, "current user is required")
 		return CurrentUser{}, false
 	}
 	return currentUser, true

@@ -24,15 +24,19 @@ export function AuthGate({ isSubmitting, error, onSignIn, onSignUp }: AuthGatePr
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (mode === 'signup') {
-      await onSignUp({
-        email,
-        display_name: displayName,
-        password,
-      });
-      return;
+    try {
+      if (mode === 'signup') {
+        await onSignUp({
+          email,
+          display_name: displayName,
+          password,
+        });
+        return;
+      }
+      await onSignIn({ email, password });
+    } catch {
+      // Mutation state owned by App renders the auth error.
     }
-    await onSignIn({ email, password });
   }
 
   return (

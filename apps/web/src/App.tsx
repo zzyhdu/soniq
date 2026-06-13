@@ -1,6 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
-import { type AuthUserResponse, type SignInInput, type SignUpInput, type UploadRecordingResponse } from '@soniq/api-client';
+import {
+  setUnauthorizedHandler,
+  type AuthUserResponse,
+  type SignInInput,
+  type SignUpInput,
+  type UploadRecordingResponse,
+} from '@soniq/api-client';
 import { useQueryClient } from '@tanstack/react-query';
 
 import {
@@ -41,6 +47,28 @@ export function App() {
   const [selectedRecordingId, setSelectedRecordingId] = useState<string | null>(initialRoute.recordingId);
   const [latestProcessingRequest, setLatestProcessingRequest] = useState<LatestProcessingRequest | null>(null);
 
+  const resetSessionState = useCallback(() => {
+    setSelectedWorkspaceId(null);
+    setSelectedRecordingId(null);
+    setLatestProcessingRequest(null);
+    replaceAppRoute({ workspaceId: null, recordingId: null });
+  }, []);
+
+  const handleUnauthorized = useCallback(() => {
+    queryClient.clear();
+    resetSessionState();
+    setAuthState('signed_out');
+  }, [queryClient, resetSessionState]);
+
+  const handleAuthenticated = useCallback((response: AuthUserResponse) => {
+    queryClient.clear();
+    queryClient.setQueryData(['me'], response.user);
+    resetSessionState();
+    setAuthState('authenticated');
+  }, [queryClient, resetSessionState]);
+
+  useEffect(() => setUnauthorizedHandler(handleUnauthorized), [handleUnauthorized]);
+
   useEffect(() => {
     if (!shouldResolveCurrentUser) {
       return;
@@ -50,9 +78,9 @@ export function App() {
       return;
     }
     if (isUnauthorizedApiError(meQuery.error)) {
-      setAuthState('signed_out');
+      handleUnauthorized();
     }
-  }, [meQuery.data, meQuery.error, shouldResolveCurrentUser]);
+  }, [handleUnauthorized, meQuery.data, meQuery.error, shouldResolveCurrentUser]);
 
   useEffect(() => {
     function syncRoute() {
@@ -103,20 +131,6 @@ export function App() {
     ? latestProcessingRequest.processing_enqueued
     : undefined;
 
-  function resetSessionState() {
-    setSelectedWorkspaceId(null);
-    setSelectedRecordingId(null);
-    setLatestProcessingRequest(null);
-    replaceAppRoute({ workspaceId: null, recordingId: null });
-  }
-
-  function handleAuthenticated(response: AuthUserResponse) {
-    queryClient.clear();
-    queryClient.setQueryData(['me'], response.user);
-    resetSessionState();
-    setAuthState('authenticated');
-  }
-
   async function handleSignIn(input: SignInInput) {
     const response = await signInMutation.mutateAsync(input);
     handleAuthenticated(response);
@@ -158,10 +172,12 @@ export function App() {
   }
 
   async function handleLogout() {
-    await signOutMutation.mutateAsync();
-    queryClient.clear();
-    resetSessionState();
-    setAuthState('signed_out');
+    try {
+      await signOutMutation.mutateAsync();
+    } catch {
+      // Local sign-out should still clear browser state even if server revoke fails.
+    }
+    handleUnauthorized();
   }
 
   if (authState === 'signed_out') {

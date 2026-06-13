@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"path"
 	"strconv"
@@ -18,8 +19,7 @@ const maxUploadRequestBytes = 100 << 20 // 100 MiB
 func createRecordingHandler(store RecordingStore, workspaceID string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			w.Header().Set("Allow", http.MethodPost)
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w, http.MethodPost)
 			return
 		}
 
@@ -29,7 +29,7 @@ func createRecordingHandler(store RecordingStore, workspaceID string) http.Handl
 			Language     string `json:"language"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			http.Error(w, "invalid json", http.StatusBadRequest)
+			writeAPIError(w, http.StatusBadRequest, errorCodeValidationFailed, "invalid json")
 			return
 		}
 
@@ -40,7 +40,7 @@ func createRecordingHandler(store RecordingStore, workspaceID string) http.Handl
 			Language:     request.Language,
 		})
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeAPIError(w, http.StatusBadRequest, errorCodeValidationFailed, err.Error())
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -52,15 +52,14 @@ func createRecordingHandler(store RecordingStore, workspaceID string) http.Handl
 func listRecordingsHandler(store RecordingStore, workspaceID string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			w.Header().Set("Allow", http.MethodGet)
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w, http.MethodGet)
 			return
 		}
 		limit := 50
 		if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
 			parsed, err := strconv.Atoi(rawLimit)
 			if err != nil || parsed < 0 {
-				http.Error(w, "invalid limit", http.StatusBadRequest)
+				writeAPIError(w, http.StatusBadRequest, errorCodeValidationFailed, "invalid limit")
 				return
 			}
 			limit = parsed
@@ -70,7 +69,7 @@ func listRecordingsHandler(store RecordingStore, workspaceID string) http.Handle
 			Limit:       limit,
 		})
 		if err != nil {
-			http.Error(w, "list recordings", http.StatusInternalServerError)
+			writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "list recordings")
 			return
 		}
 		response := listRecordingsResponse{Recordings: make([]recordingResponse, 0, len(recordingRows))}
@@ -85,24 +84,28 @@ func listRecordingsHandler(store RecordingStore, workspaceID string) http.Handle
 func uploadRecordingHandler(store RecordingStore, processor RecordingProcessor, objectStore storage.ObjectStore, workspaceID string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			w.Header().Set("Allow", http.MethodPost)
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w, http.MethodPost)
 			return
 		}
 		if objectStore == nil {
-			http.Error(w, "object storage is not configured", http.StatusInternalServerError)
+			writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "object storage is not configured")
 			return
 		}
 
 		r.Body = http.MaxBytesReader(w, r.Body, maxUploadRequestBytes)
 		if err := r.ParseMultipartForm(maxUploadRequestBytes); err != nil {
-			http.Error(w, "invalid multipart form", http.StatusBadRequest)
+			var maxBytesErr *http.MaxBytesError
+			if errors.As(err, &maxBytesErr) {
+				writeAPIError(w, http.StatusRequestEntityTooLarge, errorCodeRequestTooLarge, "request too large")
+				return
+			}
+			writeAPIError(w, http.StatusBadRequest, errorCodeValidationFailed, "invalid multipart form")
 			return
 		}
 
 		file, header, err := r.FormFile("audio")
 		if err != nil {
-			http.Error(w, "audio file is required", http.StatusBadRequest)
+			writeAPIError(w, http.StatusBadRequest, errorCodeValidationFailed, "audio file is required")
 			return
 		}
 		defer file.Close()
@@ -115,7 +118,7 @@ func uploadRecordingHandler(store RecordingStore, processor RecordingProcessor, 
 			ContentType: contentType,
 		})
 		if err != nil {
-			http.Error(w, "store audio object", http.StatusInternalServerError)
+			writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "store audio object")
 			return
 		}
 
@@ -130,7 +133,7 @@ func uploadRecordingHandler(store RecordingStore, processor RecordingProcessor, 
 		})
 		if err != nil {
 			_ = objectStore.DeleteObject(r.Context(), putResult.Key)
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeAPIError(w, http.StatusBadRequest, errorCodeValidationFailed, err.Error())
 			return
 		}
 		processingEnqueued := processor.Enqueue(recording) == nil
@@ -155,18 +158,17 @@ func recordingAudioObjectKey(workspaceID string, filename string) string {
 func getRecordingHandler(store RecordingStore, workspaceID string, id string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			w.Header().Set("Allow", http.MethodGet)
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w, http.MethodGet)
 			return
 		}
 
 		recording, ok, err := store.GetForWorkspace(recordings.GetRecordingInput{WorkspaceID: workspaceID, ID: id})
 		if err != nil {
-			http.Error(w, "get recording", http.StatusInternalServerError)
+			writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "get recording")
 			return
 		}
 		if !ok {
-			http.NotFound(w, r)
+			writeAPIError(w, http.StatusNotFound, errorCodeNotFound, "not found")
 			return
 		}
 
@@ -178,18 +180,17 @@ func getRecordingHandler(store RecordingStore, workspaceID string, id string) ht
 func getRecordingStatusHandler(store RecordingStore, workspaceID string, id string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			w.Header().Set("Allow", http.MethodGet)
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w, http.MethodGet)
 			return
 		}
 
 		recording, ok, err := store.GetForWorkspace(recordings.GetRecordingInput{WorkspaceID: workspaceID, ID: id})
 		if err != nil {
-			http.Error(w, "get recording", http.StatusInternalServerError)
+			writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "get recording")
 			return
 		}
 		if !ok {
-			http.NotFound(w, r)
+			writeAPIError(w, http.StatusNotFound, errorCodeNotFound, "not found")
 			return
 		}
 
@@ -215,44 +216,43 @@ func getRecordingStatusHandler(store RecordingStore, workspaceID string, id stri
 func getRecordingDetailsHandler(store RecordingStore, workspaceID string, id string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			w.Header().Set("Allow", http.MethodGet)
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w, http.MethodGet)
 			return
 		}
 
 		recording, ok, err := store.GetForWorkspace(recordings.GetRecordingInput{WorkspaceID: workspaceID, ID: id})
 		if err != nil {
-			http.Error(w, "get recording", http.StatusInternalServerError)
+			writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "get recording")
 			return
 		}
 		if !ok {
-			http.NotFound(w, r)
+			writeAPIError(w, http.StatusNotFound, errorCodeNotFound, "not found")
 			return
 		}
 
 		detailsStore, ok := store.(RecordingDetailsStore)
 		if !ok {
-			http.Error(w, "recording details are not configured", http.StatusInternalServerError)
+			writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "recording details are not configured")
 			return
 		}
 		details := recordingDetailsResponse{Recording: toRecordingResponse(recording), Segments: []recordingSegmentResponse{}}
 		transcript, hasTranscript, err := detailsStore.GetTranscript(id)
 		if err != nil {
-			http.Error(w, "get recording transcript", http.StatusInternalServerError)
+			writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "get recording transcript")
 			return
 		}
 		if hasTranscript {
 			details.Transcript = toRecordingTranscriptResponse(transcript)
 			segments, err := detailsStore.ListTranscriptSegments(id)
 			if err != nil {
-				http.Error(w, "list recording transcript segments", http.StatusInternalServerError)
+				writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "list recording transcript segments")
 				return
 			}
 			details.Segments = toRecordingSegmentResponses(segments)
 		}
 		summary, hasSummary, err := detailsStore.GetSummary(id)
 		if err != nil {
-			http.Error(w, "get recording summary", http.StatusInternalServerError)
+			writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "get recording summary")
 			return
 		}
 		if hasSummary {
@@ -266,37 +266,36 @@ func getRecordingDetailsHandler(store RecordingStore, workspaceID string, id str
 func retryRecordingHandler(store RecordingStore, processor RecordingProcessor, workspaceID string, id string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			w.Header().Set("Allow", http.MethodPost)
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w, http.MethodPost)
 			return
 		}
 
 		recording, ok, err := store.GetForWorkspace(recordings.GetRecordingInput{WorkspaceID: workspaceID, ID: id})
 		if err != nil {
-			http.Error(w, "get recording", http.StatusInternalServerError)
+			writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "get recording")
 			return
 		}
 		if !ok {
-			http.NotFound(w, r)
+			writeAPIError(w, http.StatusNotFound, errorCodeNotFound, "not found")
 			return
 		}
 		if recording.Status != domain.RecordingStatusFailed {
-			http.Error(w, "recording is not failed", http.StatusConflict)
+			writeAPIError(w, http.StatusConflict, errorCodeConflict, "recording is not failed")
 			return
 		}
 		if strings.TrimSpace(recording.AudioObjectKey) == "" {
-			http.Error(w, "recording has no audio to retry", http.StatusConflict)
+			writeAPIError(w, http.StatusConflict, errorCodeConflict, "recording has no audio to retry")
 			return
 		}
 
 		retryStore, ok := store.(RecordingRetryStore)
 		if !ok {
-			http.Error(w, "recording retry is not configured", http.StatusInternalServerError)
+			writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "recording retry is not configured")
 			return
 		}
 		resetRecording, err := retryStore.ResetForRetry(recordings.RetryRecordingInput{WorkspaceID: workspaceID, ID: id})
 		if err != nil {
-			http.Error(w, "reset recording retry", http.StatusInternalServerError)
+			writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "reset recording retry")
 			return
 		}
 		processingEnqueued := true
@@ -309,7 +308,7 @@ func retryRecordingHandler(store RecordingStore, processor RecordingProcessor, w
 				FailureReason: "retry enqueue failed: " + err.Error(),
 			})
 			if failErr != nil {
-				http.Error(w, "mark retry enqueue failure", http.StatusInternalServerError)
+				writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "mark retry enqueue failure")
 				return
 			}
 			resetRecording = failedRecording
@@ -330,11 +329,11 @@ func authorizeWorkspace(w http.ResponseWriter, r *http.Request, workspaceStore W
 	}
 	_, found, err := workspaceStore.GetWorkspaceForUser(r.Context(), currentUser.UserID, workspaceID)
 	if err != nil {
-		http.Error(w, "get workspace", http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "get workspace")
 		return false
 	}
 	if !found {
-		http.NotFound(w, r)
+		writeAPIError(w, http.StatusNotFound, errorCodeNotFound, "not found")
 		return false
 	}
 	return true

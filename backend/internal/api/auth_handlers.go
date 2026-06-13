@@ -54,12 +54,11 @@ type signUpRequest struct {
 func signUpHandler(config PasswordAuthConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			w.Header().Set("Allow", http.MethodPost)
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w, http.MethodPost)
 			return
 		}
 		if config.PasswordStore == nil || config.SessionStore == nil {
-			http.Error(w, "password auth is not configured", http.StatusInternalServerError)
+			writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "password auth is not configured")
 			return
 		}
 
@@ -70,16 +69,16 @@ func signUpHandler(config PasswordAuthConfig) http.HandlerFunc {
 		email := auth.NormalizeEmail(request.Email)
 		displayName := strings.TrimSpace(request.DisplayName)
 		if err := auth.ValidateEmail(email); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeAPIError(w, http.StatusBadRequest, errorCodeValidationFailed, err.Error())
 			return
 		}
 		if displayName == "" {
-			http.Error(w, "display name is required", http.StatusBadRequest)
+			writeAPIError(w, http.StatusBadRequest, errorCodeValidationFailed, "display name is required")
 			return
 		}
 		passwordHash, err := auth.HashPassword(request.Password)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeAPIError(w, http.StatusBadRequest, errorCodeValidationFailed, err.Error())
 			return
 		}
 
@@ -90,10 +89,10 @@ func signUpHandler(config PasswordAuthConfig) http.HandlerFunc {
 		})
 		if err != nil {
 			if errors.Is(err, auth.ErrUserAlreadyExists) {
-				http.Error(w, "user already exists", http.StatusConflict)
+				writeAPIError(w, http.StatusConflict, errorCodeUserAlreadyExists, "user already exists")
 				return
 			}
-			http.Error(w, "sign up user", http.StatusInternalServerError)
+			writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "sign up user")
 			return
 		}
 		if !issueSessionCookie(w, r, config, user.ID) {
@@ -109,12 +108,11 @@ func signUpHandler(config PasswordAuthConfig) http.HandlerFunc {
 func signInHandler(config PasswordAuthConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			w.Header().Set("Allow", http.MethodPost)
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w, http.MethodPost)
 			return
 		}
 		if config.PasswordStore == nil || config.SessionStore == nil {
-			http.Error(w, "password auth is not configured", http.StatusInternalServerError)
+			writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "password auth is not configured")
 			return
 		}
 
@@ -124,16 +122,16 @@ func signInHandler(config PasswordAuthConfig) http.HandlerFunc {
 		}
 		email := auth.NormalizeEmail(request.Email)
 		if err := auth.ValidateEmail(email); err != nil {
-			http.Error(w, "invalid email or password", http.StatusUnauthorized)
+			writeAPIError(w, http.StatusUnauthorized, errorCodeInvalidCredentials, "invalid email or password")
 			return
 		}
 		user, passwordHash, found, err := config.PasswordStore.GetUserByEmail(r.Context(), email)
 		if err != nil {
-			http.Error(w, "get user by email", http.StatusInternalServerError)
+			writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "get user by email")
 			return
 		}
 		if !found || !auth.VerifyPassword(passwordHash, request.Password) {
-			http.Error(w, "invalid email or password", http.StatusUnauthorized)
+			writeAPIError(w, http.StatusUnauthorized, errorCodeInvalidCredentials, "invalid email or password")
 			return
 		}
 		if !issueSessionCookie(w, r, config, user.ID) {
@@ -148,18 +146,17 @@ func signInHandler(config PasswordAuthConfig) http.HandlerFunc {
 func signOutHandler(config PasswordAuthConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			w.Header().Set("Allow", http.MethodPost)
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w, http.MethodPost)
 			return
 		}
 		cookieName := authCookieName(config)
+		clearSessionCookie(w, config)
 		if cookie, err := r.Cookie(cookieName); err == nil && strings.TrimSpace(cookie.Value) != "" && config.SessionStore != nil {
 			if err := config.SessionStore.RevokeSession(r.Context(), auth.HashSessionToken(cookie.Value), authNow(config)); err != nil {
-				http.Error(w, "revoke session", http.StatusInternalServerError)
+				writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "revoke session")
 				return
 			}
 		}
-		clearSessionCookie(w, config)
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
@@ -167,7 +164,12 @@ func signOutHandler(config PasswordAuthConfig) http.HandlerFunc {
 func decodeAuthJSON(w http.ResponseWriter, r *http.Request, destination any) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, maxAuthRequestBytes)
 	if err := json.NewDecoder(r.Body).Decode(destination); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			writeAPIError(w, http.StatusRequestEntityTooLarge, errorCodeRequestTooLarge, "request too large")
+			return false
+		}
+		writeAPIError(w, http.StatusBadRequest, errorCodeValidationFailed, "invalid json")
 		return false
 	}
 	return true
@@ -176,7 +178,7 @@ func decodeAuthJSON(w http.ResponseWriter, r *http.Request, destination any) boo
 func issueSessionCookie(w http.ResponseWriter, r *http.Request, config PasswordAuthConfig, userID string) bool {
 	token, tokenHash, err := auth.NewSessionToken()
 	if err != nil {
-		http.Error(w, "create session token", http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "create session token")
 		return false
 	}
 	expiresAt := authNow(config).Add(authSessionTTL(config))
@@ -185,7 +187,7 @@ func issueSessionCookie(w http.ResponseWriter, r *http.Request, config PasswordA
 		TokenHash: tokenHash,
 		ExpiresAt: expiresAt,
 	}); err != nil {
-		http.Error(w, "create session", http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "create session")
 		return false
 	}
 	setSessionCookie(w, config, token, expiresAt)

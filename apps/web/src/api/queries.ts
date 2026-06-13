@@ -24,7 +24,7 @@ export function useMe(enabled = true) {
     queryKey: ['me'],
     queryFn: () => getMe(),
     enabled,
-    retry: (failureCount, error) => !isUnauthorizedApiError(error) && failureCount < 3,
+    retry: retryUnlessUnauthorized,
   });
 }
 
@@ -33,6 +33,7 @@ export function useWorkspaces(enabled = true) {
     queryKey: ['workspaces'],
     queryFn: () => listWorkspaces(),
     enabled,
+    retry: retryUnlessUnauthorized,
   });
 }
 
@@ -55,6 +56,7 @@ export function useRecordings(workspaceId: string | null | undefined, enabled = 
     queryKey: ['workspaces', workspaceId, 'recordings'],
     queryFn: () => listRecordings(requireWorkspaceId(workspaceId)),
     enabled: enabled && hasWorkspaceId(workspaceId),
+    retry: retryUnlessUnauthorized,
   });
 }
 
@@ -82,6 +84,7 @@ export function useRecordingStatus(
     queryFn: () => getRecordingStatus(requireWorkspaceId(workspaceId), requireRecordingId(recordingId)),
     enabled: enabled && hasWorkspaceId(workspaceId) && hasRecordingId(recordingId),
     refetchInterval: (query) => recordingStatusRefetchInterval(query.state.data?.status),
+    retry: retryUnlessUnauthorized,
   });
 }
 
@@ -120,6 +123,7 @@ export function useRecordingDetails(
     queryKey: ['workspaces', workspaceId, 'recordings', recordingId, 'details'],
     queryFn: () => getRecordingDetails(requireWorkspaceId(workspaceId), requireRecordingId(recordingId)),
     enabled: enabled && hasWorkspaceId(workspaceId) && hasRecordingId(recordingId),
+    retry: retryUnlessUnauthorized,
   });
 }
 
@@ -152,13 +156,17 @@ export function recordingStatusBadgeVariant(status: RecordingStatus): 'default' 
 }
 
 export function isUnauthorizedApiError(error: unknown) {
-  return error instanceof SoniqApiError && error.status === 401;
+  return error instanceof SoniqApiError && error.code === 'unauthenticated';
 }
 
 function useAuthMutation<TInput, TResponse>(mutationFn: (input: TInput) => Promise<TResponse>) {
   return useMutation({
     mutationFn,
   });
+}
+
+function retryUnlessUnauthorized(failureCount: number, error: unknown) {
+  return !isUnauthorizedApiError(error) && failureCount < 3;
 }
 
 function hasRecordingId(recordingId: string | null | undefined): recordingId is string {

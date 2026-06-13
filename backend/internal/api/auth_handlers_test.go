@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -87,6 +88,13 @@ func TestSignInRejectsInvalidPassword(t *testing.T) {
 	if response.Code != http.StatusUnauthorized {
 		t.Fatalf("status code = %d, want %d", response.Code, http.StatusUnauthorized)
 	}
+	var body apiErrorResponse
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body.Code != errorCodeInvalidCredentials || body.Status != http.StatusUnauthorized {
+		t.Fatalf("error body = %+v, want invalid_credentials 401", body)
+	}
 	if got, want := len(authStore.sessions), 0; got != want {
 		t.Fatalf("created sessions = %d, want %d", got, want)
 	}
@@ -106,6 +114,25 @@ func TestSignOutRevokesSessionAndClearsCookie(t *testing.T) {
 	}
 	if authStore.revokedTokenHash != auth.HashSessionToken("opaque-token") {
 		t.Fatal("logout did not revoke hashed session token")
+	}
+	cookies := response.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Name != "soniq_test" || cookies[0].MaxAge != -1 {
+		t.Fatalf("clear cookie = %+v, want expired soniq_test cookie", cookies)
+	}
+}
+
+func TestSignOutClearsCookieWhenSessionRevokeFails(t *testing.T) {
+	authStore := newPasswordAuthStoreSpy()
+	authStore.revokeErr = errors.New("database unavailable")
+	router := NewRouterWithStorageIdentityAndPasswordAuth(unconfiguredRecordingStore{}, defaultDevWorkspaceStore{}, NewDevAuthResolver("usr_dev"), nil, nil, passwordAuthTestConfig(authStore))
+	request := httptest.NewRequest(http.MethodPost, "/auth/signout", nil)
+	request.AddCookie(&http.Cookie{Name: "soniq_test", Value: "opaque-token"})
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("status code = %d, want %d", response.Code, http.StatusInternalServerError)
 	}
 	cookies := response.Result().Cookies()
 	if len(cookies) != 1 || cookies[0].Name != "soniq_test" || cookies[0].MaxAge != -1 {
@@ -153,6 +180,7 @@ type passwordAuthStoreSpy struct {
 	signUp           auth.SignUpInput
 	sessions         []auth.CreateSessionInput
 	revokedTokenHash string
+	revokeErr        error
 }
 
 func newPasswordAuthStoreSpy() *passwordAuthStoreSpy {
@@ -190,5 +218,5 @@ func (s *passwordAuthStoreSpy) CreateSession(_ context.Context, input auth.Creat
 
 func (s *passwordAuthStoreSpy) RevokeSession(_ context.Context, tokenHash string, _ time.Time) error {
 	s.revokedTokenHash = tokenHash
-	return nil
+	return s.revokeErr
 }
