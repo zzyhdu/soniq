@@ -109,6 +109,7 @@ func buildAuthDependencies(cfg config.Config, appStore appStoreClient) (api.Auth
 	return api.NewSessionAuthResolver(authStore), api.PasswordAuthConfig{
 		PasswordStore: authStore,
 		SessionStore:  authStore,
+		RateLimiter:   api.NewInMemoryAuthRateLimiter(api.AuthRateLimitConfig{}),
 		SessionTTL:    sessionTTL,
 		CookieSecure:  cfg.AuthCookieSecure,
 	}, nil

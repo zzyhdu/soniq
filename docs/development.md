@@ -665,6 +665,8 @@ Then open the Web UI. If you do not have an account, use Sign up. It calls `POST
 
 The password hasher is Argon2id with encoded per-password salt and parameters (`m=19456`, `t=2`, `p=1`), matching OWASP's current minimum recommendation. Passwords must be 8 to 1024 bytes. The database stores only `users.password_hash` and `user_sessions.token_hash`; the opaque session token only lives in the browser cookie.
 
+`POST /auth/signin` and `POST /auth/signup` use an in-process fixed-window rate limiter keyed by auth action, client IP, and normalized email. The default limits are 10 sign-in attempts and 5 sign-up attempts per 5 minutes. Limited requests return `429` with `code: "rate_limited"`. This protects the single-process local/self-hosted runtime from simple password guessing and signup spam; a multi-instance deployment should replace it with a shared store such as Redis.
+
 ## OpenAI-compatible ASR smoke modes
 
 The automated ASR smoke uses a local fake server and never calls Xiaomi MiMo:

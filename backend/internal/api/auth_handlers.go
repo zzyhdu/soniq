@@ -30,6 +30,7 @@ type PasswordSessionStore interface {
 type PasswordAuthConfig struct {
 	PasswordStore  PasswordAuthStore
 	SessionStore   PasswordSessionStore
+	RateLimiter    AuthRateLimiter
 	SessionTTL     time.Duration
 	CookieName     string
 	CSRFCookieName string
@@ -68,6 +69,9 @@ func signUpHandler(config PasswordAuthConfig) http.HandlerFunc {
 			return
 		}
 		email := auth.NormalizeEmail(request.Email)
+		if !allowAuthAttempt(w, r, config, authRateLimitActionSignUp, email) {
+			return
+		}
 		displayName := strings.TrimSpace(request.DisplayName)
 		if err := auth.ValidateEmail(email); err != nil {
 			writeAPIError(w, http.StatusBadRequest, errorCodeValidationFailed, err.Error())
@@ -122,6 +126,9 @@ func signInHandler(config PasswordAuthConfig) http.HandlerFunc {
 			return
 		}
 		email := auth.NormalizeEmail(request.Email)
+		if !allowAuthAttempt(w, r, config, authRateLimitActionSignIn, email) {
+			return
+		}
 		if err := auth.ValidateEmail(email); err != nil {
 			writeAPIError(w, http.StatusUnauthorized, errorCodeInvalidCredentials, "invalid email or password")
 			return

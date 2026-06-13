@@ -102,6 +102,59 @@ func TestSignInRejectsInvalidPassword(t *testing.T) {
 	}
 }
 
+func TestSignInRateLimitsRepeatedAttemptsByIPAndEmail(t *testing.T) {
+	authStore := newPasswordAuthStoreSpy()
+	passwordHash, err := auth.HashPassword("correct horse")
+	if err != nil {
+		t.Fatalf("HashPassword returned error: %v", err)
+	}
+	authStore.passwordHash = passwordHash
+	config := passwordAuthTestConfig(authStore)
+	config.RateLimiter = NewInMemoryAuthRateLimiter(AuthRateLimitConfig{
+		Window:      time.Hour,
+		SignInLimit: 2,
+		SignUpLimit: 10,
+	})
+	router := NewRouterWithStorageIdentityAndPasswordAuth(unconfiguredRecordingStore{}, defaultDevWorkspaceStore{}, NewDevAuthResolver("usr_dev"), nil, nil, config)
+
+	for range 2 {
+		response := performJSONAuthRequest(router, http.MethodPost, "/auth/signin", `{"email":"owner@local.soniq","password":"wrong horse"}`, "198.51.100.10:1234")
+		if response.Code != http.StatusUnauthorized {
+			t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusUnauthorized, response.Body.String())
+		}
+	}
+
+	limitedResponse := performJSONAuthRequest(router, http.MethodPost, "/auth/signin", `{"email":"owner@local.soniq","password":"wrong horse"}`, "198.51.100.10:1234")
+	assertRateLimitedResponse(t, limitedResponse)
+	if got, want := len(authStore.sessions), 0; got != want {
+		t.Fatalf("created sessions = %d, want %d", got, want)
+	}
+
+	separateEmailResponse := performJSONAuthRequest(router, http.MethodPost, "/auth/signin", `{"email":"other@local.soniq","password":"wrong horse"}`, "198.51.100.10:1234")
+	if separateEmailResponse.Code != http.StatusUnauthorized {
+		t.Fatalf("different email status code = %d, want %d; body=%s", separateEmailResponse.Code, http.StatusUnauthorized, separateEmailResponse.Body.String())
+	}
+}
+
+func TestSignUpRateLimitsRepeatedAttemptsByIPAndEmail(t *testing.T) {
+	authStore := newPasswordAuthStoreSpy()
+	config := passwordAuthTestConfig(authStore)
+	config.RateLimiter = NewInMemoryAuthRateLimiter(AuthRateLimitConfig{
+		Window:      time.Hour,
+		SignInLimit: 10,
+		SignUpLimit: 1,
+	})
+	router := NewRouterWithStorageIdentityAndPasswordAuth(unconfiguredRecordingStore{}, defaultDevWorkspaceStore{}, NewDevAuthResolver("usr_dev"), nil, nil, config)
+
+	firstResponse := performJSONAuthRequest(router, http.MethodPost, "/auth/signup", `{"email":"owner@local.soniq","display_name":"Owner","password":"correct horse"}`, "198.51.100.10:1234")
+	if firstResponse.Code != http.StatusCreated {
+		t.Fatalf("status code = %d, want %d; body=%s", firstResponse.Code, http.StatusCreated, firstResponse.Body.String())
+	}
+
+	limitedResponse := performJSONAuthRequest(router, http.MethodPost, "/auth/signup", `{"email":"owner@local.soniq","display_name":"Owner","password":"correct horse"}`, "198.51.100.10:1234")
+	assertRateLimitedResponse(t, limitedResponse)
+}
+
 func TestSignOutRevokesSessionAndClearsCookie(t *testing.T) {
 	authStore := newPasswordAuthStoreSpy()
 	router := NewRouterWithStorageIdentityAndPasswordAuth(unconfiguredRecordingStore{}, defaultDevWorkspaceStore{}, NewDevAuthResolver("usr_dev"), nil, nil, passwordAuthTestConfig(authStore))
@@ -190,6 +243,30 @@ func passwordAuthTestConfig(store *passwordAuthStoreSpy) PasswordAuthConfig {
 		Now: func() time.Time {
 			return time.Date(2026, 6, 12, 1, 2, 3, 0, time.UTC)
 		},
+	}
+}
+
+func performJSONAuthRequest(handler http.Handler, method string, target string, body string, remoteAddr string) *httptest.ResponseRecorder {
+	request := httptest.NewRequest(method, target, strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	request.RemoteAddr = remoteAddr
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	return response
+}
+
+func assertRateLimitedResponse(t *testing.T, response *httptest.ResponseRecorder) {
+	t.Helper()
+
+	if response.Code != http.StatusTooManyRequests {
+		t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusTooManyRequests, response.Body.String())
+	}
+	var body apiErrorResponse
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body.Code != errorCodeRateLimited || body.Status != http.StatusTooManyRequests {
+		t.Fatalf("error body = %+v, want rate_limited 429", body)
 	}
 }
 
