@@ -1,4 +1,5 @@
 import { type RecordingStatus } from '@soniq/api-client';
+import { AlertCircle, CheckCircle2, Circle, LoaderCircle } from 'lucide-react';
 
 import { isTerminalRecordingStatus, recordingStatusBadgeVariant } from '@/api/queries';
 import { Badge } from '@/components/ui/badge';
@@ -29,6 +30,27 @@ const statusLabels: Record<RecordingStatus, string> = {
   cancelled: 'Cancelled',
 };
 
+type ProcessingStepKey = 'uploaded' | 'processing' | 'transcribing' | 'summarizing' | 'mind_map' | 'completed';
+
+const processingSteps: Array<{ key: ProcessingStepKey; label: string }> = [
+  { key: 'uploaded', label: 'Uploaded' },
+  { key: 'processing', label: 'Processing' },
+  { key: 'transcribing', label: 'Transcribing' },
+  { key: 'summarizing', label: 'Summarizing' },
+  { key: 'mind_map', label: 'Generating mind map' },
+  { key: 'completed', label: 'Completed' },
+];
+
+const statusStepIndex: Record<RecordingStatus, number> = {
+  uploaded: 0,
+  processing: 1,
+  transcribing: 2,
+  summarizing: 3,
+  completed: 5,
+  failed: -1,
+  cancelled: -1,
+};
+
 export function RecordingStatusPanel({
   recordingId,
   initialStatus = 'uploaded',
@@ -48,6 +70,7 @@ export function RecordingStatusPanel({
 
   const status = currentStatus ?? initialStatus;
   const isTerminal = isTerminalRecordingStatus(status);
+  const activeStepIndex = statusStepIndex[status];
 
   return (
     <Card aria-label="Recording processing status">
@@ -62,7 +85,7 @@ export function RecordingStatusPanel({
           <Badge variant={recordingStatusBadgeVariant(status)}>{statusLabels[status]}</Badge>
         </div>
       </CardHeader>
-      <CardContent className="space-y-3 text-sm" aria-live="polite">
+      <CardContent className="space-y-4 text-sm" aria-live="polite">
         {processingEnqueued !== undefined && (
           <div className="flex items-center justify-between gap-4 rounded-md border px-3 py-2">
             <span className="text-muted-foreground">Processing enqueued</span>
@@ -76,6 +99,22 @@ export function RecordingStatusPanel({
           <span className="text-muted-foreground">Current step</span>
           <span className="font-medium">{statusLabels[status]}</span>
         </div>
+
+        <ol className="grid gap-2 md:grid-cols-3 xl:grid-cols-6" aria-label="Processing steps">
+          {processingSteps.map((step, index) => {
+            const stepState = resolveStepState(status, activeStepIndex, index);
+            return (
+              <li
+                key={step.key}
+                className="flex min-w-0 items-center gap-2 rounded-md border bg-background px-3 py-2"
+                data-state={stepState}
+              >
+                <StepIcon state={stepState} />
+                <span className="truncate text-xs font-medium">{step.label}</span>
+              </li>
+            );
+          })}
+        </ol>
 
         {isPending && (
           <p className="text-muted-foreground">Checking status...</p>
@@ -123,4 +162,44 @@ export function RecordingStatusPanel({
       </CardContent>
     </Card>
   );
+}
+
+function resolveStepState(
+  status: RecordingStatus,
+  activeStepIndex: number,
+  stepIndex: number,
+): 'pending' | 'active' | 'completed' | 'failed' {
+  if (status === 'completed') {
+    return 'completed';
+  }
+
+  if (status === 'failed' || status === 'cancelled') {
+    return stepIndex === 0 ? 'failed' : 'pending';
+  }
+
+  if (stepIndex < activeStepIndex) {
+    return 'completed';
+  }
+
+  if (stepIndex === activeStepIndex) {
+    return 'active';
+  }
+
+  return 'pending';
+}
+
+function StepIcon({ state }: { state: 'pending' | 'active' | 'completed' | 'failed' }) {
+  if (state === 'completed') {
+    return <CheckCircle2 className="size-4 shrink-0 text-emerald-600" aria-hidden="true" />;
+  }
+
+  if (state === 'active') {
+    return <LoaderCircle className="size-4 shrink-0 text-sky-600" aria-hidden="true" />;
+  }
+
+  if (state === 'failed') {
+    return <AlertCircle className="size-4 shrink-0 text-destructive" aria-hidden="true" />;
+  }
+
+  return <Circle className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />;
 }

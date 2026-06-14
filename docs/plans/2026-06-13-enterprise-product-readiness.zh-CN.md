@@ -12,6 +12,8 @@ Auth、workspace、上传、转写、总结、思维导图、失败重试已经�
 
 **目标：** 让用户能日常管理和复用已处理的 recording。
 
+交互蓝图：`docs/plans/2026-06-14-recording-library-ux-blueprint.zh-CN.md`。
+
 范围：
 
 - Recording 重命名。

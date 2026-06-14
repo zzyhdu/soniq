@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -48,7 +48,7 @@ describe('App workspace recording flow', () => {
     await user.click(submitButton);
 
     expect(await screen.findByText('Local Developer')).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: /upload recording/i })).toBeInTheDocument();
+    expect(await screen.findAllByRole('button', { name: /upload recording/i })).not.toHaveLength(0);
     expect(requests.some((request) => request.method === 'POST' && request.url === '/auth/signin')).toBe(true);
   });
 
@@ -120,6 +120,19 @@ describe('App workspace recording flow', () => {
     expect(await screen.findByRole('heading', { name: /sign in/i })).toBeInTheDocument();
   });
 
+  it('shows a local API unavailable state when the session check cannot reach the API', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse('Bad Gateway', {
+      status: 502,
+      statusText: 'Bad Gateway',
+    }));
+
+    renderApp();
+
+    expect(await screen.findByRole('heading', { name: /api unavailable/i })).toBeInTheDocument();
+    expect(screen.getByText(/start the API on localhost:8080/i)).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Bad Gateway');
+  });
+
   it('loads user, workspaces, recording history, and selected recording details', async () => {
     mockAppFetch();
     const user = userEvent.setup();
@@ -132,6 +145,7 @@ describe('App workspace recording flow', () => {
     await user.click(screen.getByRole('button', { name: /Weekly sync/i }));
 
     expect(await screen.findByText('Weekly sync summary')).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: /transcript/i }));
     expect(screen.getByText('Full transcript text.')).toBeInTheDocument();
   });
 
@@ -148,11 +162,13 @@ describe('App workspace recording flow', () => {
 
   it('opens a recording from a bookmarkable hash route', async () => {
     mockAppFetch();
+    const user = userEvent.setup();
     window.history.replaceState(null, '', '/#/workspaces/wsp_default/recordings/rec_done');
 
     renderApp();
 
     expect(await screen.findByText('Weekly sync summary')).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: /transcript/i }));
     expect(screen.getByText('Full transcript text.')).toBeInTheDocument();
   });
 
@@ -162,9 +178,15 @@ describe('App workspace recording flow', () => {
 
     renderApp();
 
-    await screen.findByRole('button', { name: /upload recording/i });
-    await user.upload(screen.getByLabelText(/audio file/i), new File(['audio'], 'meeting.wav', { type: 'audio/wav' }));
-    await user.click(screen.getByRole('button', { name: /upload recording/i }));
+    await screen.findByRole('button', { name: /Weekly sync/i });
+    const uploadButton = screen
+      .getAllByRole('button', { name: /upload recording/i })
+      .find((button) => !button.hasAttribute('disabled'));
+    expect(uploadButton).toBeDefined();
+    await user.click(uploadButton as HTMLButtonElement);
+    const dialog = await screen.findByRole('dialog', { name: /upload recording/i });
+    await user.upload(within(dialog).getByLabelText(/audio file/i), new File(['audio'], 'meeting.wav', { type: 'audio/wav' }));
+    await user.click(within(dialog).getByRole('button', { name: /upload recording/i }));
 
     await waitFor(() => {
       expect(requests.some((request) => (
@@ -190,6 +212,43 @@ describe('App workspace recording flow', () => {
     expect(requests.some((request) => request.url === '/workspaces/wsp_team/recordings')).toBe(true);
   });
 
+  it('shows construction pages for planned navigation entries', async () => {
+    mockAppFetch();
+    const user = userEvent.setup();
+
+    renderApp();
+
+    expect(await screen.findByRole('button', { name: /Weekly sync/i })).toBeInTheDocument();
+
+    for (const label of ['Analytics', 'Workflows', 'Library']) {
+      await user.click(screen.getByRole('button', { name: new RegExp(`^${label}$`, 'i') }));
+
+      expect(screen.getByRole('heading', { name: label })).toBeInTheDocument();
+      expect(screen.getByText('Under construction')).toBeInTheDocument();
+    }
+
+    await user.click(screen.getByRole('button', { name: /Back to Recordings/i }));
+
+    expect(await screen.findByRole('button', { name: /Weekly sync/i })).toBeInTheDocument();
+  });
+
+  it('updates the recording list status from status polling', async () => {
+    mockAppFetch({ includeCompletingRecording: true });
+    const user = userEvent.setup();
+
+    renderApp();
+
+    const recordingRow = await screen.findByRole('button', { name: /Recently uploaded/i });
+    expect(within(recordingRow).getByText('Uploaded')).toBeInTheDocument();
+
+    await user.click(recordingRow);
+
+    await waitFor(() => {
+      expect(within(recordingRow).getByText('Completed')).toBeInTheDocument();
+    });
+    expect(screen.getAllByRole('button', { name: /Recently uploaded/i })).toHaveLength(1);
+  });
+
   it('shows failed recording reasons and retries failed recordings', async () => {
     const requests = mockAppFetch({ includeFailedRecording: true });
     const user = userEvent.setup();
@@ -198,7 +257,7 @@ describe('App workspace recording flow', () => {
 
     await user.click(await screen.findByRole('button', { name: /Failed upload/i }));
 
-    expect(await screen.findByText(/transcribe audio: provider failed/i)).toBeInTheDocument();
+    expect(await screen.findAllByText(/transcribe audio: provider failed/i)).not.toHaveLength(0);
     await user.click(screen.getByRole('button', { name: /^retry$/i }));
 
     await waitFor(() => {
@@ -207,8 +266,8 @@ describe('App workspace recording flow', () => {
         request.url === '/workspaces/wsp_default/recordings/rec_failed/retry'
       ))).toBe(true);
     });
-    expect(await screen.findByText('Retry requested')).toBeInTheDocument();
-    expect(screen.queryByText('Upload created')).not.toBeInTheDocument();
+    expect(await screen.findByText('Processing enqueued')).toBeInTheDocument();
+    expect(screen.getByText('yes')).toBeInTheDocument();
   });
 });
 
@@ -221,6 +280,7 @@ function mockAppFetch(options: {
   detailsUnauthorized?: boolean;
   includeTeamWorkspace?: boolean;
   includeFailedRecording?: boolean;
+  includeCompletingRecording?: boolean;
   signOutFails?: boolean;
   workspacesUnauthorized?: boolean;
 } = {}) {
@@ -297,6 +357,14 @@ function mockAppFetch(options: {
               failure_reason: 'transcribe audio: provider failed',
             }),
           ] : []),
+          ...(options.includeCompletingRecording ? [
+            recordingFixture({
+              id: 'rec_completing',
+              title: 'Recently uploaded',
+              status: 'uploaded',
+              updated_at: '2026-06-11T00:00:00Z',
+            }),
+          ] : []),
           recordingFixture({ id: 'rec_done', title: 'Weekly sync', status: 'completed' }),
         ],
       });
@@ -325,6 +393,15 @@ function mockAppFetch(options: {
       return jsonResponse({ id: 'rec_uploaded', workspace_id: 'wsp_default', status: 'uploaded' });
     }
 
+    if (url === '/workspaces/wsp_default/recordings/rec_completing/status') {
+      return jsonResponse({
+        id: 'rec_completing',
+        workspace_id: 'wsp_default',
+        status: 'completed',
+        completed_at: '2026-06-11T00:03:00Z',
+      });
+    }
+
     if (url === '/workspaces/wsp_default/recordings/rec_failed/status') {
       return jsonResponse({
         id: 'rec_failed',
@@ -349,6 +426,17 @@ function mockAppFetch(options: {
         });
       }
       return jsonResponse(recordingDetails());
+    }
+
+    if (url === '/workspaces/wsp_default/recordings/rec_completing/details') {
+      return jsonResponse(recordingDetails({
+        recording: recordingFixture({
+          id: 'rec_completing',
+          title: 'Recently uploaded',
+          status: 'completed',
+          completed_at: '2026-06-11T00:03:00Z',
+        }),
+      }));
     }
 
     return jsonResponse('not found', { status: 404, statusText: 'Not Found' });
@@ -463,7 +551,7 @@ function recordingFixture(overrides: Partial<Record<string, string>> = {}) {
   };
 }
 
-function recordingDetails() {
+function recordingDetails(overrides: Record<string, unknown> = {}) {
   return {
     recording: recordingFixture({ id: 'rec_done', title: 'Weekly sync', status: 'completed' }),
     transcript: {
@@ -485,5 +573,6 @@ function recordingDetails() {
       content_markdown: 'Action item: finish the dashboard.',
       summarized_at: '2026-06-11T00:02:00Z',
     },
+    ...overrides,
   };
 }

@@ -49,7 +49,7 @@ describe('RecordingStatusPanel', () => {
       processingEnqueued: true,
     });
 
-    expect(screen.getAllByText('Transcribing')).toHaveLength(2);
+    expect(screen.getAllByText('Transcribing')).toHaveLength(3);
     expect(screen.getByText('rec-1')).toBeInTheDocument();
     expect(screen.getByText('yes')).toBeInTheDocument();
   });

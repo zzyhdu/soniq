@@ -24,7 +24,7 @@ export function useMe(enabled = true) {
     queryKey: ['me'],
     queryFn: () => getMe(),
     enabled,
-    retry: retryUnlessUnauthorized,
+    retry: false,
   });
 }
 

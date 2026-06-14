@@ -2,6 +2,7 @@ import '@testing-library/jest-dom/vitest';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { RecordingResults } from './RecordingResults';
@@ -40,12 +41,16 @@ describe('RecordingResults', () => {
 
   it('renders summary when present', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(detailsResponse(recordingDetails()));
+    const user = userEvent.setup();
 
     renderResults({ workspaceId: 'wsp_default', recordingId: 'rec-1', enabled: true });
 
     expect(await screen.findByText('Weekly sync summary')).toBeInTheDocument();
     expect(screen.getByText('The meeting covered launch status.')).toBeInTheDocument();
-    expect(screen.getAllByText(/Action item: finish the dashboard/i)).toHaveLength(2);
+    expect(screen.getByText(/Action item: finish the dashboard/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: /mind map/i }));
+
     expect(screen.getByText('Weekly sync mind map')).toBeInTheDocument();
     expect(screen.getByText('Launch status')).toBeInTheDocument();
   });
@@ -57,8 +62,11 @@ describe('RecordingResults', () => {
         segment({ id: 'seg-1', segment_index: 1, text: 'First segment' }),
       ],
     })));
+    const user = userEvent.setup();
 
     renderResults({ workspaceId: 'wsp_default', recordingId: 'rec-1', enabled: true });
+    await screen.findByText('Weekly sync summary');
+    await user.click(screen.getByRole('tab', { name: /transcript/i }));
 
     const renderedSegments = await screen.findAllByTestId('transcript-segment');
     expect(within(renderedSegments[0]).getByText('First segment')).toBeInTheDocument();
@@ -72,11 +80,16 @@ describe('RecordingResults', () => {
       summary: null,
       mind_map: null,
     })));
+    const user = userEvent.setup();
 
     renderResults({ workspaceId: 'wsp_default', recordingId: 'rec-empty', enabled: true });
 
     expect(await screen.findByText('No summary available yet.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: /mind map/i }));
     expect(screen.getByText('No mind map available yet.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: /transcript/i }));
     expect(screen.getByText('No transcript available yet.')).toBeInTheDocument();
   });
 });
