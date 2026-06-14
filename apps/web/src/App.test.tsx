@@ -209,6 +209,42 @@ describe('App workspace recording flow', () => {
     expect(await screen.findByRole('button', { name: /Weekly sync/i })).toBeInTheDocument();
   });
 
+  it('permanently deletes a soft-deleted recording from Trash', async () => {
+    const requests = mockAppFetch();
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(await screen.findByRole('button', { name: /Weekly sync/i }));
+    await user.click(screen.getByRole('button', { name: /delete recording/i }));
+    const deleteDialog = await screen.findByRole('dialog', { name: /delete recording/i });
+    await user.click(within(deleteDialog).getByRole('button', { name: /^Delete recording$/i }));
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /Weekly sync/i })).not.toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /^Trash$/i }));
+
+    expect(await screen.findByText('Weekly sync')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /^Delete forever$/i }));
+    const purgeDialog = await screen.findByRole('dialog', { name: /delete forever/i });
+    await user.click(within(purgeDialog).getByRole('button', { name: /^Delete forever$/i }));
+
+    await waitFor(() => {
+      expect(requests.some((request) => (
+        request.method === 'DELETE' &&
+        request.url === '/workspaces/wsp_default/recordings/rec_done/purge'
+      ))).toBe(true);
+    });
+    expect(await screen.findByText(/Trash is empty/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^Recordings$/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /Weekly sync/i })).not.toBeInTheDocument();
+    });
+  });
+
   it('returns to sign in when recording details are unauthorized', async () => {
     mockAppFetch({ detailsUnauthorized: true });
     const user = userEvent.setup();
@@ -347,6 +383,7 @@ function mockAppFetch(options: {
   const requests: CapturedRequest[] = [];
   let authenticated = true;
   const deletedRecordingIds = new Set<string>();
+  const purgedRecordingIds = new Set<string>();
 
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const url = requestUrl(input);
@@ -427,7 +464,7 @@ function mockAppFetch(options: {
             }),
           ] : []),
           recordingFixture({ id: 'rec_done', title: 'Weekly sync', status: 'completed' }),
-        ].filter((recording) => !deletedRecordingIds.has(recording.id)),
+        ].filter((recording) => !deletedRecordingIds.has(recording.id) && !purgedRecordingIds.has(recording.id)),
       });
     }
 
@@ -441,7 +478,7 @@ function mockAppFetch(options: {
             deleted_at: '2026-06-11T00:05:00Z',
             deleted_by_user_id: 'usr_dev',
           }),
-        ].filter((recording) => deletedRecordingIds.has(recording.id)),
+        ].filter((recording) => deletedRecordingIds.has(recording.id) && !purgedRecordingIds.has(recording.id)),
       });
     }
 
@@ -461,7 +498,7 @@ function mockAppFetch(options: {
     }
 
     if (url === '/workspaces/wsp_default/recordings/rec_done/status') {
-      if (deletedRecordingIds.has('rec_done')) {
+      if (deletedRecordingIds.has('rec_done') || purgedRecordingIds.has('rec_done')) {
         return jsonResponse(apiError('not_found', 'not found', 404), {
           status: 404,
           statusText: 'Not Found',
@@ -500,7 +537,7 @@ function mockAppFetch(options: {
     }
 
     if (url === '/workspaces/wsp_default/recordings/rec_done/details') {
-      if (deletedRecordingIds.has('rec_done')) {
+      if (deletedRecordingIds.has('rec_done') || purgedRecordingIds.has('rec_done')) {
         return jsonResponse(apiError('not_found', 'not found', 404), {
           status: 404,
           statusText: 'Not Found',
@@ -521,7 +558,7 @@ function mockAppFetch(options: {
     }
 
     if (url === '/workspaces/wsp_default/recordings/rec_done/restore' && method === 'POST') {
-      if (!deletedRecordingIds.has('rec_done')) {
+      if (!deletedRecordingIds.has('rec_done') || purgedRecordingIds.has('rec_done')) {
         return jsonResponse(apiError('not_found', 'not found', 404), {
           status: 404,
           statusText: 'Not Found',
@@ -529,6 +566,18 @@ function mockAppFetch(options: {
       }
       deletedRecordingIds.delete('rec_done');
       return jsonResponse(recordingFixture({ id: 'rec_done', title: 'Weekly sync', status: 'completed' }));
+    }
+
+    if (url === '/workspaces/wsp_default/recordings/rec_done/purge' && method === 'DELETE') {
+      if (!deletedRecordingIds.has('rec_done') || purgedRecordingIds.has('rec_done')) {
+        return jsonResponse(apiError('not_found', 'not found', 404), {
+          status: 404,
+          statusText: 'Not Found',
+        });
+      }
+      deletedRecordingIds.delete('rec_done');
+      purgedRecordingIds.add('rec_done');
+      return new Response(null, { status: 204 });
     }
 
     if (url === '/workspaces/wsp_default/recordings/rec_completing/details') {

@@ -2,6 +2,7 @@ package recordings
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"time"
@@ -63,6 +64,65 @@ type SoftDeleteRecordingInput struct {
 type RestoreRecordingInput struct {
 	WorkspaceID string
 	ID          string
+}
+
+// PurgeRecordingInput identifies a soft-deleted recording to permanently purge.
+type PurgeRecordingInput struct {
+	WorkspaceID string
+	ID          string
+}
+
+// RecordingPurgeArtifactStatus is the cleanup state for a purged recording artifact.
+type RecordingPurgeArtifactStatus string
+
+const (
+	RecordingPurgeArtifactStatusPending  RecordingPurgeArtifactStatus = "pending"
+	RecordingPurgeArtifactStatusDeleting RecordingPurgeArtifactStatus = "deleting"
+	RecordingPurgeArtifactStatusDeleted  RecordingPurgeArtifactStatus = "deleted"
+	RecordingPurgeArtifactStatusFailed   RecordingPurgeArtifactStatus = "failed"
+)
+
+const (
+	RecordingPurgeArtifactKindOriginalAudio   = "original_audio"
+	RecordingPurgeArtifactKindNormalizedAudio = "normalized_audio"
+)
+
+// RecordingPurgeArtifact tracks object-storage cleanup after a recording purge.
+type RecordingPurgeArtifact struct {
+	ID            string
+	RecordingID   string
+	WorkspaceID   string
+	ObjectKey     string
+	ArtifactKind  string
+	Status        RecordingPurgeArtifactStatus
+	AttemptCount  int
+	NextAttemptAt time.Time
+	LastError     string
+	DeletedAt     *time.Time
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
+// PurgeRecordingResult contains artifact cleanup rows created by a purge.
+type PurgeRecordingResult struct {
+	Artifacts []RecordingPurgeArtifact
+}
+
+// ClaimPurgeArtifactsInput controls a cleanup worker claim batch.
+type ClaimPurgeArtifactsInput struct {
+	Limit int
+}
+
+// MarkPurgeArtifactDeletedInput identifies an artifact cleanup row that succeeded.
+type MarkPurgeArtifactDeletedInput struct {
+	ID string
+}
+
+// MarkPurgeArtifactFailedInput records a failed artifact cleanup attempt.
+type MarkPurgeArtifactFailedInput struct {
+	ID            string
+	LastError     string
+	NextAttemptAt time.Time
 }
 
 // RecordingAudioProbe contains ffprobe metadata for a recording's original audio.
@@ -280,6 +340,40 @@ func validateRestoreRecordingInput(input RestoreRecordingInput) error {
 	return nil
 }
 
+func validatePurgeRecordingInput(input PurgeRecordingInput) error {
+	if input.WorkspaceID == "" {
+		return fmt.Errorf("workspace id is required")
+	}
+	if input.ID == "" {
+		return fmt.Errorf("recording id is required")
+	}
+	return nil
+}
+
+func validateClaimPurgeArtifactsInput(input ClaimPurgeArtifactsInput) error {
+	if input.Limit < 0 {
+		return fmt.Errorf("purge artifact claim limit must not be negative")
+	}
+	return nil
+}
+
+func validateMarkPurgeArtifactDeletedInput(input MarkPurgeArtifactDeletedInput) error {
+	if input.ID == "" {
+		return fmt.Errorf("purge artifact id is required")
+	}
+	return nil
+}
+
+func validateMarkPurgeArtifactFailedInput(input MarkPurgeArtifactFailedInput) error {
+	if input.ID == "" {
+		return fmt.Errorf("purge artifact id is required")
+	}
+	if input.NextAttemptAt.IsZero() {
+		return fmt.Errorf("next attempt timestamp is required")
+	}
+	return nil
+}
+
 func validateCreateRecordingInput(input CreateRecordingInput) error {
 	if input.WorkspaceID == "" {
 		return fmt.Errorf("workspace id is required")
@@ -436,4 +530,9 @@ func newRecordingID() string {
 		return fmt.Sprintf("rec_%d", time.Now().UnixNano())
 	}
 	return "rec_" + hex.EncodeToString(bytes[:])
+}
+
+func purgeArtifactID(recordingID string, objectKey string) string {
+	sum := sha256.Sum256([]byte(recordingID + "\x00" + objectKey))
+	return "rpa_" + hex.EncodeToString(sum[:8])
 }

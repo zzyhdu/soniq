@@ -205,6 +205,10 @@ func (s *objectStoreSpy) DeleteObject(ctx context.Context, key string) error {
 	return nil
 }
 
+func newRecordingProcessingActivitiesForTest(store NormalizingPipelineStore, resolver LocalObjectPathResolver, runner AudioProbeRunner, transcriptionProvider TranscriptionProvider, summaryProvider SummaryProvider) *RecordingProcessingActivities {
+	return NewRecordingProcessingActivitiesWithNormalizedAudio(store, resolver, nil, runner, &audioNormalizeRunnerSpy{}, transcriptionProvider, summaryProvider)
+}
+
 func TestRecordingProcessingActivitiesTranscribeRecordingAudioPersistsTranscript(t *testing.T) {
 	store := &transcriptionSummaryStoreSpy{
 		recordings: map[string]domain.Recording{
@@ -259,7 +263,7 @@ func TestRecordingProcessingActivitiesTranscribeRecordingAudioPersistsTranscript
 }
 
 func TestRecordingProcessingActivitiesTranscribeRecordingAudioRejectsMissingRecordingID(t *testing.T) {
-	activities := NewRecordingProcessingActivitiesWithPipeline(&transcriptionSummaryStoreSpy{}, &localPathResolverSpy{}, &audioProbeRunnerSpy{}, &transcriptionProviderSpy{}, &summaryProviderSpy{})
+	activities := newRecordingProcessingActivitiesForTest(&transcriptionSummaryStoreSpy{}, &localPathResolverSpy{}, &audioProbeRunnerSpy{}, &transcriptionProviderSpy{}, &summaryProviderSpy{})
 
 	if err := activities.TranscribeRecordingAudio(context.Background(), ""); err == nil {
 		t.Fatal("TranscribeRecordingAudio returned nil error, want missing recording id error")
@@ -267,13 +271,13 @@ func TestRecordingProcessingActivitiesTranscribeRecordingAudioRejectsMissingReco
 }
 
 func TestRecordingProcessingActivitiesTranscribeRecordingAudioRequiresDependencies(t *testing.T) {
-	if err := NewRecordingProcessingActivitiesWithPipeline(nil, &localPathResolverSpy{}, &audioProbeRunnerSpy{}, &transcriptionProviderSpy{}, &summaryProviderSpy{}).TranscribeRecordingAudio(context.Background(), "rec_transcribe"); err == nil {
+	if err := newRecordingProcessingActivitiesForTest(nil, &localPathResolverSpy{}, &audioProbeRunnerSpy{}, &transcriptionProviderSpy{}, &summaryProviderSpy{}).TranscribeRecordingAudio(context.Background(), "rec_transcribe"); err == nil {
 		t.Fatal("TranscribeRecordingAudio returned nil error, want store required error")
 	}
-	if err := NewRecordingProcessingActivitiesWithPipeline(&transcriptionSummaryStoreSpy{}, nil, &audioProbeRunnerSpy{}, &transcriptionProviderSpy{}, &summaryProviderSpy{}).TranscribeRecordingAudio(context.Background(), "rec_transcribe"); err == nil {
+	if err := newRecordingProcessingActivitiesForTest(&transcriptionSummaryStoreSpy{}, nil, &audioProbeRunnerSpy{}, &transcriptionProviderSpy{}, &summaryProviderSpy{}).TranscribeRecordingAudio(context.Background(), "rec_transcribe"); err == nil {
 		t.Fatal("TranscribeRecordingAudio returned nil error, want path resolver required error")
 	}
-	if err := NewRecordingProcessingActivitiesWithPipeline(&transcriptionSummaryStoreSpy{}, &localPathResolverSpy{}, &audioProbeRunnerSpy{}, nil, &summaryProviderSpy{}).TranscribeRecordingAudio(context.Background(), "rec_transcribe"); err == nil {
+	if err := newRecordingProcessingActivitiesForTest(&transcriptionSummaryStoreSpy{}, &localPathResolverSpy{}, &audioProbeRunnerSpy{}, nil, &summaryProviderSpy{}).TranscribeRecordingAudio(context.Background(), "rec_transcribe"); err == nil {
 		t.Fatal("TranscribeRecordingAudio returned nil error, want transcription provider required error")
 	}
 }
@@ -368,7 +372,7 @@ func TestRecordingProcessingActivitiesSummarizeRecordingPersistsSummary(t *testi
 		RawResultJSON:   []byte(`{"overview":"hello world overview"}`),
 		SummarizedAt:    summarizedAt,
 	}}
-	activities := NewRecordingProcessingActivitiesWithPipeline(store, &localPathResolverSpy{}, &audioProbeRunnerSpy{}, &transcriptionProviderSpy{}, provider)
+	activities := newRecordingProcessingActivitiesForTest(store, &localPathResolverSpy{}, &audioProbeRunnerSpy{}, &transcriptionProviderSpy{}, provider)
 
 	if err := activities.SummarizeRecording(context.Background(), "rec_summary"); err != nil {
 		t.Fatalf("SummarizeRecording returned error: %v", err)
@@ -391,7 +395,7 @@ func TestRecordingProcessingActivitiesSummarizeRecordingPersistsSummary(t *testi
 }
 
 func TestRecordingProcessingActivitiesSummarizeRecordingRejectsMissingRecordingID(t *testing.T) {
-	activities := NewRecordingProcessingActivitiesWithPipeline(&transcriptionSummaryStoreSpy{}, &localPathResolverSpy{}, &audioProbeRunnerSpy{}, &transcriptionProviderSpy{}, &summaryProviderSpy{})
+	activities := newRecordingProcessingActivitiesForTest(&transcriptionSummaryStoreSpy{}, &localPathResolverSpy{}, &audioProbeRunnerSpy{}, &transcriptionProviderSpy{}, &summaryProviderSpy{})
 
 	if err := activities.SummarizeRecording(context.Background(), ""); err == nil {
 		t.Fatal("SummarizeRecording returned nil error, want missing recording id error")
@@ -399,10 +403,10 @@ func TestRecordingProcessingActivitiesSummarizeRecordingRejectsMissingRecordingI
 }
 
 func TestRecordingProcessingActivitiesSummarizeRecordingRequiresDependencies(t *testing.T) {
-	if err := NewRecordingProcessingActivitiesWithPipeline(nil, &localPathResolverSpy{}, &audioProbeRunnerSpy{}, &transcriptionProviderSpy{}, &summaryProviderSpy{}).SummarizeRecording(context.Background(), "rec_summary"); err == nil {
+	if err := newRecordingProcessingActivitiesForTest(nil, &localPathResolverSpy{}, &audioProbeRunnerSpy{}, &transcriptionProviderSpy{}, &summaryProviderSpy{}).SummarizeRecording(context.Background(), "rec_summary"); err == nil {
 		t.Fatal("SummarizeRecording returned nil error, want store required error")
 	}
-	if err := NewRecordingProcessingActivitiesWithPipeline(&transcriptionSummaryStoreSpy{}, &localPathResolverSpy{}, &audioProbeRunnerSpy{}, &transcriptionProviderSpy{}, nil).SummarizeRecording(context.Background(), "rec_summary"); err == nil {
+	if err := newRecordingProcessingActivitiesForTest(&transcriptionSummaryStoreSpy{}, &localPathResolverSpy{}, &audioProbeRunnerSpy{}, &transcriptionProviderSpy{}, nil).SummarizeRecording(context.Background(), "rec_summary"); err == nil {
 		t.Fatal("SummarizeRecording returned nil error, want summary provider required error")
 	}
 }
@@ -415,7 +419,7 @@ func TestRecordingProcessingActivitiesSummarizeRecordingReturnsProviderErrorWith
 		transcript: recordings.RecordingTranscript{RecordingID: "rec_summary", Text: "hello world transcript"},
 	}
 	providerErr := errors.New("summary failed")
-	activities := NewRecordingProcessingActivitiesWithPipeline(store, &localPathResolverSpy{}, &audioProbeRunnerSpy{}, &transcriptionProviderSpy{}, &summaryProviderSpy{err: providerErr})
+	activities := newRecordingProcessingActivitiesForTest(store, &localPathResolverSpy{}, &audioProbeRunnerSpy{}, &transcriptionProviderSpy{}, &summaryProviderSpy{err: providerErr})
 
 	if err := activities.SummarizeRecording(context.Background(), "rec_summary"); !errors.Is(err, providerErr) {
 		t.Fatalf("SummarizeRecording error = %v, want provider error", err)
@@ -459,7 +463,7 @@ func TestRecordingProcessingActivitiesGenerateMindMapPersistsMindMap(t *testing.
 		RawResultJSON:   []byte(`{"title":"Weekly sync"}`),
 		GeneratedAt:     generatedAt,
 	}}
-	activities := NewRecordingProcessingActivitiesWithPipeline(store, &localPathResolverSpy{}, &audioProbeRunnerSpy{}, &transcriptionProviderSpy{}, provider)
+	activities := newRecordingProcessingActivitiesForTest(store, &localPathResolverSpy{}, &audioProbeRunnerSpy{}, &transcriptionProviderSpy{}, provider)
 
 	if err := activities.GenerateMindMap(context.Background(), "rec_mind_map"); err != nil {
 		t.Fatalf("GenerateMindMap returned error: %v", err)
@@ -482,7 +486,7 @@ func TestRecordingProcessingActivitiesGenerateMindMapPersistsMindMap(t *testing.
 }
 
 func TestRecordingProcessingActivitiesGenerateMindMapRequiresDependencies(t *testing.T) {
-	if err := NewRecordingProcessingActivitiesWithPipeline(&transcriptionSummaryStoreSpy{}, &localPathResolverSpy{}, &audioProbeRunnerSpy{}, &transcriptionProviderSpy{}, &summaryProviderSpy{}).GenerateMindMap(context.Background(), "rec_mind_map"); err == nil {
+	if err := newRecordingProcessingActivitiesForTest(&transcriptionSummaryStoreSpy{}, &localPathResolverSpy{}, &audioProbeRunnerSpy{}, &transcriptionProviderSpy{}, &summaryProviderSpy{}).GenerateMindMap(context.Background(), "rec_mind_map"); err == nil {
 		t.Fatal("GenerateMindMap returned nil error, want mind map provider required error")
 	}
 }

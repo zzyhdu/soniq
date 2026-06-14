@@ -399,6 +399,29 @@ paths:
           $ref: '#/components/responses/Error'
         default:
           $ref: '#/components/responses/Error'
+  /workspaces/{workspace_id}/recordings/{recording_id}/purge:
+    delete:
+      summary: Permanently delete recording from Trash
+      description: Permanently removes a soft-deleted recording and queues object-storage artifact cleanup. Active recordings cannot be purged directly.
+      operationId: purgeRecording
+      security:
+        - CookieAuth: []
+          CSRFToken: []
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
+        - $ref: '#/components/parameters/RecordingID'
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '204':
+          description: Recording purged and artifact cleanup queued.
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
   /workspaces/{workspace_id}/recordings/{recording_id}/details:
     get:
       summary: Get recording details

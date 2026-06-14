@@ -462,6 +462,23 @@ func (s *buildHandlerRecordingStoreSpy) RestoreForWorkspace(input recordings.Res
 	return recording, true, nil
 }
 
+func (s *buildHandlerRecordingStoreSpy) PurgeForWorkspace(input recordings.PurgeRecordingInput) (recordings.PurgeRecordingResult, bool, error) {
+	recording, ok := s.stored[input.ID]
+	if !ok || recording.WorkspaceID != input.WorkspaceID || recording.DeletedAt == nil {
+		return recordings.PurgeRecordingResult{}, false, nil
+	}
+	delete(s.stored, input.ID)
+	return recordings.PurgeRecordingResult{}, true, nil
+}
+
+func (s *buildHandlerRecordingStoreSpy) MarkPurgeArtifactDeleted(recordings.MarkPurgeArtifactDeletedInput) (bool, error) {
+	return true, nil
+}
+
+func (s *buildHandlerRecordingStoreSpy) MarkPurgeArtifactFailed(recordings.MarkPurgeArtifactFailedInput) (bool, error) {
+	return true, nil
+}
+
 func (s *buildHandlerRecordingStoreSpy) GetUser(_ context.Context, userID string) (domain.User, bool, error) {
 	if userID != "usr_dev" {
 		return domain.User{}, false, nil

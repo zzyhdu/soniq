@@ -9,6 +9,7 @@ import {
   getRecordingStatus,
   listDeletedRecordings,
   listRecordings,
+  purgeRecording,
   restoreRecording,
   retryRecording,
   uploadRecording,
@@ -206,6 +207,18 @@ describe('recording restore', () => {
     expect(result.id).toBe('rec/with space');
     expect(fetchMock).toHaveBeenCalledWith('/workspaces/wsp%2Fdefault/recordings/rec%2Fwith%20space/restore', {
       method: 'POST',
+    });
+  });
+});
+
+describe('recording purge', () => {
+  it('deletes to the workspace purge endpoint with encoded ids', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 204 }));
+
+    await purgeRecording('wsp/default', 'rec/with space', { fetch: fetchMock });
+
+    expect(fetchMock).toHaveBeenCalledWith('/workspaces/wsp%2Fdefault/recordings/rec%2Fwith%20space/purge', {
+      method: 'DELETE',
     });
   });
 });

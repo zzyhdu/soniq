@@ -17,6 +17,8 @@ type Config struct {
 	TemporalAddress                              string
 	TemporalNamespace                            string
 	TemporalTaskQueue                            string
+	PurgeArtifactCleanupIntervalSeconds          int64
+	PurgeArtifactCleanupBatchSize                int64
 	StorageProvider                              string
 	LocalStoragePath                             string
 	TranscriptionProvider                        string
@@ -40,32 +42,34 @@ type Config struct {
 // LoadFromEnv loads configuration from environment variables with local-development defaults.
 func LoadFromEnv() Config {
 	return Config{
-		AppEnv:                             envString("APP_ENV", "development"),
-		PublicURL:                          envString("APP_PUBLIC_URL", "http://localhost:8080"),
-		AuthSessionTTLHours:                envInt64("AUTH_SESSION_TTL_HOURS", 24*30),
-		AuthCookieSecure:                   envBool("AUTH_COOKIE_SECURE", false),
-		APIAddress:                         envString("API_ADDRESS", ":8080"),
-		PostgresDSN:                        envString("POSTGRES_DSN", "postgres://soniq_user:soniq_password@localhost:5432/soniq?sslmode=disable"),
-		TemporalAddress:                    envString("TEMPORAL_ADDRESS", "localhost:7233"),
-		TemporalNamespace:                  envString("TEMPORAL_NAMESPACE", "default"),
-		TemporalTaskQueue:                  envString("TEMPORAL_TASK_QUEUE", "soniq-audio-pipeline"),
-		StorageProvider:                    envString("STORAGE_PROVIDER", "local"),
-		LocalStoragePath:                   envString("LOCAL_STORAGE_PATH", "var/uploads"),
-		TranscriptionProvider:              envString("TRANSCRIPTION_PROVIDER", "fake_transcription"),
-		TranscriptionBaseURL:               envString("TRANSCRIPTION_BASE_URL", "https://api.xiaomimimo.com/v1"),
-		TranscriptionAPIKey:                envStringWithFallback("TRANSCRIPTION_API_KEY", "MIMO_API_KEY", ""),
-		TranscriptionModel:                 envString("TRANSCRIPTION_MODEL", "mimo-v2.5-asr"),
-		TranscriptionAuthHeader:            envString("TRANSCRIPTION_AUTH_HEADER", "api-key"),
-		TranscriptionLanguage:              envString("TRANSCRIPTION_LANGUAGE", "auto"),
-		TranscriptionMaxBase64Bytes:        envInt64("TRANSCRIPTION_MAX_BASE64_BYTES", 10*1024*1024),
-		DashScopeBaseURL:                   envString("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/api/v1"),
-		DashScopeAPIKey:                    envString("DASHSCOPE_API_KEY", ""),
-		DashScopeASRModel:                  envString("DASHSCOPE_ASR_MODEL", "paraformer-v2"),
-		LLMProvider:                        envString("LLM_PROVIDER", "fake_llm"),
-		LLMBaseURL:                         envString("LLM_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
-		LLMAPIKey:                          envStringWithFallback("LLM_API_KEY", "DASHSCOPE_API_KEY", ""),
-		LLMModel:                           envString("LLM_MODEL", "qwen3.7-plus"),
-		PrivacyAllowExternalModelProviders: envBool("PRIVACY_ALLOW_EXTERNAL_MODEL_PROVIDERS", true),
+		AppEnv:                              envString("APP_ENV", "development"),
+		PublicURL:                           envString("APP_PUBLIC_URL", "http://localhost:8080"),
+		AuthSessionTTLHours:                 envInt64("AUTH_SESSION_TTL_HOURS", 24*30),
+		AuthCookieSecure:                    envBool("AUTH_COOKIE_SECURE", false),
+		APIAddress:                          envString("API_ADDRESS", ":8080"),
+		PostgresDSN:                         envString("POSTGRES_DSN", "postgres://soniq_user:soniq_password@localhost:5432/soniq?sslmode=disable"),
+		TemporalAddress:                     envString("TEMPORAL_ADDRESS", "localhost:7233"),
+		TemporalNamespace:                   envString("TEMPORAL_NAMESPACE", "default"),
+		TemporalTaskQueue:                   envString("TEMPORAL_TASK_QUEUE", "soniq-audio-pipeline"),
+		PurgeArtifactCleanupIntervalSeconds: envInt64("PURGE_ARTIFACT_CLEANUP_INTERVAL_SECONDS", 300),
+		PurgeArtifactCleanupBatchSize:       envInt64("PURGE_ARTIFACT_CLEANUP_BATCH_SIZE", 25),
+		StorageProvider:                     envString("STORAGE_PROVIDER", "local"),
+		LocalStoragePath:                    envString("LOCAL_STORAGE_PATH", "var/uploads"),
+		TranscriptionProvider:               envString("TRANSCRIPTION_PROVIDER", "fake_transcription"),
+		TranscriptionBaseURL:                envString("TRANSCRIPTION_BASE_URL", "https://api.xiaomimimo.com/v1"),
+		TranscriptionAPIKey:                 envStringWithFallback("TRANSCRIPTION_API_KEY", "MIMO_API_KEY", ""),
+		TranscriptionModel:                  envString("TRANSCRIPTION_MODEL", "mimo-v2.5-asr"),
+		TranscriptionAuthHeader:             envString("TRANSCRIPTION_AUTH_HEADER", "api-key"),
+		TranscriptionLanguage:               envString("TRANSCRIPTION_LANGUAGE", "auto"),
+		TranscriptionMaxBase64Bytes:         envInt64("TRANSCRIPTION_MAX_BASE64_BYTES", 10*1024*1024),
+		DashScopeBaseURL:                    envString("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/api/v1"),
+		DashScopeAPIKey:                     envString("DASHSCOPE_API_KEY", ""),
+		DashScopeASRModel:                   envString("DASHSCOPE_ASR_MODEL", "paraformer-v2"),
+		LLMProvider:                         envString("LLM_PROVIDER", "fake_llm"),
+		LLMBaseURL:                          envString("LLM_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+		LLMAPIKey:                           envStringWithFallback("LLM_API_KEY", "DASHSCOPE_API_KEY", ""),
+		LLMModel:                            envString("LLM_MODEL", "qwen3.7-plus"),
+		PrivacyAllowExternalModelProviders:  envBool("PRIVACY_ALLOW_EXTERNAL_MODEL_PROVIDERS", true),
 		PrivacyDeleteOriginalAudioAfterTranscription: envBool("PRIVACY_DELETE_ORIGINAL_AUDIO_AFTER_TRANSCRIPTION", false),
 	}
 }
@@ -80,6 +84,12 @@ func (c Config) ValidateForStartup() error {
 	}
 	if strings.TrimSpace(c.TemporalTaskQueue) == "" {
 		return fmt.Errorf("TEMPORAL_TASK_QUEUE is required")
+	}
+	if c.PurgeArtifactCleanupIntervalSeconds <= 0 {
+		return fmt.Errorf("PURGE_ARTIFACT_CLEANUP_INTERVAL_SECONDS must be positive")
+	}
+	if c.PurgeArtifactCleanupBatchSize <= 0 {
+		return fmt.Errorf("PURGE_ARTIFACT_CLEANUP_BATCH_SIZE must be positive")
 	}
 	if strings.TrimSpace(c.StorageProvider) == "" {
 		return fmt.Errorf("STORAGE_PROVIDER is required")

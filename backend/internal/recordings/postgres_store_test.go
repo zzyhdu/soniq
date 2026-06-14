@@ -18,9 +18,12 @@ type postgresQueryCall struct {
 }
 
 type postgresExecutorSpy struct {
-	calls    []postgresQueryCall
-	rows     []*postgresRowStub
-	queryErr error
+	calls     []postgresQueryCall
+	rows      []*postgresRowStub
+	queryErr  error
+	beginErr  error
+	commits   int
+	rollbacks int
 }
 
 func newPostgresExecutorSpy(rows ...*postgresRowStub) *postgresExecutorSpy {
@@ -45,6 +48,43 @@ func (s *postgresExecutorSpy) Query(ctx context.Context, query string, args ...a
 	rows := s.rows
 	s.rows = nil
 	return &postgresRowsStub{rows: rows}, nil
+}
+
+func (s *postgresExecutorSpy) Begin(ctx context.Context) (storedb.PostgresTx, error) {
+	s.calls = append(s.calls, postgresQueryCall{query: "BEGIN"})
+	if s.beginErr != nil {
+		return nil, s.beginErr
+	}
+	return &postgresTxSpy{executor: s}, nil
+}
+
+type postgresTxSpy struct {
+	executor *postgresExecutorSpy
+}
+
+func (tx *postgresTxSpy) QueryRow(ctx context.Context, query string, args ...any) storedb.PostgresRow {
+	return tx.executor.QueryRow(ctx, query, args...)
+}
+
+func (tx *postgresTxSpy) Query(ctx context.Context, query string, args ...any) (storedb.PostgresRows, error) {
+	return tx.executor.Query(ctx, query, args...)
+}
+
+func (tx *postgresTxSpy) Exec(ctx context.Context, query string, args ...any) error {
+	tx.executor.calls = append(tx.executor.calls, postgresQueryCall{query: query, args: append([]any(nil), args...)})
+	return nil
+}
+
+func (tx *postgresTxSpy) Commit(ctx context.Context) error {
+	tx.executor.calls = append(tx.executor.calls, postgresQueryCall{query: "COMMIT"})
+	tx.executor.commits++
+	return nil
+}
+
+func (tx *postgresTxSpy) Rollback(ctx context.Context) error {
+	tx.executor.calls = append(tx.executor.calls, postgresQueryCall{query: "ROLLBACK"})
+	tx.executor.rollbacks++
+	return nil
 }
 
 type postgresRowStub struct {
@@ -139,6 +179,14 @@ func (r *postgresRowsStub) Scan(dest ...any) error {
 
 func (r *postgresRowsStub) Err() error {
 	return nil
+}
+
+func queriesFromCalls(calls []postgresQueryCall) []string {
+	queries := make([]string, 0, len(calls))
+	for _, call := range calls {
+		queries = append(queries, call.query)
+	}
+	return queries
 }
 
 func TestPostgresStoreCreateInsertsRecording(t *testing.T) {
@@ -824,6 +872,207 @@ func TestPostgresStoreRestoreForWorkspaceReturnsFalseForMissingRecording(t *test
 	}
 	if ok {
 		t.Fatal("RestoreForWorkspace ok = true, want false")
+	}
+}
+
+func TestPostgresStorePurgeForWorkspaceDeletesRowsAndReturnsArtifacts(t *testing.T) {
+	createdAt := time.Date(2026, 6, 6, 1, 2, 3, 0, time.UTC)
+	now := createdAt.Add(time.Minute)
+	db := newPostgresExecutorSpy(
+		postgresRow(
+			"rec_pg",
+			"wsp_default",
+			"workspaces/wsp_default/recordings/rec_pg/original.wav",
+			"workspaces/wsp_default/recordings/rec_pg/normalized.wav",
+		),
+		postgresRow(
+			purgeArtifactID("rec_pg", "workspaces/wsp_default/recordings/rec_pg/original.wav"),
+			"rec_pg",
+			"wsp_default",
+			"workspaces/wsp_default/recordings/rec_pg/original.wav",
+			RecordingPurgeArtifactKindOriginalAudio,
+			string(RecordingPurgeArtifactStatusPending),
+			0,
+			now,
+			"",
+			now,
+			now,
+			nil,
+		),
+		postgresRow(
+			purgeArtifactID("rec_pg", "workspaces/wsp_default/recordings/rec_pg/normalized.wav"),
+			"rec_pg",
+			"wsp_default",
+			"workspaces/wsp_default/recordings/rec_pg/normalized.wav",
+			RecordingPurgeArtifactKindNormalizedAudio,
+			string(RecordingPurgeArtifactStatusPending),
+			0,
+			now,
+			"",
+			now,
+			now,
+			nil,
+		),
+		postgresRow("rec_pg"),
+	)
+	store := NewPostgresStore(db)
+
+	result, ok, err := store.PurgeForWorkspace(PurgeRecordingInput{WorkspaceID: "wsp_default", ID: "rec_pg"})
+	if err != nil {
+		t.Fatalf("PurgeForWorkspace returned error: %v", err)
+	}
+	if !ok {
+		t.Fatal("PurgeForWorkspace ok = false, want true")
+	}
+	if got, want := len(result.Artifacts), 2; got != want {
+		t.Fatalf("artifacts = %d, want %d", got, want)
+	}
+	if result.Artifacts[0].ObjectKey != "workspaces/wsp_default/recordings/rec_pg/original.wav" {
+		t.Fatalf("first artifact = %+v, want original audio artifact", result.Artifacts[0])
+	}
+	if result.Artifacts[1].ObjectKey != "workspaces/wsp_default/recordings/rec_pg/normalized.wav" {
+		t.Fatalf("second artifact = %+v, want normalized audio artifact", result.Artifacts[1])
+	}
+
+	if db.commits != 1 || db.rollbacks != 0 {
+		t.Fatalf("commits/rollbacks = %d/%d, want 1/0", db.commits, db.rollbacks)
+	}
+	joinedQueries := strings.ToLower(strings.Join(queriesFromCalls(db.calls), "\n"))
+	for _, want := range []string{
+		"for update of r",
+		"insert into recording_purge_artifacts",
+		"delete from recording_mind_maps",
+		"delete from recording_transcript_segments",
+		"delete from recording_summaries",
+		"delete from recording_transcripts",
+		"delete from recording_audio_probes",
+		"delete from recording_normalized_audios",
+		"delete from recordings",
+	} {
+		if !strings.Contains(joinedQueries, want) {
+			t.Fatalf("queries = %q, want %q", joinedQueries, want)
+		}
+	}
+}
+
+func TestPostgresStorePurgeForWorkspaceReturnsFalseForMissingOrActiveRecording(t *testing.T) {
+	db := newPostgresExecutorSpy(postgresErrorRow(sql.ErrNoRows))
+	store := NewPostgresStore(db)
+
+	_, ok, err := store.PurgeForWorkspace(PurgeRecordingInput{WorkspaceID: "wsp_default", ID: "rec_missing"})
+	if err != nil {
+		t.Fatalf("PurgeForWorkspace returned error: %v", err)
+	}
+	if ok {
+		t.Fatal("PurgeForWorkspace ok = true, want false")
+	}
+	if db.commits != 0 || db.rollbacks != 1 {
+		t.Fatalf("commits/rollbacks = %d/%d, want 0/1", db.commits, db.rollbacks)
+	}
+	query := strings.ToLower(db.calls[1].query)
+	if !strings.Contains(query, "deleted_at is not null") {
+		t.Fatalf("query = %q, want soft-deleted-only purge", db.calls[1].query)
+	}
+}
+
+func TestPostgresStoreClaimPurgeArtifactsClaimsRetryableRows(t *testing.T) {
+	now := time.Date(2026, 6, 6, 1, 2, 3, 0, time.UTC)
+	db := newPostgresExecutorSpy(postgresRow(
+		"rpa_1",
+		"rec_pg",
+		"wsp_default",
+		"workspaces/wsp_default/recordings/rec_pg/original.wav",
+		RecordingPurgeArtifactKindOriginalAudio,
+		string(RecordingPurgeArtifactStatusDeleting),
+		1,
+		now,
+		"previous failure",
+		now.Add(-time.Hour),
+		now,
+		nil,
+	))
+	store := NewPostgresStore(db)
+
+	artifacts, err := store.ClaimPurgeArtifacts(ClaimPurgeArtifactsInput{Limit: 10})
+	if err != nil {
+		t.Fatalf("ClaimPurgeArtifacts returned error: %v", err)
+	}
+	if got, want := len(artifacts), 1; got != want {
+		t.Fatalf("artifacts = %d, want %d", got, want)
+	}
+	if artifacts[0].ID != "rpa_1" || artifacts[0].Status != RecordingPurgeArtifactStatusDeleting {
+		t.Fatalf("artifact = %+v, want claimed artifact", artifacts[0])
+	}
+	query := strings.ToLower(db.calls[0].query)
+	if !strings.Contains(query, "for update skip locked") || !strings.Contains(query, "status in ('pending', 'failed')") || !strings.Contains(query, "status = 'deleting'") {
+		t.Fatalf("query = %q, want retryable claim query", db.calls[0].query)
+	}
+	if got, want := db.calls[0].args[1], 10; got != want {
+		t.Fatalf("limit arg = %v, want %v", got, want)
+	}
+}
+
+func TestPostgresStoreMarkPurgeArtifactDeleted(t *testing.T) {
+	db := newPostgresExecutorSpy(postgresRow("rpa_1"))
+	store := NewPostgresStore(db)
+
+	ok, err := store.MarkPurgeArtifactDeleted(MarkPurgeArtifactDeletedInput{ID: "rpa_1"})
+	if err != nil {
+		t.Fatalf("MarkPurgeArtifactDeleted returned error: %v", err)
+	}
+	if !ok {
+		t.Fatal("MarkPurgeArtifactDeleted ok = false, want true")
+	}
+	query := strings.ToLower(db.calls[0].query)
+	if !strings.Contains(query, "status = 'deleted'") || !strings.Contains(query, "deleted_at = $2") {
+		t.Fatalf("query = %q, want mark deleted query", db.calls[0].query)
+	}
+}
+
+func TestPostgresStoreMarkPurgeArtifactFailed(t *testing.T) {
+	nextAttemptAt := time.Date(2026, 6, 6, 1, 2, 3, 0, time.UTC)
+	db := newPostgresExecutorSpy(postgresRow("rpa_1"))
+	store := NewPostgresStore(db)
+
+	ok, err := store.MarkPurgeArtifactFailed(MarkPurgeArtifactFailedInput{
+		ID:            "rpa_1",
+		LastError:     "delete object: permission denied",
+		NextAttemptAt: nextAttemptAt,
+	})
+	if err != nil {
+		t.Fatalf("MarkPurgeArtifactFailed returned error: %v", err)
+	}
+	if !ok {
+		t.Fatal("MarkPurgeArtifactFailed ok = false, want true")
+	}
+	query := strings.ToLower(db.calls[0].query)
+	if !strings.Contains(query, "status = 'failed'") || !strings.Contains(query, "attempt_count = attempt_count + 1") || !strings.Contains(query, "next_attempt_at = $3") || !strings.Contains(query, "deleted_at is null") {
+		t.Fatalf("query = %q, want mark failed query", db.calls[0].query)
+	}
+	if got, want := db.calls[0].args[2], nextAttemptAt; got != want {
+		t.Fatalf("next attempt arg = %v, want %v", got, want)
+	}
+}
+
+func TestPostgresStoreMarkPurgeArtifactFailedDoesNotOverwriteDeletedArtifact(t *testing.T) {
+	nextAttemptAt := time.Date(2026, 6, 6, 1, 2, 3, 0, time.UTC)
+	db := newPostgresExecutorSpy(postgresErrorRow(sql.ErrNoRows))
+	store := NewPostgresStore(db)
+
+	ok, err := store.MarkPurgeArtifactFailed(MarkPurgeArtifactFailedInput{
+		ID:            "rpa_deleted",
+		LastError:     "delete object canceled",
+		NextAttemptAt: nextAttemptAt,
+	})
+	if err != nil {
+		t.Fatalf("MarkPurgeArtifactFailed returned error: %v", err)
+	}
+	if ok {
+		t.Fatal("MarkPurgeArtifactFailed ok = true, want false for already deleted artifact")
+	}
+	query := strings.ToLower(db.calls[0].query)
+	if !strings.Contains(query, "deleted_at is null") {
+		t.Fatalf("query = %q, want deleted artifact guard", db.calls[0].query)
 	}
 }
 

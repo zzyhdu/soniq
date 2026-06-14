@@ -243,6 +243,38 @@ apply_recording_soft_delete_v5() {
   log "recorded recording soft delete version 5"
 }
 
+recording_purge_artifacts_present() {
+  [[ "$(psql_scalar "SELECT
+    to_regclass('public.recording_purge_artifacts') IS NOT NULL
+    AND (
+      SELECT count(*) = 12
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'recording_purge_artifacts'
+        AND column_name IN ('id', 'recording_id', 'workspace_id', 'object_key', 'artifact_kind', 'status', 'attempt_count', 'next_attempt_at', 'last_error', 'deleted_at', 'created_at', 'updated_at')
+    )
+    AND to_regclass('public.recording_purge_artifacts_status_next_attempt_idx') IS NOT NULL
+    AND to_regclass('public.recording_purge_artifacts_recording_id_idx') IS NOT NULL")" == "t" ]]
+}
+
+apply_recording_purge_artifacts_v6() {
+  if migration_applied "6"; then
+    log "recording purge artifacts version 6 already recorded; skipping"
+    return 0
+  fi
+
+  if recording_purge_artifacts_present; then
+    log "recording purge artifacts already present; recording version 6"
+    record_migration "6"
+    return 0
+  fi
+
+  log "applying recording purge artifacts version 6"
+  psql_apply "backend/migrations/0006_add_recording_purge_artifacts.up.sql"
+  record_migration "6"
+  log "recorded recording purge artifacts version 6"
+}
+
 main() {
   cd "$ROOT_DIR"
 
@@ -252,6 +284,7 @@ main() {
   apply_password_sessions_v3
   apply_recording_mind_maps_v4
   apply_recording_soft_delete_v5
+  apply_recording_purge_artifacts_v6
 
   log "local Soniq application migrations are up to date"
 }

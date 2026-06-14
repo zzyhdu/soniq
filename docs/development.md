@@ -7,11 +7,11 @@ Soniq is currently in the password-session identity, workspace-scoped recording,
 - the API exposes `GET /healthz`;
 - the API exposes identity endpoints: `GET /me` and `GET /workspaces`;
 - the API exposes `POST /auth/signup`, `POST /auth/signin`, and `POST /auth/signout` for email/password accounts backed by an httpOnly session cookie;
-- the API exposes workspace-scoped recording endpoints: `GET /workspaces/{workspace_id}/recordings`, `POST /workspaces/{workspace_id}/recordings`, `POST /workspaces/{workspace_id}/recordings/upload`, `GET /workspaces/{workspace_id}/recordings/{recording_id}`, `GET /workspaces/{workspace_id}/recordings/{recording_id}/status`, `GET /workspaces/{workspace_id}/recordings/{recording_id}/details`, and `POST /workspaces/{workspace_id}/recordings/{recording_id}/retry`;
+- the API exposes workspace-scoped recording endpoints: `GET /workspaces/{workspace_id}/recordings`, `POST /workspaces/{workspace_id}/recordings`, `POST /workspaces/{workspace_id}/recordings/upload`, `GET /workspaces/{workspace_id}/recordings/trash`, `GET /workspaces/{workspace_id}/recordings/{recording_id}`, `GET /workspaces/{workspace_id}/recordings/{recording_id}/status`, `GET /workspaces/{workspace_id}/recordings/{recording_id}/details`, `POST /workspaces/{workspace_id}/recordings/{recording_id}/retry`, `DELETE /workspaces/{workspace_id}/recordings/{recording_id}`, `POST /workspaces/{workspace_id}/recordings/{recording_id}/restore`, and `DELETE /workspaces/{workspace_id}/recordings/{recording_id}/purge`;
 - the production API command uses Soniq Postgres for user, workspace, membership, and recording metadata persistence;
 - `POST /workspaces/{workspace_id}/recordings` creates metadata-only recordings without starting processing; `POST /workspaces/{workspace_id}/recordings/upload` accepts multipart audio, writes the original audio through an object-store seam, persists audio metadata, and then invokes the same injectable recording processor seam;
 - the production API command wires the recording processor seam to Temporal and starts `RecordingProcessingWorkflow` asynchronously; failed audio-backed recordings can be reset and re-enqueued through the retry endpoint;
-- the worker starts a real Temporal SDK worker, registers the recording processing workflow and Soniq Postgres-backed recording status/audio-probe/normalized-audio/transcript/summary/mind-map activities, and polls the configured task queue;
+- the worker starts a real Temporal SDK worker, registers the recording processing workflow and Soniq Postgres-backed recording status/audio-probe/normalized-audio/transcript/summary/mind-map activities, polls the configured task queue, and runs a lightweight retry loop for pending/failed recording purge artifact cleanup rows;
 - local filesystem object storage is implemented for development; the worker resolves local object keys, runs `ffprobe` against uploaded original audio to persist probe metadata, and runs `ffmpeg` to write a deterministic normalized WAV/PCM artifact;
 - deterministic fake transcription, summarization, and mind map providers are wired for local development verification; transcription reads the normalized audio artifact and persists transcript, transcript segment, summary, and mind map rows without external credentials;
 - the product Web UI in `apps/web` loads the current user, shows sign in/sign up forms when the API returns `401`, selects a workspace, lists recording history, uploads audio through the Go API, exposes bookmarkable recording hash routes, polls processing status, displays failure reasons with retry, and displays completed transcript/summary/mind-map results;
@@ -158,6 +158,8 @@ Default runtime configuration:
 - `TEMPORAL_ADDRESS=localhost:7233`
 - `TEMPORAL_NAMESPACE=default`
 - `TEMPORAL_TASK_QUEUE=soniq-audio-pipeline`
+- `PURGE_ARTIFACT_CLEANUP_INTERVAL_SECONDS=300`
+- `PURGE_ARTIFACT_CLEANUP_BATCH_SIZE=25`
 - `STORAGE_PROVIDER=local`
 - `LOCAL_STORAGE_PATH=var/uploads`
 

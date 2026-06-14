@@ -17,6 +17,8 @@ func clearConfigEnv(t *testing.T) {
 		"TEMPORAL_ADDRESS",
 		"TEMPORAL_NAMESPACE",
 		"TEMPORAL_TASK_QUEUE",
+		"PURGE_ARTIFACT_CLEANUP_INTERVAL_SECONDS",
+		"PURGE_ARTIFACT_CLEANUP_BATCH_SIZE",
 		"STORAGE_PROVIDER",
 		"LOCAL_STORAGE_PATH",
 		"TRANSCRIPTION_PROVIDER",
@@ -81,6 +83,12 @@ func TestLoadFromEnvUsesDevelopmentDefaults(t *testing.T) {
 	if cfg.TemporalTaskQueue != "soniq-audio-pipeline" {
 		t.Fatalf("TemporalTaskQueue = %q, want soniq-audio-pipeline", cfg.TemporalTaskQueue)
 	}
+	if cfg.PurgeArtifactCleanupIntervalSeconds != 300 {
+		t.Fatalf("PurgeArtifactCleanupIntervalSeconds = %d, want 300", cfg.PurgeArtifactCleanupIntervalSeconds)
+	}
+	if cfg.PurgeArtifactCleanupBatchSize != 25 {
+		t.Fatalf("PurgeArtifactCleanupBatchSize = %d, want 25", cfg.PurgeArtifactCleanupBatchSize)
+	}
 	if cfg.StorageProvider != "local" {
 		t.Fatalf("StorageProvider = %q, want local", cfg.StorageProvider)
 	}
@@ -144,6 +152,8 @@ func TestLoadFromEnvAppliesEnvironmentOverrides(t *testing.T) {
 	t.Setenv("TEMPORAL_ADDRESS", "temporal:7233")
 	t.Setenv("TEMPORAL_NAMESPACE", "soniq")
 	t.Setenv("TEMPORAL_TASK_QUEUE", "custom-queue")
+	t.Setenv("PURGE_ARTIFACT_CLEANUP_INTERVAL_SECONDS", "15")
+	t.Setenv("PURGE_ARTIFACT_CLEANUP_BATCH_SIZE", "7")
 	t.Setenv("STORAGE_PROVIDER", "local_fs")
 	t.Setenv("LOCAL_STORAGE_PATH", "/tmp/soniq-uploads")
 	t.Setenv("TRANSCRIPTION_PROVIDER", "openai_compatible_asr")
@@ -191,6 +201,12 @@ func TestLoadFromEnvAppliesEnvironmentOverrides(t *testing.T) {
 	}
 	if cfg.TemporalTaskQueue != "custom-queue" {
 		t.Fatalf("TemporalTaskQueue = %q, want override", cfg.TemporalTaskQueue)
+	}
+	if cfg.PurgeArtifactCleanupIntervalSeconds != 15 {
+		t.Fatalf("PurgeArtifactCleanupIntervalSeconds = %d, want override", cfg.PurgeArtifactCleanupIntervalSeconds)
+	}
+	if cfg.PurgeArtifactCleanupBatchSize != 7 {
+		t.Fatalf("PurgeArtifactCleanupBatchSize = %d, want override", cfg.PurgeArtifactCleanupBatchSize)
 	}
 	if cfg.StorageProvider != "local_fs" {
 		t.Fatalf("StorageProvider = %q, want local_fs", cfg.StorageProvider)
@@ -283,6 +299,20 @@ func TestValidateForStartupRejectsEmptyLocalStoragePath(t *testing.T) {
 
 	if err := cfg.ValidateForStartup(); err == nil {
 		t.Fatal("ValidateForStartup() error = nil, want error for empty LocalStoragePath")
+	}
+}
+
+func TestValidateForStartupRejectsInvalidPurgeArtifactCleanupConfig(t *testing.T) {
+	cfg := LoadFromEnv()
+	cfg.PurgeArtifactCleanupIntervalSeconds = 0
+	if err := cfg.ValidateForStartup(); err == nil {
+		t.Fatal("ValidateForStartup() error = nil, want invalid cleanup interval error")
+	}
+
+	cfg = LoadFromEnv()
+	cfg.PurgeArtifactCleanupBatchSize = 0
+	if err := cfg.ValidateForStartup(); err == nil {
+		t.Fatal("ValidateForStartup() error = nil, want invalid cleanup batch size error")
 	}
 }
 

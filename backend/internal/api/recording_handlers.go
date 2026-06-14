@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -304,6 +305,70 @@ func restoreRecordingHandler(store RecordingStore) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(toRecordingResponse(recording))
 	}
+}
+
+func purgeRecordingHandler(store RecordingStore, objectStore storage.ObjectStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			writeMethodNotAllowed(w, http.MethodDelete)
+			return
+		}
+		if objectStore == nil {
+			writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "object storage is not configured")
+			return
+		}
+		workspace, ok := workspaceFromRequest(w, r)
+		if !ok {
+			return
+		}
+		id, ok := recordingIDFromRequest(w, r)
+		if !ok {
+			return
+		}
+
+		result, found, err := store.PurgeForWorkspace(recordings.PurgeRecordingInput{
+			WorkspaceID: workspace.ID,
+			ID:          id,
+		})
+		if err != nil {
+			writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "purge recording")
+			return
+		}
+		if !found {
+			writeAPIError(w, http.StatusNotFound, errorCodeNotFound, "not found")
+			return
+		}
+
+		cleanupPurgeArtifacts(r.Context(), store, objectStore, result.Artifacts)
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func cleanupPurgeArtifacts(ctx context.Context, store RecordingStore, objectStore storage.ObjectStore, artifacts []recordings.RecordingPurgeArtifact) {
+	for _, artifact := range artifacts {
+		if err := objectStore.DeleteObject(ctx, artifact.ObjectKey); err != nil {
+			_, _ = store.MarkPurgeArtifactFailed(recordings.MarkPurgeArtifactFailedInput{
+				ID:            artifact.ID,
+				LastError:     err.Error(),
+				NextAttemptAt: time.Now().UTC().Add(purgeArtifactRetryDelay(artifact.AttemptCount + 1)),
+			})
+			continue
+		}
+		_, _ = store.MarkPurgeArtifactDeleted(recordings.MarkPurgeArtifactDeletedInput{ID: artifact.ID})
+	}
+}
+
+func purgeArtifactRetryDelay(attemptCount int) time.Duration {
+	if attemptCount <= 1 {
+		return time.Minute
+	}
+	if attemptCount == 2 {
+		return 5 * time.Minute
+	}
+	if attemptCount == 3 {
+		return 15 * time.Minute
+	}
+	return time.Hour
 }
 
 func getRecordingStatusHandler(store RecordingStore) http.HandlerFunc {

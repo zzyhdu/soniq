@@ -36,12 +36,14 @@ type recordingProcessorSpy struct {
 }
 
 type fakeRecordingStore struct {
-	created   []recordings.CreateRecordingInput
-	stored    map[string]domain.Recording
-	details   map[string]recordingDetailsFixture
-	nextID    int
-	createErr error
-	updateErr error
+	created              []recordings.CreateRecordingInput
+	stored               map[string]domain.Recording
+	details              map[string]recordingDetailsFixture
+	normalizedObjectKeys map[string]string
+	purgeArtifacts       map[string]recordings.RecordingPurgeArtifact
+	nextID               int
+	createErr            error
+	updateErr            error
 }
 
 type fakeWorkspaceStore struct {
@@ -72,9 +74,10 @@ type getErrRecordingStore struct {
 }
 
 type objectStoreSpy struct {
-	puts    []storedObject
-	deletes []string
-	err     error
+	puts      []storedObject
+	deletes   []string
+	err       error
+	deleteErr error
 }
 
 type storedObject struct {
@@ -84,7 +87,12 @@ type storedObject struct {
 }
 
 func newFakeRecordingStore() *fakeRecordingStore {
-	return &fakeRecordingStore{stored: make(map[string]domain.Recording), details: make(map[string]recordingDetailsFixture)}
+	return &fakeRecordingStore{
+		stored:               make(map[string]domain.Recording),
+		details:              make(map[string]recordingDetailsFixture),
+		normalizedObjectKeys: make(map[string]string),
+		purgeArtifacts:       make(map[string]recordings.RecordingPurgeArtifact),
+	}
 }
 
 func newFakeWorkspaceStore() *fakeWorkspaceStore {
@@ -220,6 +228,63 @@ func (s *fakeRecordingStore) RestoreForWorkspace(input recordings.RestoreRecordi
 	return recording, true, nil
 }
 
+func (s *fakeRecordingStore) PurgeForWorkspace(input recordings.PurgeRecordingInput) (recordings.PurgeRecordingResult, bool, error) {
+	recording, ok := s.stored[input.ID]
+	if !ok || recording.WorkspaceID != input.WorkspaceID || recording.DeletedAt == nil {
+		return recordings.PurgeRecordingResult{}, false, nil
+	}
+	result := recordings.PurgeRecordingResult{Artifacts: []recordings.RecordingPurgeArtifact{}}
+	appendArtifact := func(kind string, objectKey string) {
+		if strings.TrimSpace(objectKey) == "" {
+			return
+		}
+		artifact := recordings.RecordingPurgeArtifact{
+			ID:           "rpa_" + recording.ID + "_" + kind,
+			RecordingID:  recording.ID,
+			WorkspaceID:  recording.WorkspaceID,
+			ObjectKey:    objectKey,
+			ArtifactKind: kind,
+			Status:       recordings.RecordingPurgeArtifactStatusPending,
+		}
+		s.purgeArtifacts[artifact.ID] = artifact
+		result.Artifacts = append(result.Artifacts, artifact)
+	}
+	appendArtifact(recordings.RecordingPurgeArtifactKindOriginalAudio, recording.AudioObjectKey)
+	appendArtifact(recordings.RecordingPurgeArtifactKindNormalizedAudio, s.normalizedObjectKeys[recording.ID])
+	delete(s.stored, recording.ID)
+	delete(s.details, recording.ID)
+	delete(s.normalizedObjectKeys, recording.ID)
+	return result, true, nil
+}
+
+func (s *fakeRecordingStore) MarkPurgeArtifactDeleted(input recordings.MarkPurgeArtifactDeletedInput) (bool, error) {
+	artifact, ok := s.purgeArtifacts[input.ID]
+	if !ok {
+		return false, nil
+	}
+	now := time.Now().UTC()
+	artifact.Status = recordings.RecordingPurgeArtifactStatusDeleted
+	artifact.DeletedAt = &now
+	artifact.UpdatedAt = now
+	artifact.LastError = ""
+	s.purgeArtifacts[input.ID] = artifact
+	return true, nil
+}
+
+func (s *fakeRecordingStore) MarkPurgeArtifactFailed(input recordings.MarkPurgeArtifactFailedInput) (bool, error) {
+	artifact, ok := s.purgeArtifacts[input.ID]
+	if !ok {
+		return false, nil
+	}
+	artifact.Status = recordings.RecordingPurgeArtifactStatusFailed
+	artifact.AttemptCount++
+	artifact.LastError = input.LastError
+	artifact.NextAttemptAt = input.NextAttemptAt
+	artifact.UpdatedAt = time.Now().UTC()
+	s.purgeArtifacts[input.ID] = artifact
+	return true, nil
+}
+
 func (s *fakeRecordingStore) put(recording domain.Recording) {
 	if recording.WorkspaceID == "" {
 		recording.WorkspaceID = testWorkspaceID
@@ -348,6 +413,18 @@ func (s getErrRecordingStore) RestoreForWorkspace(recordings.RestoreRecordingInp
 	return domain.Recording{}, false, s.err
 }
 
+func (s getErrRecordingStore) PurgeForWorkspace(recordings.PurgeRecordingInput) (recordings.PurgeRecordingResult, bool, error) {
+	return recordings.PurgeRecordingResult{}, false, s.err
+}
+
+func (s getErrRecordingStore) MarkPurgeArtifactDeleted(recordings.MarkPurgeArtifactDeletedInput) (bool, error) {
+	return false, s.err
+}
+
+func (s getErrRecordingStore) MarkPurgeArtifactFailed(recordings.MarkPurgeArtifactFailedInput) (bool, error) {
+	return false, s.err
+}
+
 func (s *recordingProcessorSpy) Enqueue(recording domain.Recording) error {
 	s.enqueued = append(s.enqueued, recording)
 	return s.err
@@ -371,7 +448,24 @@ func (s *objectStoreSpy) PutObject(ctx context.Context, input storage.PutObjectI
 
 func (s *objectStoreSpy) DeleteObject(_ context.Context, key string) error {
 	s.deletes = append(s.deletes, key)
-	return nil
+	return s.deleteErr
+}
+
+func sameStringSet(a []string, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	counts := map[string]int{}
+	for _, value := range a {
+		counts[value]++
+	}
+	for _, value := range b {
+		counts[value]--
+		if counts[value] < 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func TestGetMeReturnsCurrentUser(t *testing.T) {
@@ -1054,6 +1148,121 @@ func TestRestoreRecordingReturnsNotFoundForMissingActiveOrCrossWorkspaceRecordin
 
 		if response.Code != http.StatusNotFound {
 			t.Fatalf("restore %s status code = %d, want %d", id, response.Code, http.StatusNotFound)
+		}
+	}
+}
+
+func TestPurgeRecordingDeletesTrashRecordingAndArtifacts(t *testing.T) {
+	store := newFakeRecordingStore()
+	deletedAt := time.Now().UTC()
+	store.put(domain.Recording{
+		ID:             "rec_deleted",
+		WorkspaceID:    testWorkspaceID,
+		Title:          "Deleted",
+		Status:         domain.RecordingStatusCompleted,
+		WorkflowType:   domain.WorkflowTypeMeeting,
+		AudioObjectKey: "workspaces/wsp_default/recordings/rec_deleted/original.wav",
+		DeletedAt:      &deletedAt,
+	})
+	store.normalizedObjectKeys["rec_deleted"] = "workspaces/wsp_default/recordings/rec_deleted/normalized.wav"
+	objectStore := &objectStoreSpy{}
+	router := NewRouterWithStorage(store, noopRecordingProcessor{}, objectStore)
+
+	request := httptest.NewRequest(http.MethodDelete, "/workspaces/wsp_default/recordings/rec_deleted/purge", nil)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("purge status code = %d, want %d; body=%s", response.Code, http.StatusNoContent, response.Body.String())
+	}
+	if _, ok := store.stored["rec_deleted"]; ok {
+		t.Fatal("recording still stored after purge")
+	}
+	if got, want := objectStore.deletes, []string{
+		"workspaces/wsp_default/recordings/rec_deleted/original.wav",
+		"workspaces/wsp_default/recordings/rec_deleted/normalized.wav",
+	}; !sameStringSet(got, want) {
+		t.Fatalf("deleted object keys = %+v, want %+v", got, want)
+	}
+	for id, artifact := range store.purgeArtifacts {
+		if artifact.Status != recordings.RecordingPurgeArtifactStatusDeleted || artifact.DeletedAt == nil {
+			t.Fatalf("artifact %s = %+v, want deleted", id, artifact)
+		}
+	}
+
+	restoreRequest := httptest.NewRequest(http.MethodPost, "/workspaces/wsp_default/recordings/rec_deleted/restore", nil)
+	restoreResponse := httptest.NewRecorder()
+	router.ServeHTTP(restoreResponse, restoreRequest)
+	if restoreResponse.Code != http.StatusNotFound {
+		t.Fatalf("restore purged status code = %d, want %d", restoreResponse.Code, http.StatusNotFound)
+	}
+}
+
+func TestPurgeRecordingReturnsNotFoundForMissingActiveOrCrossWorkspaceRecording(t *testing.T) {
+	store := newFakeRecordingStore()
+	deletedAt := time.Now().UTC()
+	store.put(domain.Recording{ID: "rec_active", WorkspaceID: testWorkspaceID, Title: "Active", Status: domain.RecordingStatusCompleted, WorkflowType: domain.WorkflowTypeMeeting})
+	store.put(domain.Recording{ID: "rec_other", WorkspaceID: "wsp_other", Title: "Other", Status: domain.RecordingStatusCompleted, WorkflowType: domain.WorkflowTypeMeeting, DeletedAt: &deletedAt})
+	router := NewRouterWithStorage(store, noopRecordingProcessor{}, &objectStoreSpy{})
+
+	for _, id := range []string{"rec_missing", "rec_active", "rec_other"} {
+		request := httptest.NewRequest(http.MethodDelete, "/workspaces/wsp_default/recordings/"+id+"/purge", nil)
+		response := httptest.NewRecorder()
+
+		router.ServeHTTP(response, request)
+
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("purge %s status code = %d, want %d", id, response.Code, http.StatusNotFound)
+		}
+	}
+}
+
+func TestPurgeRecordingRequiresObjectStorage(t *testing.T) {
+	store := newFakeRecordingStore()
+	deletedAt := time.Now().UTC()
+	store.put(domain.Recording{ID: "rec_deleted", WorkspaceID: testWorkspaceID, Title: "Deleted", Status: domain.RecordingStatusCompleted, WorkflowType: domain.WorkflowTypeMeeting, DeletedAt: &deletedAt})
+	router := NewRouterWithStore(store)
+
+	request := httptest.NewRequest(http.MethodDelete, "/workspaces/wsp_default/recordings/rec_deleted/purge", nil)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("purge status code = %d, want %d", response.Code, http.StatusInternalServerError)
+	}
+	if _, ok := store.stored["rec_deleted"]; !ok {
+		t.Fatal("recording purged even though object storage is not configured")
+	}
+}
+
+func TestPurgeRecordingKeepsFailedArtifactCleanupRetryable(t *testing.T) {
+	store := newFakeRecordingStore()
+	deletedAt := time.Now().UTC()
+	store.put(domain.Recording{
+		ID:             "rec_deleted",
+		WorkspaceID:    testWorkspaceID,
+		Title:          "Deleted",
+		Status:         domain.RecordingStatusCompleted,
+		WorkflowType:   domain.WorkflowTypeMeeting,
+		AudioObjectKey: "workspaces/wsp_default/recordings/rec_deleted/original.wav",
+		DeletedAt:      &deletedAt,
+	})
+	objectStore := &objectStoreSpy{deleteErr: errObjectStoreFailed}
+	router := NewRouterWithStorage(store, noopRecordingProcessor{}, objectStore)
+
+	request := httptest.NewRequest(http.MethodDelete, "/workspaces/wsp_default/recordings/rec_deleted/purge", nil)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("purge status code = %d, want %d; body=%s", response.Code, http.StatusNoContent, response.Body.String())
+	}
+	if _, ok := store.stored["rec_deleted"]; ok {
+		t.Fatal("recording still stored after purge")
+	}
+	for id, artifact := range store.purgeArtifacts {
+		if artifact.Status != recordings.RecordingPurgeArtifactStatusFailed || artifact.LastError == "" || artifact.NextAttemptAt.IsZero() {
+			t.Fatalf("artifact %s = %+v, want failed retryable cleanup", id, artifact)
 		}
 	}
 }

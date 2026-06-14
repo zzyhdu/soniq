@@ -6,6 +6,7 @@ import {
   listDeletedRecordings,
   listRecordings,
   listWorkspaces,
+  purgeRecording,
   retryRecording,
   restoreRecording,
   signIn,
@@ -141,6 +142,30 @@ export function useRestoreRecording(workspaceId: string | null | undefined) {
         queryClient.invalidateQueries({ queryKey: ['workspaces', workspaceId, 'recordings'], exact: true }),
         queryClient.invalidateQueries({ queryKey: ['workspaces', workspaceId, 'recordings', 'trash'], exact: true }),
       ]);
+    },
+  });
+}
+
+export function usePurgeRecording(workspaceId: string | null | undefined) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (recordingId: string) => purgeRecording(requireWorkspaceId(workspaceId), requireRecordingId(recordingId)),
+    onSuccess: async (_, recordingId) => {
+      if (!hasWorkspaceId(workspaceId)) {
+        return;
+      }
+      queryClient.setQueryData<ListRecordingsResponse>(
+        ['workspaces', workspaceId, 'recordings', 'trash'],
+        (current) => current === undefined
+          ? current
+          : {
+              ...current,
+              recordings: current.recordings.filter((item) => item.id !== recordingId),
+            },
+      );
+      queryClient.removeQueries({ queryKey: ['workspaces', workspaceId, 'recordings', recordingId] });
+      await queryClient.invalidateQueries({ queryKey: ['workspaces', workspaceId, 'recordings', 'trash'], exact: true });
     },
   });
 }

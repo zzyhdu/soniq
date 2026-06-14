@@ -384,6 +384,277 @@ RETURNING `+recordingColumns,
 	return recording, true, nil
 }
 
+// PurgeForWorkspace permanently deletes a soft-deleted recording and records artifact cleanup intents.
+func (s *PostgresStore) PurgeForWorkspace(input PurgeRecordingInput) (PurgeRecordingResult, bool, error) {
+	if err := validatePurgeRecordingInput(input); err != nil {
+		return PurgeRecordingResult{}, false, err
+	}
+	if s == nil || s.db == nil {
+		return PurgeRecordingResult{}, false, fmt.Errorf("postgres recording store requires database executor")
+	}
+	transactor, ok := s.db.(storedb.PostgresTransactor)
+	if !ok {
+		return PurgeRecordingResult{}, false, fmt.Errorf("postgres recording store requires transaction support")
+	}
+
+	ctx := context.Background()
+	tx, err := transactor.Begin(ctx)
+	if err != nil {
+		return PurgeRecordingResult{}, false, fmt.Errorf("begin purge recording transaction: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback(ctx)
+		}
+	}()
+
+	var recordingID string
+	var workspaceID string
+	var originalObjectKey string
+	var normalizedObjectKey string
+	row := tx.QueryRow(
+		ctx,
+		`SELECT r.id, r.workspace_id, r.audio_object_key, COALESCE(n.object_key, '')
+FROM recordings r
+LEFT JOIN recording_normalized_audios n ON n.recording_id = r.id
+WHERE r.workspace_id = $1
+  AND r.id = $2
+  AND r.deleted_at IS NOT NULL
+FOR UPDATE OF r`,
+		input.WorkspaceID,
+		input.ID,
+	)
+	if err := row.Scan(&recordingID, &workspaceID, &originalObjectKey, &normalizedObjectKey); err != nil {
+		if errors.Is(err, sql.ErrNoRows) || errors.Is(err, pgx.ErrNoRows) {
+			return PurgeRecordingResult{}, false, nil
+		}
+		return PurgeRecordingResult{}, false, fmt.Errorf("select recording for purge: %w", err)
+	}
+
+	now := time.Now().UTC()
+	result := PurgeRecordingResult{Artifacts: []RecordingPurgeArtifact{}}
+	for _, artifact := range purgeArtifactsForRecording(recordingID, workspaceID, originalObjectKey, normalizedObjectKey) {
+		inserted, err := insertPurgeArtifact(ctx, tx, artifact, now)
+		if err != nil {
+			return PurgeRecordingResult{}, false, err
+		}
+		result.Artifacts = append(result.Artifacts, inserted)
+	}
+
+	childDeletes := []string{
+		`DELETE FROM recording_mind_maps WHERE recording_id = $1`,
+		`DELETE FROM recording_transcript_segments WHERE recording_id = $1`,
+		`DELETE FROM recording_summaries WHERE recording_id = $1`,
+		`DELETE FROM recording_transcripts WHERE recording_id = $1`,
+		`DELETE FROM recording_audio_probes WHERE recording_id = $1`,
+		`DELETE FROM recording_normalized_audios WHERE recording_id = $1`,
+	}
+	for _, query := range childDeletes {
+		if err := tx.Exec(ctx, query, recordingID); err != nil {
+			return PurgeRecordingResult{}, false, fmt.Errorf("delete recording child rows: %w", err)
+		}
+	}
+	if err := tx.QueryRow(ctx, `DELETE FROM recordings WHERE id = $1 RETURNING id`, recordingID).Scan(&recordingID); err != nil {
+		return PurgeRecordingResult{}, false, fmt.Errorf("delete recording row: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return PurgeRecordingResult{}, false, fmt.Errorf("commit purge recording transaction: %w", err)
+	}
+	committed = true
+	return result, true, nil
+}
+
+// ClaimPurgeArtifacts claims retryable purge artifact cleanup rows.
+func (s *PostgresStore) ClaimPurgeArtifacts(input ClaimPurgeArtifactsInput) ([]RecordingPurgeArtifact, error) {
+	if err := validateClaimPurgeArtifactsInput(input); err != nil {
+		return nil, err
+	}
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("postgres recording store requires database executor")
+	}
+
+	limit := input.Limit
+	if limit == 0 {
+		limit = 25
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	now := time.Now().UTC()
+	rows, err := s.db.Query(
+		context.Background(),
+		`WITH claim AS (
+  SELECT id
+  FROM recording_purge_artifacts
+  WHERE deleted_at IS NULL
+    AND (
+      status IN ('pending', 'failed')
+      OR (status = 'deleting' AND updated_at <= $1::timestamptz - INTERVAL '15 minutes')
+    )
+    AND next_attempt_at <= $1::timestamptz
+  ORDER BY next_attempt_at ASC, created_at ASC, id ASC
+  LIMIT $2
+  FOR UPDATE SKIP LOCKED
+)
+UPDATE recording_purge_artifacts artifact
+SET status = 'deleting',
+    updated_at = $1
+FROM claim
+WHERE artifact.id = claim.id
+RETURNING artifact.id, artifact.recording_id, artifact.workspace_id, artifact.object_key, artifact.artifact_kind, artifact.status, artifact.attempt_count, artifact.next_attempt_at, artifact.last_error, artifact.created_at, artifact.updated_at, artifact.deleted_at`,
+		now,
+		limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("claim purge artifacts: %w", err)
+	}
+	defer rows.Close()
+
+	artifacts := []RecordingPurgeArtifact{}
+	for rows.Next() {
+		var artifact RecordingPurgeArtifact
+		if err := scanPurgeArtifact(rows, &artifact); err != nil {
+			return nil, fmt.Errorf("scan purge artifact: %w", err)
+		}
+		artifacts = append(artifacts, artifact)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("claim purge artifacts rows: %w", err)
+	}
+	return artifacts, nil
+}
+
+// MarkPurgeArtifactDeleted marks an artifact cleanup row completed.
+func (s *PostgresStore) MarkPurgeArtifactDeleted(input MarkPurgeArtifactDeletedInput) (bool, error) {
+	if err := validateMarkPurgeArtifactDeletedInput(input); err != nil {
+		return false, err
+	}
+	if s == nil || s.db == nil {
+		return false, fmt.Errorf("postgres recording store requires database executor")
+	}
+
+	now := time.Now().UTC()
+	var id string
+	row := s.db.QueryRow(
+		context.Background(),
+		`UPDATE recording_purge_artifacts
+SET status = 'deleted',
+    last_error = '',
+    deleted_at = $2,
+    updated_at = $2
+WHERE id = $1
+RETURNING id`,
+		input.ID,
+		now,
+	)
+	if err := row.Scan(&id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) || errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		return false, fmt.Errorf("mark purge artifact deleted: %w", err)
+	}
+	return true, nil
+}
+
+// MarkPurgeArtifactFailed records a failed artifact cleanup attempt.
+func (s *PostgresStore) MarkPurgeArtifactFailed(input MarkPurgeArtifactFailedInput) (bool, error) {
+	if err := validateMarkPurgeArtifactFailedInput(input); err != nil {
+		return false, err
+	}
+	if s == nil || s.db == nil {
+		return false, fmt.Errorf("postgres recording store requires database executor")
+	}
+
+	now := time.Now().UTC()
+	var id string
+	row := s.db.QueryRow(
+		context.Background(),
+		`UPDATE recording_purge_artifacts
+SET status = 'failed',
+    attempt_count = attempt_count + 1,
+    last_error = $2,
+    next_attempt_at = $3,
+    updated_at = $4
+WHERE id = $1
+  AND deleted_at IS NULL
+RETURNING id`,
+		input.ID,
+		truncatePurgeArtifactError(input.LastError),
+		input.NextAttemptAt,
+		now,
+	)
+	if err := row.Scan(&id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) || errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		return false, fmt.Errorf("mark purge artifact failed: %w", err)
+	}
+	return true, nil
+}
+
+func purgeArtifactsForRecording(recordingID string, workspaceID string, originalObjectKey string, normalizedObjectKey string) []RecordingPurgeArtifact {
+	artifacts := []RecordingPurgeArtifact{}
+	seen := map[string]struct{}{}
+	appendArtifact := func(kind string, objectKey string) {
+		objectKey = strings.TrimSpace(objectKey)
+		if objectKey == "" {
+			return
+		}
+		if _, ok := seen[objectKey]; ok {
+			return
+		}
+		seen[objectKey] = struct{}{}
+		artifacts = append(artifacts, RecordingPurgeArtifact{
+			ID:           purgeArtifactID(recordingID, objectKey),
+			RecordingID:  recordingID,
+			WorkspaceID:  workspaceID,
+			ObjectKey:    objectKey,
+			ArtifactKind: kind,
+			Status:       RecordingPurgeArtifactStatusPending,
+		})
+	}
+	appendArtifact(RecordingPurgeArtifactKindOriginalAudio, originalObjectKey)
+	appendArtifact(RecordingPurgeArtifactKindNormalizedAudio, normalizedObjectKey)
+	return artifacts
+}
+
+func insertPurgeArtifact(ctx context.Context, tx storedb.PostgresTx, artifact RecordingPurgeArtifact, now time.Time) (RecordingPurgeArtifact, error) {
+	var inserted RecordingPurgeArtifact
+	row := tx.QueryRow(
+		ctx,
+		`INSERT INTO recording_purge_artifacts (id, recording_id, workspace_id, object_key, artifact_kind, status, next_attempt_at, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, 'pending', $6, $6, $6)
+ON CONFLICT (recording_id, object_key) DO UPDATE
+SET workspace_id = EXCLUDED.workspace_id,
+    artifact_kind = EXCLUDED.artifact_kind,
+    status = 'pending',
+    next_attempt_at = EXCLUDED.next_attempt_at,
+    last_error = '',
+    deleted_at = NULL,
+    updated_at = EXCLUDED.updated_at
+RETURNING id, recording_id, workspace_id, object_key, artifact_kind, status, attempt_count, next_attempt_at, last_error, created_at, updated_at, deleted_at`,
+		artifact.ID,
+		artifact.RecordingID,
+		artifact.WorkspaceID,
+		artifact.ObjectKey,
+		artifact.ArtifactKind,
+		now,
+	)
+	if err := scanPurgeArtifact(row, &inserted); err != nil {
+		return RecordingPurgeArtifact{}, fmt.Errorf("insert purge artifact: %w", err)
+	}
+	return inserted, nil
+}
+
+func truncatePurgeArtifactError(value string) string {
+	value = strings.TrimSpace(value)
+	if len(value) <= 2000 {
+		return value
+	}
+	return value[:2000]
+}
+
 // UpsertNormalizedAudio stores or replaces normalized audio metadata for a recording.
 func (s *PostgresStore) UpsertNormalizedAudio(input UpsertNormalizedAudioInput) (RecordingNormalizedAudio, error) {
 	if err := validateNormalizedAudioInput(input); err != nil {
@@ -731,6 +1002,34 @@ func scanSummary(row storedb.PostgresRow, summary *RecordingSummary) error {
 
 func scanMindMap(row storedb.PostgresRow, mindMap *RecordingMindMap) error {
 	return row.Scan(&mindMap.RecordingID, &mindMap.Provider, &mindMap.Model, &mindMap.Title, &mindMap.RootJSON, &mindMap.ContentMarkdown, &mindMap.RawResultJSON, &mindMap.GeneratedAt, &mindMap.CreatedAt, &mindMap.UpdatedAt)
+}
+
+func scanPurgeArtifact(row storedb.PostgresRow, artifact *RecordingPurgeArtifact) error {
+	var deletedAt sql.NullTime
+	var status string
+	if err := row.Scan(
+		&artifact.ID,
+		&artifact.RecordingID,
+		&artifact.WorkspaceID,
+		&artifact.ObjectKey,
+		&artifact.ArtifactKind,
+		&status,
+		&artifact.AttemptCount,
+		&artifact.NextAttemptAt,
+		&artifact.LastError,
+		&artifact.CreatedAt,
+		&artifact.UpdatedAt,
+		&deletedAt,
+	); err != nil {
+		return err
+	}
+	artifact.DeletedAt = nil
+	if deletedAt.Valid {
+		deleted := deletedAt.Time
+		artifact.DeletedAt = &deleted
+	}
+	artifact.Status = RecordingPurgeArtifactStatus(status)
+	return nil
 }
 
 func scanRecording(row storedb.PostgresRow, recording *domain.Recording) error {

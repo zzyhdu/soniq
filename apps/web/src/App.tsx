@@ -40,6 +40,7 @@ import {
   useDeleteRecording,
   useDeletedRecordings,
   useMe,
+  usePurgeRecording,
   useRecordingStatus,
   useRecordings,
   useRetryRecording,
@@ -81,6 +82,7 @@ export function App() {
   const [workflowTypeFilter, setWorkflowTypeFilter] = useState<WorkflowType | 'all'>('all');
   const [activeView, setActiveView] = useState<AppView>('recordings');
   const [deleteDialogRecording, setDeleteDialogRecording] = useState<Recording | null>(null);
+  const [purgeDialogRecording, setPurgeDialogRecording] = useState<Recording | null>(null);
 
   const resetSessionState = useCallback(() => {
     setSelectedWorkspaceId(null);
@@ -92,6 +94,7 @@ export function App() {
     setWorkflowTypeFilter('all');
     setActiveView('recordings');
     setDeleteDialogRecording(null);
+    setPurgeDialogRecording(null);
     replaceAppRoute({ workspaceId: null, recordingId: null });
   }, []);
 
@@ -162,6 +165,7 @@ export function App() {
   const uploadRecordingMutation = useUploadRecording(selectedWorkspaceId);
   const deleteRecordingMutation = useDeleteRecording(selectedWorkspaceId);
   const restoreRecordingMutation = useRestoreRecording(selectedWorkspaceId);
+  const purgeRecordingMutation = usePurgeRecording(selectedWorkspaceId);
   const retryRecordingMutation = useRetryRecording(selectedWorkspaceId, selectedRecordingId);
   const selectedRecording = recordings.find((recording) => recording.id === selectedRecordingId) ??
     (latestProcessingRequest?.recording.id === selectedRecordingId ? latestProcessingRequest.recording : undefined);
@@ -173,6 +177,7 @@ export function App() {
   const retryError = retryRecordingMutation.error instanceof Error ? retryRecordingMutation.error.message : null;
   const deleteError = deleteRecordingMutation.error instanceof Error ? deleteRecordingMutation.error.message : null;
   const restoreError = restoreRecordingMutation.error instanceof Error ? restoreRecordingMutation.error.message : null;
+  const purgeError = purgeRecordingMutation.error instanceof Error ? purgeRecordingMutation.error.message : null;
   const meError = meQuery.error instanceof Error ? meQuery.error.message : null;
   const workspacesError = workspacesQuery.error instanceof Error ? workspacesQuery.error.message : null;
   const recordingsError = recordingsQuery.error instanceof Error ? recordingsQuery.error.message : null;
@@ -282,9 +287,29 @@ export function App() {
     }
   }
 
+  function handleRequestPurgeRecording(recording: Recording) {
+    purgeRecordingMutation.reset();
+    setPurgeDialogRecording(recording);
+  }
+
+  async function handleConfirmPurgeRecording() {
+    if (purgeDialogRecording === null) {
+      return;
+    }
+
+    try {
+      await purgeRecordingMutation.mutateAsync(purgeDialogRecording.id);
+    } catch {
+      return;
+    }
+
+    setPurgeDialogRecording(null);
+  }
+
   function handleSelectView(view: AppView) {
     setActiveView(view);
     setDeleteDialogRecording(null);
+    setPurgeDialogRecording(null);
   }
 
   async function handleLogout() {
@@ -417,8 +442,11 @@ export function App() {
             isLoading={selectedWorkspaceId !== null && deletedRecordingsQuery.isPending}
             error={deletedRecordingsError}
             restoreError={restoreError}
+            purgeError={purgeError}
             restoringRecordingId={restoreRecordingMutation.isPending ? restoreRecordingMutation.variables ?? null : null}
+            purgingRecordingId={purgeRecordingMutation.isPending ? purgeRecordingMutation.variables ?? null : null}
             onRestore={handleRestoreRecording}
+            onPurge={handleRequestPurgeRecording}
             onBackToRecordings={() => setActiveView('recordings')}
           />
         ) : (
@@ -444,6 +472,16 @@ export function App() {
           error={deleteError}
           onCancel={() => setDeleteDialogRecording(null)}
           onConfirm={handleConfirmDeleteRecording}
+        />
+      )}
+
+      {purgeDialogRecording !== null && (
+        <PurgeRecordingDialog
+          recording={purgeDialogRecording}
+          isPurging={purgeRecordingMutation.isPending}
+          error={purgeError}
+          onCancel={() => setPurgeDialogRecording(null)}
+          onConfirm={handleConfirmPurgeRecording}
         />
       )}
     </main>
@@ -648,16 +686,22 @@ function TrashWorkspaceView({
   isLoading,
   error,
   restoreError,
+  purgeError,
   restoringRecordingId,
+  purgingRecordingId,
   onRestore,
+  onPurge,
   onBackToRecordings,
 }: {
   recordings: Recording[];
   isLoading: boolean;
   error: string | null;
   restoreError: string | null;
+  purgeError: string | null;
   restoringRecordingId: string | null;
+  purgingRecordingId: string | null;
   onRestore: (recordingId: string) => void;
+  onPurge: (recording: Recording) => void;
   onBackToRecordings: () => void;
 }) {
   return (
@@ -680,6 +724,11 @@ function TrashWorkspaceView({
             {restoreError}
           </p>
         )}
+        {purgeError !== null && (
+          <p className="mb-4 rounded border border-[#ffdad6] bg-[#fff7f7] px-3 py-2 text-[13px] text-[#ba1a1a]" role="alert">
+            {purgeError}
+          </p>
+        )}
 
         {isLoading ? (
           <div className="rounded border border-[#c5c6cd] bg-white px-4 py-3 text-[14px] text-[#45474c]">Loading Trash...</div>
@@ -694,7 +743,7 @@ function TrashWorkspaceView({
           </div>
         ) : (
           <div className="overflow-hidden rounded border border-[#c5c6cd] bg-white">
-            <div className="grid grid-cols-[minmax(0,1fr)_120px_180px_120px] gap-4 border-b border-[#c5c6cd] bg-[#f2f4f6] px-4 py-3 font-mono text-[11px] font-medium uppercase leading-4 tracking-[0.08em] text-[#45474c]">
+            <div className="grid grid-cols-[minmax(0,1fr)_120px_180px_240px] gap-4 border-b border-[#c5c6cd] bg-[#f2f4f6] px-4 py-3 font-mono text-[11px] font-medium uppercase leading-4 tracking-[0.08em] text-[#45474c]">
               <span>Recording</span>
               <span>Status</span>
               <span>Deleted</span>
@@ -703,25 +752,38 @@ function TrashWorkspaceView({
             <div className="divide-y divide-[#e0e2e5]">
               {recordings.map((recording) => {
                 const isRestoring = restoringRecordingId === recording.id;
+                const isPurging = purgingRecordingId === recording.id;
+                const isBusy = restoringRecordingId !== null || purgingRecordingId !== null;
                 return (
-                  <div key={recording.id} className="grid grid-cols-[minmax(0,1fr)_120px_180px_120px] items-center gap-4 px-4 py-3">
+                  <div key={recording.id} className="grid grid-cols-[minmax(0,1fr)_120px_180px_240px] items-center gap-4 px-4 py-3">
                     <div className="min-w-0">
                       <p className="truncate text-[14px] font-medium leading-5 text-[#191c1e]">{recording.title}</p>
                       <p className="mt-1 truncate text-[12px] leading-4 text-[#75777d]">{recording.language || 'unknown language'} / {recording.workflow_type}</p>
                     </div>
                     <StatusTag status={recording.status} />
                     <span className="text-[13px] leading-5 text-[#45474c]">{recording.deleted_at !== undefined ? formatDateTime(recording.deleted_at) : 'Unknown'}</span>
-                    <div className="flex justify-end">
+                    <div className="flex justify-end gap-2">
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
                         className="h-9 rounded border-[#c5c6cd] bg-white px-3 text-[13px] font-normal text-[#191c1e] shadow-none hover:bg-[#f2f4f6]"
-                        disabled={restoringRecordingId !== null}
+                        disabled={isBusy}
                         onClick={() => onRestore(recording.id)}
                       >
                         <RotateCcw className="size-4" aria-hidden="true" />
                         {isRestoring ? 'Restoring...' : 'Restore'}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-9 rounded border-[#ffdad6] bg-white px-3 text-[13px] font-normal text-[#ba1a1a] shadow-none hover:bg-[#fff7f7]"
+                        disabled={isBusy}
+                        onClick={() => onPurge(recording)}
+                      >
+                        <Trash2 className="size-4" aria-hidden="true" />
+                        {isPurging ? 'Deleting...' : 'Delete forever'}
                       </Button>
                     </div>
                   </div>
@@ -1039,7 +1101,7 @@ function DeleteRecordingDialog({
         <div className="space-y-2">
           <h2 id="delete-recording-title" className="text-[18px] font-semibold leading-6 text-[#091426]">Delete recording?</h2>
           <p className="text-[14px] leading-6 text-[#45474c]">
-            This moves <span className="font-medium text-[#191c1e]">{recording.title}</span> to Trash and removes it from the active recording library. Generated results and audio artifacts are kept until permanent deletion is available from Trash.
+            This moves <span className="font-medium text-[#191c1e]">{recording.title}</span> to Trash and removes it from the active recording library. Generated results and audio artifacts are kept until it is permanently deleted from Trash.
           </p>
         </div>
 
@@ -1055,6 +1117,55 @@ function DeleteRecordingDialog({
           </Button>
           <Button type="button" className="rounded bg-[#ba1a1a] text-white hover:bg-[#93000a]" onClick={onConfirm} disabled={isDeleting}>
             {isDeleting ? 'Deleting...' : 'Delete recording'}
+          </Button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function PurgeRecordingDialog({
+  recording,
+  isPurging,
+  error,
+  onCancel,
+  onConfirm,
+}: {
+  recording: Recording;
+  isPurging: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4" role="dialog" aria-modal="true" aria-labelledby="purge-recording-title">
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/30"
+        aria-label="Cancel permanent delete"
+        onClick={onCancel}
+        disabled={isPurging}
+      />
+      <section className="relative w-full max-w-md rounded border border-[#c5c6cd] bg-white p-5 shadow-xl">
+        <div className="space-y-2">
+          <h2 id="purge-recording-title" className="text-[18px] font-semibold leading-6 text-[#091426]">Delete forever?</h2>
+          <p className="text-[14px] leading-6 text-[#45474c]">
+            <span className="font-medium text-[#191c1e]">{recording.title}</span> will be permanently deleted.
+          </p>
+        </div>
+
+        {error !== null && (
+          <p className="mt-4 rounded border border-[#ffdad6] bg-[#fff7f7] px-3 py-2 text-[13px] text-[#ba1a1a]" role="alert">
+            {error}
+          </p>
+        )}
+
+        <div className="mt-5 flex justify-end gap-2">
+          <Button type="button" variant="outline" className="rounded border-[#c5c6cd]" onClick={onCancel} disabled={isPurging}>
+            Cancel
+          </Button>
+          <Button type="button" className="rounded bg-[#ba1a1a] text-white hover:bg-[#93000a]" onClick={onConfirm} disabled={isPurging}>
+            {isPurging ? 'Deleting...' : 'Delete forever'}
           </Button>
         </div>
       </section>

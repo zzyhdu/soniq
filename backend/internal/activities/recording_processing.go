@@ -249,29 +249,23 @@ func NewRecordingProcessingActivitiesWithAudioProbe(store RecordingStore, resolv
 	return &RecordingProcessingActivities{store: store, pathResolver: resolver, probeRunner: runner}
 }
 
-// NewRecordingProcessingActivitiesWithPipeline creates recording processing activities with all local pipeline dependencies.
-func NewRecordingProcessingActivitiesWithPipeline(store PipelineStore, resolver LocalObjectPathResolver, runner AudioProbeRunner, transcriptionProvider TranscriptionProvider, summaryProvider SummaryProvider) *RecordingProcessingActivities {
+// NewRecordingProcessingActivitiesWithNormalizedAudio creates recording processing activities with normalization dependencies.
+func NewRecordingProcessingActivitiesWithNormalizedAudio(store NormalizingPipelineStore, resolver LocalObjectPathResolver, objectStore storage.ObjectStore, probeRunner AudioProbeRunner, normalizeRunner AudioNormalizeRunner, transcriptionProvider TranscriptionProvider, summaryProvider SummaryProvider) *RecordingProcessingActivities {
 	mindMapProvider, _ := summaryProvider.(MindMapProvider)
 	return &RecordingProcessingActivities{
 		store:                 store,
+		normalizedAudioStore:  store,
 		transcriptStore:       store,
 		summaryStore:          store,
 		mindMapStore:          store,
+		objectStore:           objectStore,
 		pathResolver:          resolver,
-		probeRunner:           runner,
+		probeRunner:           probeRunner,
+		normalizeRunner:       normalizeRunner,
 		transcriptionProvider: transcriptionProvider,
 		summaryProvider:       summaryProvider,
 		mindMapProvider:       mindMapProvider,
 	}
-}
-
-// NewRecordingProcessingActivitiesWithNormalizedAudio creates recording processing activities with normalization dependencies.
-func NewRecordingProcessingActivitiesWithNormalizedAudio(store NormalizingPipelineStore, resolver LocalObjectPathResolver, objectStore storage.ObjectStore, probeRunner AudioProbeRunner, normalizeRunner AudioNormalizeRunner, transcriptionProvider TranscriptionProvider, summaryProvider SummaryProvider) *RecordingProcessingActivities {
-	activities := NewRecordingProcessingActivitiesWithPipeline(store, resolver, probeRunner, transcriptionProvider, summaryProvider)
-	activities.normalizedAudioStore = store
-	activities.objectStore = objectStore
-	activities.normalizeRunner = normalizeRunner
-	return activities
 }
 
 // ValidateRecording validates processing input and confirms the recording exists.

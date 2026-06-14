@@ -263,6 +263,18 @@ export async function restoreRecording(
   );
 }
 
+export async function purgeRecording(
+  workspaceId: string,
+  recordingId: string,
+  options: SoniqApiClientOptions = {},
+): Promise<void> {
+  await requestJSON<null>(
+    `${recordingPath(workspaceId, recordingId)}/purge`,
+    { method: 'DELETE' },
+    options,
+  );
+}
+
 export async function retryRecording(
   workspaceId: string,
   recordingId: string,

@@ -1,0 +1,3 @@
+DROP INDEX IF EXISTS recording_purge_artifacts_recording_id_idx;
+DROP INDEX IF EXISTS recording_purge_artifacts_status_next_attempt_idx;
+DROP TABLE IF EXISTS recording_purge_artifacts;

@@ -28,6 +28,9 @@ type RecordingStore interface {
 	SoftDeleteForWorkspace(input recordings.SoftDeleteRecordingInput) (domain.Recording, bool, error)
 	ListDeletedByWorkspace(input recordings.ListDeletedRecordingsInput) ([]domain.Recording, error)
 	RestoreForWorkspace(input recordings.RestoreRecordingInput) (domain.Recording, bool, error)
+	PurgeForWorkspace(input recordings.PurgeRecordingInput) (recordings.PurgeRecordingResult, bool, error)
+	MarkPurgeArtifactDeleted(input recordings.MarkPurgeArtifactDeletedInput) (bool, error)
+	MarkPurgeArtifactFailed(input recordings.MarkPurgeArtifactFailedInput) (bool, error)
 }
 
 // WorkspaceStore is the persistence seam required by identity and workspace-scoped handlers.
@@ -96,6 +99,18 @@ func (unconfiguredRecordingStore) ListDeletedByWorkspace(recordings.ListDeletedR
 
 func (unconfiguredRecordingStore) RestoreForWorkspace(recordings.RestoreRecordingInput) (domain.Recording, bool, error) {
 	return domain.Recording{}, false, errRecordingStoreNotConfigured
+}
+
+func (unconfiguredRecordingStore) PurgeForWorkspace(recordings.PurgeRecordingInput) (recordings.PurgeRecordingResult, bool, error) {
+	return recordings.PurgeRecordingResult{}, false, errRecordingStoreNotConfigured
+}
+
+func (unconfiguredRecordingStore) MarkPurgeArtifactDeleted(recordings.MarkPurgeArtifactDeletedInput) (bool, error) {
+	return false, errRecordingStoreNotConfigured
+}
+
+func (unconfiguredRecordingStore) MarkPurgeArtifactFailed(recordings.MarkPurgeArtifactFailedInput) (bool, error) {
+	return false, errRecordingStoreNotConfigured
 }
 
 func (unconfiguredWorkspaceStore) GetUser(context.Context, string) (domain.User, bool, error) {
@@ -217,6 +232,7 @@ func newRouterWithDependencies(store RecordingStore, workspaceStore WorkspaceSto
 			router.MethodFunc(http.MethodGet, "/recordings/{recording_id}/status", getRecordingStatusHandler(store))
 			router.MethodFunc(http.MethodGet, "/recordings/{recording_id}/details", getRecordingDetailsHandler(store))
 			router.MethodFunc(http.MethodPost, "/recordings/{recording_id}/restore", restoreRecordingHandler(store))
+			router.MethodFunc(http.MethodDelete, "/recordings/{recording_id}/purge", purgeRecordingHandler(store, objectStore))
 			router.MethodFunc(http.MethodPost, "/recordings/{recording_id}/retry", retryRecordingHandler(store, processor))
 		})
 	})
