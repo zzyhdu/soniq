@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { SoniqApiError } from './http';
 import {
   createRecording,
+  deleteRecording,
   getRecording,
   getRecordingDetails,
   getRecordingStatus,
@@ -165,6 +166,18 @@ describe('recording retry', () => {
     expect(result.processing_enqueued).toBe(true);
     expect(fetchMock).toHaveBeenCalledWith('/workspaces/wsp_default/recordings/rec-failed/retry', {
       method: 'POST',
+    });
+  });
+});
+
+describe('recording delete', () => {
+  it('deletes a workspace recording by encoded id', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 204 }));
+
+    await deleteRecording('wsp/default', 'rec/with space', { fetch: fetchMock });
+
+    expect(fetchMock).toHaveBeenCalledWith('/workspaces/wsp%2Fdefault/recordings/rec%2Fwith%20space', {
+      method: 'DELETE',
     });
   });
 });

@@ -37,6 +37,12 @@ type RecordingRetryStore interface {
 	UpdateStatus(input recordings.UpdateRecordingStatusInput) (domain.Recording, error)
 }
 
+// RecordingSoftDeleteStore is the optional persistence seam for soft-deleting recordings.
+type RecordingSoftDeleteStore interface {
+	RecordingStore
+	SoftDeleteForWorkspace(input recordings.SoftDeleteRecordingInput) (domain.Recording, bool, error)
+}
+
 // WorkspaceStore is the persistence seam required by identity and workspace-scoped handlers.
 type WorkspaceStore interface {
 	GetUser(ctx context.Context, userID string) (domain.User, bool, error)
@@ -187,6 +193,7 @@ func newRouterWithDependencies(store RecordingStore, workspaceStore WorkspaceSto
 			router.MethodFunc(http.MethodPost, "/recordings", createRecordingHandler(store))
 			router.MethodFunc(http.MethodPost, "/recordings/upload", uploadRecordingHandler(store, processor, objectStore))
 			router.MethodFunc(http.MethodGet, "/recordings/{recording_id}", getRecordingHandler(store))
+			router.MethodFunc(http.MethodDelete, "/recordings/{recording_id}", deleteRecordingHandler(store))
 			router.MethodFunc(http.MethodGet, "/recordings/{recording_id}/status", getRecordingStatusHandler(store))
 			router.MethodFunc(http.MethodGet, "/recordings/{recording_id}/details", getRecordingDetailsHandler(store))
 			router.MethodFunc(http.MethodPost, "/recordings/{recording_id}/retry", retryRecordingHandler(store, processor))

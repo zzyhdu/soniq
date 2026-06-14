@@ -24,6 +24,8 @@ export type Recording = {
   failure_reason?: string;
   completed_at?: string;
   failed_at?: string;
+  deleted_at?: string;
+  deleted_by_user_id?: string;
   created_at: string;
   updated_at: string;
 };
@@ -215,6 +217,18 @@ export async function getRecordingDetails(
   return requestJSON<RecordingDetails>(
     `${recordingPath(workspaceId, recordingId)}/details`,
     { method: 'GET' },
+    options,
+  );
+}
+
+export async function deleteRecording(
+  workspaceId: string,
+  recordingId: string,
+  options: SoniqApiClientOptions = {},
+): Promise<void> {
+  await requestJSON<null>(
+    recordingPath(workspaceId, recordingId),
+    { method: 'DELETE' },
     options,
   );
 }

@@ -46,6 +46,13 @@ type RetryRecordingInput struct {
 	ID          string
 }
 
+// SoftDeleteRecordingInput identifies an active recording to move to Trash.
+type SoftDeleteRecordingInput struct {
+	WorkspaceID     string
+	ID              string
+	DeletedByUserID string
+}
+
 // RecordingAudioProbe contains ffprobe metadata for a recording's original audio.
 type RecordingAudioProbe struct {
 	RecordingID     string
@@ -224,6 +231,19 @@ func validateRetryRecordingInput(input RetryRecordingInput) error {
 	}
 	if input.ID == "" {
 		return fmt.Errorf("recording id is required")
+	}
+	return nil
+}
+
+func validateSoftDeleteRecordingInput(input SoftDeleteRecordingInput) error {
+	if input.WorkspaceID == "" {
+		return fmt.Errorf("workspace id is required")
+	}
+	if input.ID == "" {
+		return fmt.Errorf("recording id is required")
+	}
+	if input.DeletedByUserID == "" {
+		return fmt.Errorf("deleted by user id is required")
 	}
 	return nil
 }

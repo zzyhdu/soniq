@@ -43,6 +43,8 @@ type recordingResponse struct {
 	FailureReason    string                 `json:"failure_reason,omitempty"`
 	CompletedAt      *time.Time             `json:"completed_at,omitempty"`
 	FailedAt         *time.Time             `json:"failed_at,omitempty"`
+	DeletedAt        *time.Time             `json:"deleted_at,omitempty"`
+	DeletedByUserID  string                 `json:"deleted_by_user_id,omitempty"`
 	CreatedAt        time.Time              `json:"created_at"`
 	UpdatedAt        time.Time              `json:"updated_at"`
 }
@@ -102,6 +104,8 @@ func toRecordingResponse(recording domain.Recording) recordingResponse {
 		FailureReason:    recording.FailureReason,
 		CompletedAt:      recording.CompletedAt,
 		FailedAt:         recording.FailedAt,
+		DeletedAt:        recording.DeletedAt,
+		DeletedByUserID:  recording.DeletedByUserID,
 		CreatedAt:        recording.CreatedAt,
 		UpdatedAt:        recording.UpdatedAt,
 	}

@@ -1,4 +1,5 @@
 import {
+  deleteRecording,
   getMe,
   getRecordingDetails,
   getRecordingStatus,
@@ -9,6 +10,7 @@ import {
   signOut,
   signUp,
   SoniqApiError,
+  type ListRecordingsResponse,
   type RecordingStatus,
   type SignInInput,
   type SignUpInput,
@@ -69,6 +71,30 @@ export function useUploadRecording(workspaceId: string | null | undefined) {
       if (!hasWorkspaceId(workspaceId)) {
         return;
       }
+      await queryClient.invalidateQueries({ queryKey: ['workspaces', workspaceId, 'recordings'] });
+    },
+  });
+}
+
+export function useDeleteRecording(workspaceId: string | null | undefined) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (recordingId: string) => deleteRecording(requireWorkspaceId(workspaceId), requireRecordingId(recordingId)),
+    onSuccess: async (_, recordingId) => {
+      if (!hasWorkspaceId(workspaceId)) {
+        return;
+      }
+      queryClient.setQueryData<ListRecordingsResponse>(
+        ['workspaces', workspaceId, 'recordings'],
+        (current) => current === undefined
+          ? current
+          : {
+              ...current,
+              recordings: current.recordings.filter((recording) => recording.id !== recordingId),
+            },
+      );
+      queryClient.removeQueries({ queryKey: ['workspaces', workspaceId, 'recordings', recordingId] });
       await queryClient.invalidateQueries({ queryKey: ['workspaces', workspaceId, 'recordings'] });
     },
   });

@@ -65,6 +65,12 @@ func (r *postgresRowStub) Scan(dest ...any) error {
 		return r.err
 	}
 	values := r.values
+	if len(dest) == 16 && len(values) == 11 {
+		values = append(append(append([]any{}, values[:9]...), "", nil, nil, nil, ""), values[9:]...)
+	}
+	if len(dest) == 16 && len(values) == 14 {
+		values = append(append(append([]any{}, values[:12]...), nil, ""), values[12:]...)
+	}
 	if len(dest) == 14 && len(values) == 11 {
 		values = append(append(append([]any{}, values[:9]...), "", nil, nil), values[9:]...)
 	}
@@ -86,6 +92,12 @@ func (r *postgresRowStub) Scan(dest ...any) error {
 				*target = sql.NullTime{}
 			} else {
 				*target = sql.NullTime{Time: value.(time.Time), Valid: true}
+			}
+		case *sql.NullString:
+			if value == nil {
+				*target = sql.NullString{}
+			} else {
+				*target = sql.NullString{String: value.(string), Valid: true}
 			}
 		case *int64:
 			*target = value.(int64)
@@ -379,7 +391,7 @@ func TestPostgresStoreGetForWorkspaceReturnsExistingRecording(t *testing.T) {
 		t.Fatalf("recording = %+v, want workspace-scoped recording", recording)
 	}
 	query := strings.ToLower(db.calls[0].query)
-	if !strings.Contains(query, "where workspace_id = $1") || !strings.Contains(query, "and id = $2") {
+	if !strings.Contains(query, "where workspace_id = $1") || !strings.Contains(query, "and id = $2") || !strings.Contains(query, "deleted_at is null") {
 		t.Fatalf("query = %q, want workspace-scoped get", db.calls[0].query)
 	}
 	if got, want := db.calls[0].args[0], "wsp_default"; got != want {
@@ -425,7 +437,7 @@ func TestPostgresStoreListByWorkspaceReturnsRecentRecordings(t *testing.T) {
 		t.Fatalf("recordings = %+v, want returned ordering", recordings)
 	}
 	query := strings.ToLower(db.calls[0].query)
-	if !strings.Contains(query, "where workspace_id = $1") || !strings.Contains(query, "order by created_at desc") || !strings.Contains(query, "limit $2") {
+	if !strings.Contains(query, "where workspace_id = $1") || !strings.Contains(query, "deleted_at is null") || !strings.Contains(query, "order by created_at desc") || !strings.Contains(query, "limit $2") {
 		t.Fatalf("query = %q, want workspace list query", db.calls[0].query)
 	}
 	if got, want := db.calls[0].args[0], "wsp_default"; got != want {
@@ -504,7 +516,7 @@ func TestPostgresStoreUpdateStatusUpdatesAndReturnsRecording(t *testing.T) {
 		t.Fatalf("query calls = %d, want %d", got, want)
 	}
 	query := strings.ToLower(db.calls[0].query)
-	if !strings.Contains(query, "update recordings") || !strings.Contains(query, "set status") || !strings.Contains(query, "returning") {
+	if !strings.Contains(query, "update recordings") || !strings.Contains(query, "set status") || !strings.Contains(query, "deleted_at is null") || !strings.Contains(query, "returning") {
 		t.Fatalf("query = %q, want update recordings set status returning", db.calls[0].query)
 	}
 	if got, want := len(db.calls[0].args), 5; got != want {
@@ -602,7 +614,7 @@ func TestPostgresStoreResetForRetryClearsFailureMetadata(t *testing.T) {
 		t.Fatalf("recording = %+v, want uploaded with cleared failure metadata", recording)
 	}
 	query := strings.ToLower(db.calls[0].query)
-	if !strings.Contains(query, "status = 'failed'") || !strings.Contains(query, "failure_reason = ''") {
+	if !strings.Contains(query, "status = 'failed'") || !strings.Contains(query, "failure_reason = ''") || !strings.Contains(query, "deleted_at is null") {
 		t.Fatalf("query = %q, want failed-only reset that clears failure metadata", db.calls[0].query)
 	}
 	if got, want := len(db.calls[0].args), 3; got != want {
@@ -620,6 +632,81 @@ func TestPostgresStoreUpdateStatusReturnsErrorForMissingRecording(t *testing.T) 
 	})
 	if err == nil {
 		t.Fatal("UpdateStatus returned nil error, want missing recording error")
+	}
+}
+
+func TestPostgresStoreSoftDeleteForWorkspaceMarksRecordingDeleted(t *testing.T) {
+	createdAt := time.Date(2026, 6, 6, 1, 2, 3, 0, time.UTC)
+	deletedAt := createdAt.Add(time.Minute)
+	db := newPostgresExecutorSpy(postgresRow(
+		"rec_pg",
+		"wsp_default",
+		"Weekly sync",
+		domain.RecordingStatusCompleted,
+		domain.WorkflowTypeMeeting,
+		"en",
+		"recordings/rec_pg/original.wav",
+		"audio/wav",
+		int64(12345),
+		"",
+		nil,
+		nil,
+		deletedAt,
+		"usr_dev",
+		createdAt,
+		deletedAt,
+	))
+	store := NewPostgresStore(db)
+
+	recording, ok, err := store.SoftDeleteForWorkspace(SoftDeleteRecordingInput{
+		WorkspaceID:     "wsp_default",
+		ID:              "rec_pg",
+		DeletedByUserID: "usr_dev",
+	})
+	if err != nil {
+		t.Fatalf("SoftDeleteForWorkspace returned error: %v", err)
+	}
+	if !ok {
+		t.Fatal("SoftDeleteForWorkspace ok = false, want true")
+	}
+	if recording.DeletedAt == nil || !recording.DeletedAt.Equal(deletedAt) {
+		t.Fatalf("DeletedAt = %v, want %s", recording.DeletedAt, deletedAt)
+	}
+	if recording.DeletedByUserID != "usr_dev" {
+		t.Fatalf("DeletedByUserID = %q, want usr_dev", recording.DeletedByUserID)
+	}
+	query := strings.ToLower(db.calls[0].query)
+	if !strings.Contains(query, "update recordings") || !strings.Contains(query, "set deleted_at") || !strings.Contains(query, "deleted_by_user_id") || !strings.Contains(query, "deleted_at is null") {
+		t.Fatalf("query = %q, want soft delete update", db.calls[0].query)
+	}
+	if got, want := db.calls[0].args[0], "wsp_default"; got != want {
+		t.Fatalf("workspace id arg = %q, want %q", got, want)
+	}
+	if got, want := db.calls[0].args[1], "rec_pg"; got != want {
+		t.Fatalf("recording id arg = %q, want %q", got, want)
+	}
+	if _, ok := db.calls[0].args[2].(time.Time); !ok {
+		t.Fatalf("deleted_at arg = %#v, want time.Time", db.calls[0].args[2])
+	}
+	if got, want := db.calls[0].args[3], "usr_dev"; got != want {
+		t.Fatalf("deleted_by arg = %q, want %q", got, want)
+	}
+}
+
+func TestPostgresStoreSoftDeleteForWorkspaceReturnsFalseForMissingRecording(t *testing.T) {
+	db := newPostgresExecutorSpy(postgresErrorRow(sql.ErrNoRows))
+	store := NewPostgresStore(db)
+
+	_, ok, err := store.SoftDeleteForWorkspace(SoftDeleteRecordingInput{
+		WorkspaceID:     "wsp_default",
+		ID:              "rec_missing",
+		DeletedByUserID: "usr_dev",
+	})
+	if err != nil {
+		t.Fatalf("SoftDeleteForWorkspace returned error: %v", err)
+	}
+	if ok {
+		t.Fatal("SoftDeleteForWorkspace ok = true, want false")
 	}
 }
 

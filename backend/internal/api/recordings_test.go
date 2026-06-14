@@ -13,6 +13,7 @@ import (
 	"net/textproto"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/zzyhdu/soniq/backend/internal/domain"
 	"github.com/zzyhdu/soniq/backend/internal/recordings"
@@ -134,12 +135,15 @@ func (s *fakeRecordingStore) Create(input recordings.CreateRecordingInput) (doma
 
 func (s *fakeRecordingStore) Get(id string) (domain.Recording, bool, error) {
 	recording, ok := s.stored[id]
+	if ok && recording.DeletedAt != nil {
+		return domain.Recording{}, false, nil
+	}
 	return recording, ok, nil
 }
 
 func (s *fakeRecordingStore) GetForWorkspace(input recordings.GetRecordingInput) (domain.Recording, bool, error) {
 	recording, ok := s.stored[input.ID]
-	if !ok || recording.WorkspaceID != input.WorkspaceID {
+	if !ok || recording.WorkspaceID != input.WorkspaceID || recording.DeletedAt != nil {
 		return domain.Recording{}, false, nil
 	}
 	return recording, true, nil
@@ -148,7 +152,7 @@ func (s *fakeRecordingStore) GetForWorkspace(input recordings.GetRecordingInput)
 func (s *fakeRecordingStore) ListByWorkspace(input recordings.ListRecordingsInput) ([]domain.Recording, error) {
 	result := []domain.Recording{}
 	for _, recording := range s.stored {
-		if recording.WorkspaceID == input.WorkspaceID {
+		if recording.WorkspaceID == input.WorkspaceID && recording.DeletedAt == nil {
 			result = append(result, recording)
 		}
 	}
@@ -160,7 +164,7 @@ func (s *fakeRecordingStore) UpdateStatus(input recordings.UpdateRecordingStatus
 		return domain.Recording{}, s.updateErr
 	}
 	recording, ok := s.stored[input.ID]
-	if !ok || recording.WorkspaceID != input.WorkspaceID {
+	if !ok || recording.WorkspaceID != input.WorkspaceID || recording.DeletedAt != nil {
 		return domain.Recording{}, errors.New("recording not found")
 	}
 	recording.Status = input.Status
@@ -174,7 +178,7 @@ func (s *fakeRecordingStore) UpdateStatus(input recordings.UpdateRecordingStatus
 
 func (s *fakeRecordingStore) ResetForRetry(input recordings.RetryRecordingInput) (domain.Recording, error) {
 	recording, ok := s.stored[input.ID]
-	if !ok || recording.WorkspaceID != input.WorkspaceID || recording.Status != domain.RecordingStatusFailed {
+	if !ok || recording.WorkspaceID != input.WorkspaceID || recording.DeletedAt != nil || recording.Status != domain.RecordingStatusFailed {
 		return domain.Recording{}, errors.New("recording not found or not failed")
 	}
 	recording.Status = domain.RecordingStatusUploaded
@@ -183,6 +187,19 @@ func (s *fakeRecordingStore) ResetForRetry(input recordings.RetryRecordingInput)
 	recording.CompletedAt = nil
 	s.stored[input.ID] = recording
 	return recording, nil
+}
+
+func (s *fakeRecordingStore) SoftDeleteForWorkspace(input recordings.SoftDeleteRecordingInput) (domain.Recording, bool, error) {
+	recording, ok := s.stored[input.ID]
+	if !ok || recording.WorkspaceID != input.WorkspaceID || recording.DeletedAt != nil {
+		return domain.Recording{}, false, nil
+	}
+	now := time.Now().UTC()
+	recording.DeletedAt = &now
+	recording.DeletedByUserID = input.DeletedByUserID
+	recording.UpdatedAt = now
+	s.stored[input.ID] = recording
+	return recording, true, nil
 }
 
 func (s *fakeRecordingStore) put(recording domain.Recording) {
@@ -839,6 +856,73 @@ func TestGetRecordingReturnsExistingRecording(t *testing.T) {
 	}
 	if body != created {
 		t.Fatalf("body = %+v, want %+v", body, created)
+	}
+}
+
+func TestDeleteRecordingSoftDeletesAndHidesRecording(t *testing.T) {
+	store := newFakeRecordingStore()
+	created, err := store.Create(recordings.CreateRecordingInput{
+		WorkspaceID:  testWorkspaceID,
+		Title:        "Weekly sync",
+		WorkflowType: domain.WorkflowTypeMeeting,
+		Language:     "en",
+	})
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+	router := NewRouterWithStore(store)
+
+	deleteRequest := httptest.NewRequest(http.MethodDelete, "/workspaces/wsp_default/recordings/"+created.ID, nil)
+	deleteResponse := httptest.NewRecorder()
+	router.ServeHTTP(deleteResponse, deleteRequest)
+
+	if deleteResponse.Code != http.StatusNoContent {
+		t.Fatalf("delete status code = %d, want %d; body=%s", deleteResponse.Code, http.StatusNoContent, deleteResponse.Body.String())
+	}
+	stored := store.stored[created.ID]
+	if stored.DeletedAt == nil {
+		t.Fatal("stored DeletedAt = nil, want soft-deleted recording")
+	}
+	if stored.DeletedByUserID != testUserID {
+		t.Fatalf("stored DeletedByUserID = %q, want %q", stored.DeletedByUserID, testUserID)
+	}
+
+	getRequest := httptest.NewRequest(http.MethodGet, "/workspaces/wsp_default/recordings/"+created.ID, nil)
+	getResponse := httptest.NewRecorder()
+	router.ServeHTTP(getResponse, getRequest)
+	if getResponse.Code != http.StatusNotFound {
+		t.Fatalf("get deleted status code = %d, want %d", getResponse.Code, http.StatusNotFound)
+	}
+
+	listRequest := httptest.NewRequest(http.MethodGet, "/workspaces/wsp_default/recordings", nil)
+	listResponse := httptest.NewRecorder()
+	router.ServeHTTP(listResponse, listRequest)
+	if listResponse.Code != http.StatusOK {
+		t.Fatalf("list status code = %d, want %d; body=%s", listResponse.Code, http.StatusOK, listResponse.Body.String())
+	}
+	var body listRecordingsResponse
+	if err := json.NewDecoder(listResponse.Body).Decode(&body); err != nil {
+		t.Fatalf("decode list body: %v", err)
+	}
+	if len(body.Recordings) != 0 {
+		t.Fatalf("recordings = %+v, want deleted recording hidden", body.Recordings)
+	}
+}
+
+func TestDeleteRecordingReturnsNotFoundForMissingOrCrossWorkspaceRecording(t *testing.T) {
+	store := newFakeRecordingStore()
+	store.put(domain.Recording{ID: "rec_other", WorkspaceID: "wsp_other", Title: "Other", Status: domain.RecordingStatusCompleted, WorkflowType: domain.WorkflowTypeMeeting})
+	router := NewRouterWithStore(store)
+
+	for _, id := range []string{"rec_missing", "rec_other"} {
+		request := httptest.NewRequest(http.MethodDelete, "/workspaces/wsp_default/recordings/"+id, nil)
+		response := httptest.NewRecorder()
+
+		router.ServeHTTP(response, request)
+
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("delete %s status code = %d, want %d", id, response.Code, http.StatusNotFound)
+		}
 	}
 }
 

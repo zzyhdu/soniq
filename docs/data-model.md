@@ -152,7 +152,7 @@ updated_at
 
 The current application Postgres schema is intentionally smaller than the long-term model above. Implemented tables are:
 
-- `recordings` for recording metadata, upload metadata, status, and timestamps.
+- `recordings` for recording metadata, upload metadata, status, soft-delete metadata, and timestamps.
 - `recording_audio_probes` for original-audio `ffprobe` metadata and raw probe JSON.
 - `recording_normalized_audios` for the current normalized WAV/PCM artifact metadata (`object_key`, `content_type`, `size_bytes`, `format_name`, `codec_name`, `sample_rate`, `channels`, `normalized_at`).
 - `recording_transcripts` for the latest provider-neutral transcript per recording.
@@ -161,3 +161,5 @@ The current application Postgres schema is intentionally smaller than the long-t
 - `recording_mind_maps` for the latest provider-neutral mind map per recording.
 
 A generic `Artifact` table, workspace/user tenancy tables, workflow run history, and retention policy tables are still future scope. Temporal's internal database remains separate from Soniq application Postgres.
+
+User-facing recording deletion currently sets `recordings.deleted_at` and `recordings.deleted_by_user_id`; it does not physically delete child rows or storage artifacts. Existing child-table `ON DELETE CASCADE` constraints are retained for a future hard-delete purge path.

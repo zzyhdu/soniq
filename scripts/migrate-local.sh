@@ -212,6 +212,37 @@ apply_recording_mind_maps_v4() {
   log "recorded recording mind maps version 4"
 }
 
+recording_soft_delete_present() {
+  [[ "$(psql_scalar "SELECT
+    (
+      SELECT count(*) = 2
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'recordings'
+        AND column_name IN ('deleted_at', 'deleted_by_user_id')
+    )
+    AND to_regclass('public.recordings_workspace_active_created_at_idx') IS NOT NULL
+    AND to_regclass('public.recordings_workspace_deleted_at_idx') IS NOT NULL")" == "t" ]]
+}
+
+apply_recording_soft_delete_v5() {
+  if migration_applied "5"; then
+    log "recording soft delete version 5 already recorded; skipping"
+    return 0
+  fi
+
+  if recording_soft_delete_present; then
+    log "recording soft delete already present; recording version 5"
+    record_migration "5"
+    return 0
+  fi
+
+  log "applying recording soft delete version 5"
+  psql_apply "backend/migrations/0005_add_recording_soft_delete.up.sql"
+  record_migration "5"
+  log "recorded recording soft delete version 5"
+}
+
 main() {
   cd "$ROOT_DIR"
 
@@ -220,6 +251,7 @@ main() {
   apply_recording_failure_metadata_v2
   apply_password_sessions_v3
   apply_recording_mind_maps_v4
+  apply_recording_soft_delete_v5
 
   log "local Soniq application migrations are up to date"
 }

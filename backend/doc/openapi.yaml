@@ -271,6 +271,28 @@ paths:
           $ref: '#/components/responses/Error'
         default:
           $ref: '#/components/responses/Error'
+    delete:
+      summary: Soft delete recording
+      description: Moves an active recording to Trash by setting deletion metadata. Generated results and audio artifacts are not physically purged by this operation.
+      operationId: deleteRecording
+      security:
+        - CookieAuth: []
+          CSRFToken: []
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
+        - $ref: '#/components/parameters/RecordingID'
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '204':
+          description: Recording moved to Trash.
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
   /workspaces/{workspace_id}/recordings/{recording_id}/status:
     get:
       summary: Get recording status
@@ -495,6 +517,11 @@ components:
         failed_at:
           type: string
           format: date-time
+        deleted_at:
+          type: string
+          format: date-time
+        deleted_by_user_id:
+          type: string
         created_at:
           type: string
           format: date-time

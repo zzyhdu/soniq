@@ -36,6 +36,7 @@ import {
 
 import {
   isUnauthorizedApiError,
+  useDeleteRecording,
   useMe,
   useRecordingStatus,
   useRecordings,
@@ -76,6 +77,7 @@ export function App() {
   const [statusFilter, setStatusFilter] = useState<RecordingStatusFilter>('all');
   const [workflowTypeFilter, setWorkflowTypeFilter] = useState<WorkflowType | 'all'>('all');
   const [activeView, setActiveView] = useState<AppView>('recordings');
+  const [deleteDialogRecording, setDeleteDialogRecording] = useState<Recording | null>(null);
 
   const resetSessionState = useCallback(() => {
     setSelectedWorkspaceId(null);
@@ -86,6 +88,7 @@ export function App() {
     setStatusFilter('all');
     setWorkflowTypeFilter('all');
     setActiveView('recordings');
+    setDeleteDialogRecording(null);
     replaceAppRoute({ workspaceId: null, recordingId: null });
   }, []);
 
@@ -152,6 +155,7 @@ export function App() {
   const recordingsQuery = useRecordings(selectedWorkspaceId, isAuthenticated);
   const recordings = recordingsQuery.data?.recordings ?? [];
   const uploadRecordingMutation = useUploadRecording(selectedWorkspaceId);
+  const deleteRecordingMutation = useDeleteRecording(selectedWorkspaceId);
   const retryRecordingMutation = useRetryRecording(selectedWorkspaceId, selectedRecordingId);
   const selectedRecording = recordings.find((recording) => recording.id === selectedRecordingId) ??
     (latestProcessingRequest?.recording.id === selectedRecordingId ? latestProcessingRequest.recording : undefined);
@@ -161,6 +165,7 @@ export function App() {
   const statusError = statusQuery.error instanceof Error ? statusQuery.error.message : null;
   const uploadError = uploadRecordingMutation.error instanceof Error ? uploadRecordingMutation.error.message : null;
   const retryError = retryRecordingMutation.error instanceof Error ? retryRecordingMutation.error.message : null;
+  const deleteError = deleteRecordingMutation.error instanceof Error ? deleteRecordingMutation.error.message : null;
   const meError = meQuery.error instanceof Error ? meQuery.error.message : null;
   const workspacesError = workspacesQuery.error instanceof Error ? workspacesQuery.error.message : null;
   const recordingsError = recordingsQuery.error instanceof Error ? recordingsQuery.error.message : null;
@@ -200,6 +205,7 @@ export function App() {
   function handleSelectRecording(recordingId: string) {
     setSelectedRecordingId(recordingId);
     setLatestProcessingRequest(null);
+    setDeleteDialogRecording(null);
     setActiveView('recordings');
     if (selectedWorkspaceId !== null) {
       pushAppRoute({ workspaceId: selectedWorkspaceId, recordingId });
@@ -231,6 +237,32 @@ export function App() {
     setSelectedRecordingId(response.recording.id);
     setActiveView('recordings');
     pushAppRoute({ workspaceId: response.recording.workspace_id, recordingId: response.recording.id });
+  }
+
+  async function handleConfirmDeleteRecording() {
+    if (deleteDialogRecording === null) {
+      return;
+    }
+
+    try {
+      await deleteRecordingMutation.mutateAsync(deleteDialogRecording.id);
+    } catch {
+      return;
+    }
+
+    if (selectedRecordingId === deleteDialogRecording.id) {
+      setSelectedRecordingId(null);
+      setLatestProcessingRequest(null);
+      if (selectedWorkspaceId !== null) {
+        replaceAppRoute({ workspaceId: selectedWorkspaceId, recordingId: null });
+      }
+    }
+    setDeleteDialogRecording(null);
+  }
+
+  function handleRequestDeleteRecording(recording: Recording) {
+    deleteRecordingMutation.reset();
+    setDeleteDialogRecording(recording);
   }
 
   function handleSelectView(view: AppView) {
@@ -356,6 +388,7 @@ export function App() {
             onRetry={currentStatus === 'failed' ? handleRetryRecording : undefined}
             isRetrying={retryRecordingMutation.isPending}
             retryError={retryError}
+            onDelete={handleRequestDeleteRecording}
             onUploadClick={() => setIsUploadOpen(true)}
             onBack={handleBackToLibrary}
           />
@@ -373,6 +406,16 @@ export function App() {
           onClose={() => setIsUploadOpen(false)}
           onUpload={(input) => uploadRecordingMutation.mutateAsync(input)}
           onUploaded={handleUploaded}
+        />
+      )}
+
+      {deleteDialogRecording !== null && (
+        <DeleteRecordingDialog
+          recording={deleteDialogRecording}
+          isDeleting={deleteRecordingMutation.isPending}
+          error={deleteError}
+          onCancel={() => setDeleteDialogRecording(null)}
+          onConfirm={handleConfirmDeleteRecording}
         />
       )}
     </main>
@@ -584,6 +627,7 @@ type RecordingDetailPanelProps = {
   onRetry?: () => void;
   isRetrying: boolean;
   retryError: string | null;
+  onDelete: (recording: Recording) => void;
   onUploadClick: () => void;
   onBack: () => void;
 };
@@ -601,6 +645,7 @@ function RecordingDetailPanel({
   onRetry,
   isRetrying,
   retryError,
+  onDelete,
   onUploadClick,
   onBack,
 }: RecordingDetailPanelProps) {
@@ -666,7 +711,7 @@ function RecordingDetailPanel({
             <Button type="button" variant="ghost" size="icon" className="size-8 rounded text-[#45474c] hover:bg-[#f2f4f6]" disabled title="More actions are planned" aria-label="More actions">
               <MoreHorizontal className="size-4" aria-hidden="true" />
             </Button>
-            <Button type="button" variant="ghost" size="icon" className="size-8 rounded text-[#ba1a1a] hover:bg-[#ffdad6]" disabled title="Delete API is planned" aria-label="Delete recording">
+            <Button type="button" variant="ghost" size="icon" className="size-8 rounded text-[#ba1a1a] hover:bg-[#ffdad6]" title="Delete recording" aria-label="Delete recording" onClick={() => onDelete(recording)}>
               <Trash2 className="size-4" aria-hidden="true" />
             </Button>
           </div>
@@ -841,6 +886,55 @@ function UploadDrawer({
             error={error}
             onCancel={onClose}
           />
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function DeleteRecordingDialog({
+  recording,
+  isDeleting,
+  error,
+  onCancel,
+  onConfirm,
+}: {
+  recording: Recording;
+  isDeleting: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4" role="dialog" aria-modal="true" aria-labelledby="delete-recording-title">
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/30"
+        aria-label="Cancel delete recording"
+        onClick={onCancel}
+        disabled={isDeleting}
+      />
+      <section className="relative w-full max-w-md rounded border border-[#c5c6cd] bg-white p-5 shadow-xl">
+        <div className="space-y-2">
+          <h2 id="delete-recording-title" className="text-[18px] font-semibold leading-6 text-[#091426]">Delete recording?</h2>
+          <p className="text-[14px] leading-6 text-[#45474c]">
+            This moves <span className="font-medium text-[#191c1e]">{recording.title}</span> to Trash and removes it from the active recording library. Generated results and audio artifacts are kept until permanent deletion is available from Trash.
+          </p>
+        </div>
+
+        {error !== null && (
+          <p className="mt-4 rounded border border-[#ffdad6] bg-[#fff7f7] px-3 py-2 text-[13px] text-[#ba1a1a]" role="alert">
+            {error}
+          </p>
+        )}
+
+        <div className="mt-5 flex justify-end gap-2">
+          <Button type="button" variant="outline" className="rounded border-[#c5c6cd]" onClick={onCancel} disabled={isDeleting}>
+            Cancel
+          </Button>
+          <Button type="button" className="rounded bg-[#ba1a1a] text-white hover:bg-[#93000a]" onClick={onConfirm} disabled={isDeleting}>
+            {isDeleting ? 'Deleting...' : 'Delete recording'}
+          </Button>
         </div>
       </section>
     </div>

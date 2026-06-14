@@ -18,6 +18,8 @@ type PostgresStore struct {
 	db storedb.PostgresExecutor
 }
 
+const recordingColumns = `id, workspace_id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, failure_reason, completed_at, failed_at, deleted_at, deleted_by_user_id, created_at, updated_at`
+
 // NewPostgresStore creates a Postgres-backed recording store.
 func NewPostgresStore(db storedb.PostgresExecutor) *PostgresStore {
 	return &PostgresStore{db: db}
@@ -51,7 +53,7 @@ func (s *PostgresStore) Create(input CreateRecordingInput) (domain.Recording, er
 		context.Background(),
 		`INSERT INTO recordings (id, workspace_id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-RETURNING id, workspace_id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, failure_reason, completed_at, failed_at, created_at, updated_at`,
+RETURNING `+recordingColumns,
 		recording.ID,
 		recording.WorkspaceID,
 		recording.Title,
@@ -79,9 +81,10 @@ func (s *PostgresStore) Get(id string) (domain.Recording, bool, error) {
 	var recording domain.Recording
 	row := s.db.QueryRow(
 		context.Background(),
-		`SELECT id, workspace_id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, failure_reason, completed_at, failed_at, created_at, updated_at
+		`SELECT `+recordingColumns+`
 FROM recordings
-WHERE id = $1`,
+WHERE id = $1
+  AND deleted_at IS NULL`,
 		id,
 	)
 	if err := scanRecording(row, &recording); err != nil {
@@ -105,10 +108,11 @@ func (s *PostgresStore) GetForWorkspace(input GetRecordingInput) (domain.Recordi
 	var recording domain.Recording
 	row := s.db.QueryRow(
 		context.Background(),
-		`SELECT id, workspace_id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, failure_reason, completed_at, failed_at, created_at, updated_at
+		`SELECT `+recordingColumns+`
 FROM recordings
 WHERE workspace_id = $1
-  AND id = $2`,
+  AND id = $2
+  AND deleted_at IS NULL`,
 		input.WorkspaceID,
 		input.ID,
 	)
@@ -140,9 +144,10 @@ func (s *PostgresStore) ListByWorkspace(input ListRecordingsInput) ([]domain.Rec
 
 	rows, err := s.db.Query(
 		context.Background(),
-		`SELECT id, workspace_id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, failure_reason, completed_at, failed_at, created_at, updated_at
+		`SELECT `+recordingColumns+`
 FROM recordings
 WHERE workspace_id = $1
+  AND deleted_at IS NULL
 ORDER BY created_at DESC, id DESC
 LIMIT $2`,
 		input.WorkspaceID,
@@ -190,7 +195,8 @@ SET status = $2,
     failed_at = CASE WHEN $2::text = 'failed' THEN $3::timestamptz ELSE NULL::timestamptz END,
     updated_at = $3
 WHERE id = $1
-RETURNING id, workspace_id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, failure_reason, completed_at, failed_at, created_at, updated_at`,
+  AND deleted_at IS NULL
+RETURNING `+recordingColumns,
 			input.ID,
 			input.Status,
 			updatedAt,
@@ -207,7 +213,8 @@ SET status = $3,
     updated_at = $4
 WHERE workspace_id = $1
   AND id = $2
-RETURNING id, workspace_id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, failure_reason, completed_at, failed_at, created_at, updated_at`,
+  AND deleted_at IS NULL
+RETURNING `+recordingColumns,
 			input.WorkspaceID,
 			input.ID,
 			input.Status,
@@ -246,7 +253,8 @@ SET status = 'uploaded',
 WHERE workspace_id = $1
   AND id = $2
   AND status = 'failed'
-RETURNING id, workspace_id, title, status, workflow_type, language, audio_object_key, audio_content_type, audio_size_bytes, failure_reason, completed_at, failed_at, created_at, updated_at`,
+  AND deleted_at IS NULL
+RETURNING `+recordingColumns,
 		input.WorkspaceID,
 		input.ID,
 		updatedAt,
@@ -258,6 +266,41 @@ RETURNING id, workspace_id, title, status, workflow_type, language, audio_object
 		return domain.Recording{}, fmt.Errorf("reset recording for retry: %w", err)
 	}
 	return recording, nil
+}
+
+// SoftDeleteForWorkspace marks an active recording as deleted within a workspace.
+func (s *PostgresStore) SoftDeleteForWorkspace(input SoftDeleteRecordingInput) (domain.Recording, bool, error) {
+	if err := validateSoftDeleteRecordingInput(input); err != nil {
+		return domain.Recording{}, false, err
+	}
+	if s == nil || s.db == nil {
+		return domain.Recording{}, false, fmt.Errorf("postgres recording store requires database executor")
+	}
+
+	deletedAt := time.Now().UTC()
+	var recording domain.Recording
+	row := s.db.QueryRow(
+		context.Background(),
+		`UPDATE recordings
+SET deleted_at = $3,
+    deleted_by_user_id = $4,
+    updated_at = $3
+WHERE workspace_id = $1
+  AND id = $2
+  AND deleted_at IS NULL
+RETURNING `+recordingColumns,
+		input.WorkspaceID,
+		input.ID,
+		deletedAt,
+		input.DeletedByUserID,
+	)
+	if err := scanRecording(row, &recording); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.Recording{}, false, nil
+		}
+		return domain.Recording{}, false, fmt.Errorf("soft delete recording: %w", err)
+	}
+	return recording, true, nil
 }
 
 // UpsertNormalizedAudio stores or replaces normalized audio metadata for a recording.
@@ -612,6 +655,8 @@ func scanMindMap(row storedb.PostgresRow, mindMap *RecordingMindMap) error {
 func scanRecording(row storedb.PostgresRow, recording *domain.Recording) error {
 	var completedAt sql.NullTime
 	var failedAt sql.NullTime
+	var deletedAt sql.NullTime
+	var deletedByUserID sql.NullString
 	if err := row.Scan(
 		&recording.ID,
 		&recording.WorkspaceID,
@@ -625,6 +670,8 @@ func scanRecording(row storedb.PostgresRow, recording *domain.Recording) error {
 		&recording.FailureReason,
 		&completedAt,
 		&failedAt,
+		&deletedAt,
+		&deletedByUserID,
 		&recording.CreatedAt,
 		&recording.UpdatedAt,
 	); err != nil {
@@ -639,6 +686,15 @@ func scanRecording(row storedb.PostgresRow, recording *domain.Recording) error {
 	if failedAt.Valid {
 		failed := failedAt.Time
 		recording.FailedAt = &failed
+	}
+	recording.DeletedAt = nil
+	if deletedAt.Valid {
+		deleted := deletedAt.Time
+		recording.DeletedAt = &deleted
+	}
+	recording.DeletedByUserID = ""
+	if deletedByUserID.Valid {
+		recording.DeletedByUserID = deletedByUserID.String
 	}
 	return nil
 }

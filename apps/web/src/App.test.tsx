@@ -149,6 +149,32 @@ describe('App workspace recording flow', () => {
     expect(screen.getByText('Full transcript text.')).toBeInTheDocument();
   });
 
+  it('soft deletes the selected recording after confirmation', async () => {
+    const requests = mockAppFetch();
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(await screen.findByRole('button', { name: /Weekly sync/i }));
+    expect(await screen.findByText('Weekly sync summary')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /delete recording/i }));
+    const dialog = await screen.findByRole('dialog', { name: /delete recording/i });
+    expect(within(dialog).getByText(/moves/i)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: /^Delete recording$/i }));
+
+    await waitFor(() => {
+      expect(requests.some((request) => (
+        request.method === 'DELETE' &&
+        request.url === '/workspaces/wsp_default/recordings/rec_done'
+      ))).toBe(true);
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /Weekly sync/i })).not.toBeInTheDocument();
+    });
+    expect(screen.getByText(/Select a recording from the library/i)).toBeInTheDocument();
+  });
+
   it('returns to sign in when recording details are unauthorized', async () => {
     mockAppFetch({ detailsUnauthorized: true });
     const user = userEvent.setup();
@@ -286,6 +312,7 @@ function mockAppFetch(options: {
 } = {}) {
   const requests: CapturedRequest[] = [];
   let authenticated = true;
+  const deletedRecordingIds = new Set<string>();
 
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const url = requestUrl(input);
@@ -366,7 +393,7 @@ function mockAppFetch(options: {
             }),
           ] : []),
           recordingFixture({ id: 'rec_done', title: 'Weekly sync', status: 'completed' }),
-        ],
+        ].filter((recording) => !deletedRecordingIds.has(recording.id)),
       });
     }
 
@@ -386,6 +413,12 @@ function mockAppFetch(options: {
     }
 
     if (url === '/workspaces/wsp_default/recordings/rec_done/status') {
+      if (deletedRecordingIds.has('rec_done')) {
+        return jsonResponse(apiError('not_found', 'not found', 404), {
+          status: 404,
+          statusText: 'Not Found',
+        });
+      }
       return jsonResponse({ id: 'rec_done', workspace_id: 'wsp_default', status: 'completed' });
     }
 
@@ -419,6 +452,12 @@ function mockAppFetch(options: {
     }
 
     if (url === '/workspaces/wsp_default/recordings/rec_done/details') {
+      if (deletedRecordingIds.has('rec_done')) {
+        return jsonResponse(apiError('not_found', 'not found', 404), {
+          status: 404,
+          statusText: 'Not Found',
+        });
+      }
       if (options.detailsUnauthorized) {
         return jsonResponse(apiError('unauthenticated', 'resolve current user', 401), {
           status: 401,
@@ -426,6 +465,11 @@ function mockAppFetch(options: {
         });
       }
       return jsonResponse(recordingDetails());
+    }
+
+    if (url === '/workspaces/wsp_default/recordings/rec_done' && method === 'DELETE') {
+      deletedRecordingIds.add('rec_done');
+      return new Response(null, { status: 204 });
     }
 
     if (url === '/workspaces/wsp_default/recordings/rec_completing/details') {

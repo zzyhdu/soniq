@@ -197,6 +197,48 @@ func getRecordingHandler(store RecordingStore) http.HandlerFunc {
 	}
 }
 
+func deleteRecordingHandler(store RecordingStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			writeMethodNotAllowed(w, http.MethodDelete)
+			return
+		}
+		workspace, ok := workspaceFromRequest(w, r)
+		if !ok {
+			return
+		}
+		currentUser, ok := currentUserFromRequest(w, r)
+		if !ok {
+			return
+		}
+		id, ok := recordingIDFromRequest(w, r)
+		if !ok {
+			return
+		}
+
+		deleteStore, ok := store.(RecordingSoftDeleteStore)
+		if !ok {
+			writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "recording delete is not configured")
+			return
+		}
+		_, found, err := deleteStore.SoftDeleteForWorkspace(recordings.SoftDeleteRecordingInput{
+			WorkspaceID:     workspace.ID,
+			ID:              id,
+			DeletedByUserID: currentUser.UserID,
+		})
+		if err != nil {
+			writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "delete recording")
+			return
+		}
+		if !found {
+			writeAPIError(w, http.StatusNotFound, errorCodeNotFound, "not found")
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
 func getRecordingStatusHandler(store RecordingStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
