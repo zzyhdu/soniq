@@ -17,7 +17,7 @@ Completed foundation milestones:
 - Backend-owned OpenAPI + Scalar API Console served at `/openapi.yaml` and `/api-console`, with same-origin browser "Try it" support for upload, status, and details endpoints.
 - Basic product Web UI foundation under `apps/web`: pnpm workspace, typed `@soniq/api-client`, Vite React app shell, Tailwind/shadcn primitives, upload form, bookmarkable recording hash routes, processing status polling, failed-recording retry, and completed transcript/summary/mind-map display.
 
-The next focus is choosing the next product direction: provider productization, broader Web UI result browsing, or another user-facing workflow on top of the working local pipeline.
+The next focus is enterprise/product readiness, starting with Recording Library & Result Actions as documented in `docs/plans/2026-06-13-enterprise-product-readiness.zh-CN.md`.
 
 ## Phase 0 — Project skeleton and architecture docs
 
