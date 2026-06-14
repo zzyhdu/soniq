@@ -7,7 +7,9 @@ import {
   getRecording,
   getRecordingDetails,
   getRecordingStatus,
+  listDeletedRecordings,
   listRecordings,
+  restoreRecording,
   retryRecording,
   uploadRecording,
 } from './recordings';
@@ -131,6 +133,17 @@ describe('recording reads', () => {
     expect(fetchMock).toHaveBeenCalledWith('/workspaces/wsp_default/recordings?limit=10', { method: 'GET' });
   });
 
+  it('lists deleted workspace recordings with an optional limit', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({ recordings: [recordingFixture({ id: 'rec-deleted', deleted_at: '2026-06-07T01:00:00Z' })] }),
+    );
+
+    const result = await listDeletedRecordings('wsp_default', { limit: 5 }, { fetch: fetchMock });
+
+    expect(result.recordings).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledWith('/workspaces/wsp_default/recordings/trash?limit=5', { method: 'GET' });
+  });
+
   it('URL-encodes workspace and recording ids for read requests', async () => {
     const fetchMock = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(jsonResponse(recordingFixture({ id: 'rec/with space' })))
@@ -182,6 +195,21 @@ describe('recording delete', () => {
   });
 });
 
+describe('recording restore', () => {
+  it('posts to the workspace restore endpoint with encoded ids', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(recordingFixture({ id: 'rec/with space', workspace_id: 'wsp/default' })),
+    );
+
+    const result = await restoreRecording('wsp/default', 'rec/with space', { fetch: fetchMock });
+
+    expect(result.id).toBe('rec/with space');
+    expect(fetchMock).toHaveBeenCalledWith('/workspaces/wsp%2Fdefault/recordings/rec%2Fwith%20space/restore', {
+      method: 'POST',
+    });
+  });
+});
+
 describe('API errors', () => {
   it('turns JSON error responses into typed errors', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
@@ -209,6 +237,8 @@ type RecordingFixture = {
   failure_reason?: string;
   completed_at?: string;
   failed_at?: string;
+  deleted_at?: string;
+  deleted_by_user_id?: string;
   created_at: string;
   updated_at: string;
 };

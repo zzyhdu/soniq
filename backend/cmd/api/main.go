@@ -47,7 +47,7 @@ type temporalWorkflowClient interface {
 type temporalClientFactory func(context.Context, config.Config) (temporalWorkflowClient, error)
 
 type appStoreClient interface {
-	RecordingStore() api.RecordingDetailsStore
+	RecordingStore() api.RecordingStore
 	WorkspaceStore() api.WorkspaceStore
 	AuthStore() appAuthStore
 	Close()
@@ -168,7 +168,7 @@ type postgresAppStoreClient struct {
 	pool       *pgxpool.Pool
 }
 
-func (s *postgresAppStoreClient) RecordingStore() api.RecordingDetailsStore {
+func (s *postgresAppStoreClient) RecordingStore() api.RecordingStore {
 	return s.recordings
 }
 

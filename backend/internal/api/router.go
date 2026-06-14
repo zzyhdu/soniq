@@ -19,28 +19,15 @@ type RecordingStore interface {
 	Create(recordings.CreateRecordingInput) (domain.Recording, error)
 	GetForWorkspace(input recordings.GetRecordingInput) (domain.Recording, bool, error)
 	ListByWorkspace(input recordings.ListRecordingsInput) ([]domain.Recording, error)
-}
-
-// RecordingDetailsStore is the optional persistence seam for transcript and summary detail reads.
-type RecordingDetailsStore interface {
-	RecordingStore
 	GetTranscript(recordingID string) (recordings.RecordingTranscript, bool, error)
 	ListTranscriptSegments(recordingID string) ([]recordings.RecordingTranscriptSegment, error)
 	GetSummary(recordingID string) (recordings.RecordingSummary, bool, error)
 	GetMindMap(recordingID string) (recordings.RecordingMindMap, bool, error)
-}
-
-// RecordingRetryStore is the optional persistence seam for resetting failed recordings before retry.
-type RecordingRetryStore interface {
-	RecordingStore
 	ResetForRetry(input recordings.RetryRecordingInput) (domain.Recording, error)
 	UpdateStatus(input recordings.UpdateRecordingStatusInput) (domain.Recording, error)
-}
-
-// RecordingSoftDeleteStore is the optional persistence seam for soft-deleting recordings.
-type RecordingSoftDeleteStore interface {
-	RecordingStore
 	SoftDeleteForWorkspace(input recordings.SoftDeleteRecordingInput) (domain.Recording, bool, error)
+	ListDeletedByWorkspace(input recordings.ListDeletedRecordingsInput) ([]domain.Recording, error)
+	RestoreForWorkspace(input recordings.RestoreRecordingInput) (domain.Recording, bool, error)
 }
 
 // WorkspaceStore is the persistence seam required by identity and workspace-scoped handlers.
@@ -75,8 +62,40 @@ func (unconfiguredRecordingStore) ListByWorkspace(recordings.ListRecordingsInput
 	return nil, errRecordingStoreNotConfigured
 }
 
+func (unconfiguredRecordingStore) GetTranscript(string) (recordings.RecordingTranscript, bool, error) {
+	return recordings.RecordingTranscript{}, false, errRecordingStoreNotConfigured
+}
+
+func (unconfiguredRecordingStore) ListTranscriptSegments(string) ([]recordings.RecordingTranscriptSegment, error) {
+	return nil, errRecordingStoreNotConfigured
+}
+
+func (unconfiguredRecordingStore) GetSummary(string) (recordings.RecordingSummary, bool, error) {
+	return recordings.RecordingSummary{}, false, errRecordingStoreNotConfigured
+}
+
+func (unconfiguredRecordingStore) GetMindMap(string) (recordings.RecordingMindMap, bool, error) {
+	return recordings.RecordingMindMap{}, false, errRecordingStoreNotConfigured
+}
+
 func (unconfiguredRecordingStore) ResetForRetry(recordings.RetryRecordingInput) (domain.Recording, error) {
 	return domain.Recording{}, errRecordingStoreNotConfigured
+}
+
+func (unconfiguredRecordingStore) UpdateStatus(recordings.UpdateRecordingStatusInput) (domain.Recording, error) {
+	return domain.Recording{}, errRecordingStoreNotConfigured
+}
+
+func (unconfiguredRecordingStore) SoftDeleteForWorkspace(recordings.SoftDeleteRecordingInput) (domain.Recording, bool, error) {
+	return domain.Recording{}, false, errRecordingStoreNotConfigured
+}
+
+func (unconfiguredRecordingStore) ListDeletedByWorkspace(recordings.ListDeletedRecordingsInput) ([]domain.Recording, error) {
+	return nil, errRecordingStoreNotConfigured
+}
+
+func (unconfiguredRecordingStore) RestoreForWorkspace(recordings.RestoreRecordingInput) (domain.Recording, bool, error) {
+	return domain.Recording{}, false, errRecordingStoreNotConfigured
 }
 
 func (unconfiguredWorkspaceStore) GetUser(context.Context, string) (domain.User, bool, error) {
@@ -192,10 +211,12 @@ func newRouterWithDependencies(store RecordingStore, workspaceStore WorkspaceSto
 			router.MethodFunc(http.MethodGet, "/recordings", listRecordingsHandler(store))
 			router.MethodFunc(http.MethodPost, "/recordings", createRecordingHandler(store))
 			router.MethodFunc(http.MethodPost, "/recordings/upload", uploadRecordingHandler(store, processor, objectStore))
+			router.MethodFunc(http.MethodGet, "/recordings/trash", listDeletedRecordingsHandler(store))
 			router.MethodFunc(http.MethodGet, "/recordings/{recording_id}", getRecordingHandler(store))
 			router.MethodFunc(http.MethodDelete, "/recordings/{recording_id}", deleteRecordingHandler(store))
 			router.MethodFunc(http.MethodGet, "/recordings/{recording_id}/status", getRecordingStatusHandler(store))
 			router.MethodFunc(http.MethodGet, "/recordings/{recording_id}/details", getRecordingDetailsHandler(store))
+			router.MethodFunc(http.MethodPost, "/recordings/{recording_id}/restore", restoreRecordingHandler(store))
 			router.MethodFunc(http.MethodPost, "/recordings/{recording_id}/retry", retryRecordingHandler(store, processor))
 		})
 	})

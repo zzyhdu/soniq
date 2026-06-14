@@ -334,7 +334,7 @@ func newBuildHandlerRecordingStoreSpy() *buildHandlerRecordingStoreSpy {
 	}
 }
 
-func (s *buildHandlerRecordingStoreSpy) RecordingStore() api.RecordingDetailsStore {
+func (s *buildHandlerRecordingStoreSpy) RecordingStore() api.RecordingStore {
 	return s
 }
 
@@ -373,7 +373,7 @@ func (s *buildHandlerRecordingStoreSpy) Get(id string) (domain.Recording, bool, 
 
 func (s *buildHandlerRecordingStoreSpy) GetForWorkspace(input recordings.GetRecordingInput) (domain.Recording, bool, error) {
 	recording, ok := s.stored[input.ID]
-	if !ok || recording.WorkspaceID != input.WorkspaceID {
+	if !ok || recording.WorkspaceID != input.WorkspaceID || recording.DeletedAt != nil {
 		return domain.Recording{}, false, nil
 	}
 	return recording, true, nil
@@ -382,7 +382,7 @@ func (s *buildHandlerRecordingStoreSpy) GetForWorkspace(input recordings.GetReco
 func (s *buildHandlerRecordingStoreSpy) ListByWorkspace(input recordings.ListRecordingsInput) ([]domain.Recording, error) {
 	result := []domain.Recording{}
 	for _, recording := range s.stored {
-		if recording.WorkspaceID == input.WorkspaceID {
+		if recording.WorkspaceID == input.WorkspaceID && recording.DeletedAt == nil {
 			result = append(result, recording)
 		}
 	}
@@ -403,6 +403,63 @@ func (s *buildHandlerRecordingStoreSpy) GetSummary(string) (recordings.Recording
 
 func (s *buildHandlerRecordingStoreSpy) GetMindMap(string) (recordings.RecordingMindMap, bool, error) {
 	return recordings.RecordingMindMap{}, false, nil
+}
+
+func (s *buildHandlerRecordingStoreSpy) ResetForRetry(input recordings.RetryRecordingInput) (domain.Recording, error) {
+	recording, ok := s.stored[input.ID]
+	if !ok || recording.WorkspaceID != input.WorkspaceID {
+		return domain.Recording{}, errors.New("recording not found")
+	}
+	recording.Status = domain.RecordingStatusUploaded
+	recording.FailureReason = ""
+	recording.FailedAt = nil
+	recording.CompletedAt = nil
+	s.stored[input.ID] = recording
+	return recording, nil
+}
+
+func (s *buildHandlerRecordingStoreSpy) UpdateStatus(input recordings.UpdateRecordingStatusInput) (domain.Recording, error) {
+	recording, ok := s.stored[input.ID]
+	if !ok || recording.WorkspaceID != input.WorkspaceID {
+		return domain.Recording{}, errors.New("recording not found")
+	}
+	recording.Status = input.Status
+	recording.FailureReason = input.FailureReason
+	s.stored[input.ID] = recording
+	return recording, nil
+}
+
+func (s *buildHandlerRecordingStoreSpy) SoftDeleteForWorkspace(input recordings.SoftDeleteRecordingInput) (domain.Recording, bool, error) {
+	recording, ok := s.stored[input.ID]
+	if !ok || recording.WorkspaceID != input.WorkspaceID || recording.DeletedAt != nil {
+		return domain.Recording{}, false, nil
+	}
+	now := time.Now().UTC()
+	recording.DeletedAt = &now
+	recording.DeletedByUserID = input.DeletedByUserID
+	s.stored[input.ID] = recording
+	return recording, true, nil
+}
+
+func (s *buildHandlerRecordingStoreSpy) ListDeletedByWorkspace(input recordings.ListDeletedRecordingsInput) ([]domain.Recording, error) {
+	result := []domain.Recording{}
+	for _, recording := range s.stored {
+		if recording.WorkspaceID == input.WorkspaceID && recording.DeletedAt != nil {
+			result = append(result, recording)
+		}
+	}
+	return result, nil
+}
+
+func (s *buildHandlerRecordingStoreSpy) RestoreForWorkspace(input recordings.RestoreRecordingInput) (domain.Recording, bool, error) {
+	recording, ok := s.stored[input.ID]
+	if !ok || recording.WorkspaceID != input.WorkspaceID || recording.DeletedAt == nil {
+		return domain.Recording{}, false, nil
+	}
+	recording.DeletedAt = nil
+	recording.DeletedByUserID = ""
+	s.stored[input.ID] = recording
+	return recording, true, nil
 }
 
 func (s *buildHandlerRecordingStoreSpy) GetUser(_ context.Context, userID string) (domain.User, bool, error) {

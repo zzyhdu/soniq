@@ -97,6 +97,7 @@ type PipelineStore interface {
 	RecordingStore
 	TranscriptStore
 	SummaryStore
+	MindMapStore
 }
 
 // NormalizingPipelineStore is the complete persistence seam used once normalization participates in the activity set.
@@ -250,13 +251,12 @@ func NewRecordingProcessingActivitiesWithAudioProbe(store RecordingStore, resolv
 
 // NewRecordingProcessingActivitiesWithPipeline creates recording processing activities with all local pipeline dependencies.
 func NewRecordingProcessingActivitiesWithPipeline(store PipelineStore, resolver LocalObjectPathResolver, runner AudioProbeRunner, transcriptionProvider TranscriptionProvider, summaryProvider SummaryProvider) *RecordingProcessingActivities {
-	mindMapStore, _ := any(store).(MindMapStore)
 	mindMapProvider, _ := summaryProvider.(MindMapProvider)
 	return &RecordingProcessingActivities{
 		store:                 store,
 		transcriptStore:       store,
 		summaryStore:          store,
-		mindMapStore:          mindMapStore,
+		mindMapStore:          store,
 		pathResolver:          resolver,
 		probeRunner:           runner,
 		transcriptionProvider: transcriptionProvider,

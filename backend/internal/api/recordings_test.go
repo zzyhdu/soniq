@@ -67,10 +67,6 @@ type recordingDetailsFixture struct {
 	mindMapErr    error
 }
 
-type recordingOnlyStore struct {
-	stored map[string]domain.Recording
-}
-
 type getErrRecordingStore struct {
 	err error
 }
@@ -202,6 +198,28 @@ func (s *fakeRecordingStore) SoftDeleteForWorkspace(input recordings.SoftDeleteR
 	return recording, true, nil
 }
 
+func (s *fakeRecordingStore) ListDeletedByWorkspace(input recordings.ListDeletedRecordingsInput) ([]domain.Recording, error) {
+	result := []domain.Recording{}
+	for _, recording := range s.stored {
+		if recording.WorkspaceID == input.WorkspaceID && recording.DeletedAt != nil {
+			result = append(result, recording)
+		}
+	}
+	return result, nil
+}
+
+func (s *fakeRecordingStore) RestoreForWorkspace(input recordings.RestoreRecordingInput) (domain.Recording, bool, error) {
+	recording, ok := s.stored[input.ID]
+	if !ok || recording.WorkspaceID != input.WorkspaceID || recording.DeletedAt == nil {
+		return domain.Recording{}, false, nil
+	}
+	recording.DeletedAt = nil
+	recording.DeletedByUserID = ""
+	recording.UpdatedAt = time.Now().UTC()
+	s.stored[input.ID] = recording
+	return recording, true, nil
+}
+
 func (s *fakeRecordingStore) put(recording domain.Recording) {
 	if recording.WorkspaceID == "" {
 		recording.WorkspaceID = testWorkspaceID
@@ -278,33 +296,6 @@ func (s *fakeRecordingStore) GetMindMap(recordingID string) (recordings.Recordin
 	return fixture.mindMap, true, nil
 }
 
-func (s recordingOnlyStore) Create(recordings.CreateRecordingInput) (domain.Recording, error) {
-	return domain.Recording{}, errors.New("create should not be called")
-}
-
-func (s recordingOnlyStore) Get(id string) (domain.Recording, bool, error) {
-	recording, ok := s.stored[id]
-	return recording, ok, nil
-}
-
-func (s recordingOnlyStore) GetForWorkspace(input recordings.GetRecordingInput) (domain.Recording, bool, error) {
-	recording, ok := s.stored[input.ID]
-	if !ok || recording.WorkspaceID != input.WorkspaceID {
-		return domain.Recording{}, false, nil
-	}
-	return recording, true, nil
-}
-
-func (s recordingOnlyStore) ListByWorkspace(input recordings.ListRecordingsInput) ([]domain.Recording, error) {
-	result := []domain.Recording{}
-	for _, recording := range s.stored {
-		if recording.WorkspaceID == input.WorkspaceID {
-			result = append(result, recording)
-		}
-	}
-	return result, nil
-}
-
 func (s getErrRecordingStore) Create(recordings.CreateRecordingInput) (domain.Recording, error) {
 	return domain.Recording{}, errors.New("create should not be called")
 }
@@ -319,6 +310,42 @@ func (s getErrRecordingStore) GetForWorkspace(recordings.GetRecordingInput) (dom
 
 func (s getErrRecordingStore) ListByWorkspace(recordings.ListRecordingsInput) ([]domain.Recording, error) {
 	return nil, s.err
+}
+
+func (s getErrRecordingStore) GetTranscript(string) (recordings.RecordingTranscript, bool, error) {
+	return recordings.RecordingTranscript{}, false, s.err
+}
+
+func (s getErrRecordingStore) ListTranscriptSegments(string) ([]recordings.RecordingTranscriptSegment, error) {
+	return nil, s.err
+}
+
+func (s getErrRecordingStore) GetSummary(string) (recordings.RecordingSummary, bool, error) {
+	return recordings.RecordingSummary{}, false, s.err
+}
+
+func (s getErrRecordingStore) GetMindMap(string) (recordings.RecordingMindMap, bool, error) {
+	return recordings.RecordingMindMap{}, false, s.err
+}
+
+func (s getErrRecordingStore) ResetForRetry(recordings.RetryRecordingInput) (domain.Recording, error) {
+	return domain.Recording{}, s.err
+}
+
+func (s getErrRecordingStore) UpdateStatus(recordings.UpdateRecordingStatusInput) (domain.Recording, error) {
+	return domain.Recording{}, s.err
+}
+
+func (s getErrRecordingStore) SoftDeleteForWorkspace(recordings.SoftDeleteRecordingInput) (domain.Recording, bool, error) {
+	return domain.Recording{}, false, s.err
+}
+
+func (s getErrRecordingStore) ListDeletedByWorkspace(recordings.ListDeletedRecordingsInput) ([]domain.Recording, error) {
+	return nil, s.err
+}
+
+func (s getErrRecordingStore) RestoreForWorkspace(recordings.RestoreRecordingInput) (domain.Recording, bool, error) {
+	return domain.Recording{}, false, s.err
 }
 
 func (s *recordingProcessorSpy) Enqueue(recording domain.Recording) error {
@@ -926,6 +953,111 @@ func TestDeleteRecordingReturnsNotFoundForMissingOrCrossWorkspaceRecording(t *te
 	}
 }
 
+func TestListDeletedRecordingsAndRestoreRecording(t *testing.T) {
+	store := newFakeRecordingStore()
+	created, err := store.Create(recordings.CreateRecordingInput{
+		WorkspaceID:  testWorkspaceID,
+		Title:        "Weekly sync",
+		WorkflowType: domain.WorkflowTypeMeeting,
+		Language:     "en",
+	})
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+	router := NewRouterWithStore(store)
+
+	deleteRequest := httptest.NewRequest(http.MethodDelete, "/workspaces/wsp_default/recordings/"+created.ID, nil)
+	deleteResponse := httptest.NewRecorder()
+	router.ServeHTTP(deleteResponse, deleteRequest)
+	if deleteResponse.Code != http.StatusNoContent {
+		t.Fatalf("delete status code = %d, want %d; body=%s", deleteResponse.Code, http.StatusNoContent, deleteResponse.Body.String())
+	}
+
+	trashRequest := httptest.NewRequest(http.MethodGet, "/workspaces/wsp_default/recordings/trash", nil)
+	trashResponse := httptest.NewRecorder()
+	router.ServeHTTP(trashResponse, trashRequest)
+	if trashResponse.Code != http.StatusOK {
+		t.Fatalf("trash status code = %d, want %d; body=%s", trashResponse.Code, http.StatusOK, trashResponse.Body.String())
+	}
+	var trashBody listRecordingsResponse
+	if err := json.NewDecoder(trashResponse.Body).Decode(&trashBody); err != nil {
+		t.Fatalf("decode trash body: %v", err)
+	}
+	if got, want := len(trashBody.Recordings), 1; got != want {
+		t.Fatalf("trash recordings = %d, want %d", got, want)
+	}
+	if trashBody.Recordings[0].ID != created.ID || trashBody.Recordings[0].DeletedAt == nil {
+		t.Fatalf("trash recording = %+v, want deleted recording %s", trashBody.Recordings[0], created.ID)
+	}
+
+	restoreRequest := httptest.NewRequest(http.MethodPost, "/workspaces/wsp_default/recordings/"+created.ID+"/restore", nil)
+	restoreResponse := httptest.NewRecorder()
+	router.ServeHTTP(restoreResponse, restoreRequest)
+	if restoreResponse.Code != http.StatusOK {
+		t.Fatalf("restore status code = %d, want %d; body=%s", restoreResponse.Code, http.StatusOK, restoreResponse.Body.String())
+	}
+	var restored recordingResponse
+	if err := json.NewDecoder(restoreResponse.Body).Decode(&restored); err != nil {
+		t.Fatalf("decode restore body: %v", err)
+	}
+	if restored.ID != created.ID {
+		t.Fatalf("restored ID = %q, want %q", restored.ID, created.ID)
+	}
+	if restored.DeletedAt != nil || restored.DeletedByUserID != "" {
+		t.Fatalf("restored deletion metadata = %v/%q, want cleared", restored.DeletedAt, restored.DeletedByUserID)
+	}
+
+	activeListRequest := httptest.NewRequest(http.MethodGet, "/workspaces/wsp_default/recordings", nil)
+	activeListResponse := httptest.NewRecorder()
+	router.ServeHTTP(activeListResponse, activeListRequest)
+	if activeListResponse.Code != http.StatusOK {
+		t.Fatalf("active list status code = %d, want %d; body=%s", activeListResponse.Code, http.StatusOK, activeListResponse.Body.String())
+	}
+	var activeBody listRecordingsResponse
+	if err := json.NewDecoder(activeListResponse.Body).Decode(&activeBody); err != nil {
+		t.Fatalf("decode active list body: %v", err)
+	}
+	if got, want := len(activeBody.Recordings), 1; got != want {
+		t.Fatalf("active recordings = %d, want %d", got, want)
+	}
+	if activeBody.Recordings[0].ID != created.ID {
+		t.Fatalf("active recording ID = %q, want %q", activeBody.Recordings[0].ID, created.ID)
+	}
+
+	trashAfterRestoreRequest := httptest.NewRequest(http.MethodGet, "/workspaces/wsp_default/recordings/trash", nil)
+	trashAfterRestoreResponse := httptest.NewRecorder()
+	router.ServeHTTP(trashAfterRestoreResponse, trashAfterRestoreRequest)
+	if trashAfterRestoreResponse.Code != http.StatusOK {
+		t.Fatalf("trash after restore status code = %d, want %d", trashAfterRestoreResponse.Code, http.StatusOK)
+	}
+	trashBody = listRecordingsResponse{}
+	if err := json.NewDecoder(trashAfterRestoreResponse.Body).Decode(&trashBody); err != nil {
+		t.Fatalf("decode trash after restore body: %v", err)
+	}
+	if len(trashBody.Recordings) != 0 {
+		t.Fatalf("trash recordings after restore = %+v, want empty", trashBody.Recordings)
+	}
+}
+
+func TestRestoreRecordingReturnsNotFoundForMissingActiveOrCrossWorkspaceRecording(t *testing.T) {
+	store := newFakeRecordingStore()
+	deletedAt := time.Now().UTC()
+	store.put(domain.Recording{ID: "rec_other", WorkspaceID: "wsp_other", Title: "Other", Status: domain.RecordingStatusCompleted, WorkflowType: domain.WorkflowTypeMeeting, DeletedAt: &deletedAt})
+	store.put(domain.Recording{ID: "rec_active", WorkspaceID: testWorkspaceID, Title: "Active", Status: domain.RecordingStatusCompleted, WorkflowType: domain.WorkflowTypeMeeting})
+	router := NewRouterWithStore(store)
+
+	for _, id := range []string{"rec_missing", "rec_other", "rec_active"} {
+		request := httptest.NewRequest(http.MethodPost, "/workspaces/wsp_default/recordings/"+id+"/restore", nil)
+		response := httptest.NewRecorder()
+
+		router.ServeHTTP(response, request)
+
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("restore %s status code = %d, want %d", id, response.Code, http.StatusNotFound)
+		}
+	}
+}
+
 func TestGetRecordingDetailsReturnsTranscriptSegmentsAndSummary(t *testing.T) {
 	store := newFakeRecordingStore()
 	recording := domain.Recording{
@@ -1035,26 +1167,6 @@ func TestGetRecordingDetailsReturnsTranscriptSegmentsAndSummary(t *testing.T) {
 	mindMapRoot, ok := mindMapBody["root"].(map[string]any)
 	if !ok || mindMapRoot["label"] != "Weekly sync" {
 		t.Fatalf("mind map root = %#v, want public root DTO", mindMapBody["root"])
-	}
-}
-
-func TestGetRecordingDetailsReturnsInternalServerErrorWhenDetailsStoreMissing(t *testing.T) {
-	recording := domain.Recording{
-		ID:           "rec_no_details_store",
-		WorkspaceID:  testWorkspaceID,
-		Title:        "Stored recording",
-		Status:       domain.RecordingStatusUploaded,
-		WorkflowType: domain.WorkflowTypeMemo,
-		Language:     "en",
-	}
-	router := NewRouterWithStore(recordingOnlyStore{stored: map[string]domain.Recording{recording.ID: recording}})
-	request := httptest.NewRequest(http.MethodGet, "/workspaces/wsp_default/recordings/"+recording.ID+"/details", nil)
-	response := httptest.NewRecorder()
-
-	router.ServeHTTP(response, request)
-
-	if response.Code != http.StatusInternalServerError {
-		t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusInternalServerError, response.Body.String())
 	}
 }
 

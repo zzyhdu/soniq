@@ -21,10 +21,14 @@ Phase 1, implemented now:
   detail pane.
 - No audio or generated artifacts are physically deleted in Phase 1.
 
-Future Trash phase:
+Trash restore phase, implemented by
+`docs/plans/2026-06-14-recording-trash-restore.md`:
 
 - Add `GET /workspaces/{workspace_id}/recordings/trash`.
 - Add restore for soft-deleted recordings.
+
+Future purge phase:
+
 - Add permanent purge from Trash.
 - Purge deletes database children, storage artifacts, search/vector artifacts,
   and writes audit events. Temporal history still follows Temporal retention.

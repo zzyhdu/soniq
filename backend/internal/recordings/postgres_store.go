@@ -303,6 +303,87 @@ RETURNING `+recordingColumns,
 	return recording, true, nil
 }
 
+// ListDeletedByWorkspace returns soft-deleted recordings for a workspace.
+func (s *PostgresStore) ListDeletedByWorkspace(input ListDeletedRecordingsInput) ([]domain.Recording, error) {
+	if err := validateListDeletedRecordingsInput(input); err != nil {
+		return nil, err
+	}
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("postgres recording store requires database executor")
+	}
+
+	limit := input.Limit
+	if limit == 0 {
+		limit = 50
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	rows, err := s.db.Query(
+		context.Background(),
+		`SELECT `+recordingColumns+`
+FROM recordings
+WHERE workspace_id = $1
+  AND deleted_at IS NOT NULL
+ORDER BY deleted_at DESC, id DESC
+LIMIT $2`,
+		input.WorkspaceID,
+		limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list deleted recordings by workspace: %w", err)
+	}
+	defer rows.Close()
+
+	recordings := []domain.Recording{}
+	for rows.Next() {
+		var recording domain.Recording
+		if err := scanRecording(rows, &recording); err != nil {
+			return nil, fmt.Errorf("scan deleted workspace recording: %w", err)
+		}
+		recordings = append(recordings, recording)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list deleted recordings by workspace rows: %w", err)
+	}
+	return recordings, nil
+}
+
+// RestoreForWorkspace clears deletion metadata for a soft-deleted recording.
+func (s *PostgresStore) RestoreForWorkspace(input RestoreRecordingInput) (domain.Recording, bool, error) {
+	if err := validateRestoreRecordingInput(input); err != nil {
+		return domain.Recording{}, false, err
+	}
+	if s == nil || s.db == nil {
+		return domain.Recording{}, false, fmt.Errorf("postgres recording store requires database executor")
+	}
+
+	updatedAt := time.Now().UTC()
+	var recording domain.Recording
+	row := s.db.QueryRow(
+		context.Background(),
+		`UPDATE recordings
+SET deleted_at = NULL,
+    deleted_by_user_id = NULL,
+    updated_at = $3
+WHERE workspace_id = $1
+  AND id = $2
+  AND deleted_at IS NOT NULL
+RETURNING `+recordingColumns,
+		input.WorkspaceID,
+		input.ID,
+		updatedAt,
+	)
+	if err := scanRecording(row, &recording); err != nil {
+		if errors.Is(err, sql.ErrNoRows) || errors.Is(err, pgx.ErrNoRows) {
+			return domain.Recording{}, false, nil
+		}
+		return domain.Recording{}, false, fmt.Errorf("restore recording: %w", err)
+	}
+	return recording, true, nil
+}
+
 // UpsertNormalizedAudio stores or replaces normalized audio metadata for a recording.
 func (s *PostgresStore) UpsertNormalizedAudio(input UpsertNormalizedAudioInput) (RecordingNormalizedAudio, error) {
 	if err := validateNormalizedAudioInput(input); err != nil {

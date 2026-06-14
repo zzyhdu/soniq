@@ -3,14 +3,17 @@ import {
   getMe,
   getRecordingDetails,
   getRecordingStatus,
+  listDeletedRecordings,
   listRecordings,
   listWorkspaces,
   retryRecording,
+  restoreRecording,
   signIn,
   signOut,
   signUp,
   SoniqApiError,
   type ListRecordingsResponse,
+  type Recording,
   type RecordingStatus,
   type SignInInput,
   type SignUpInput,
@@ -62,6 +65,15 @@ export function useRecordings(workspaceId: string | null | undefined, enabled = 
   });
 }
 
+export function useDeletedRecordings(workspaceId: string | null | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ['workspaces', workspaceId, 'recordings', 'trash'],
+    queryFn: () => listDeletedRecordings(requireWorkspaceId(workspaceId)),
+    enabled: enabled && hasWorkspaceId(workspaceId),
+    retry: retryUnlessUnauthorized,
+  });
+}
+
 export function useUploadRecording(workspaceId: string | null | undefined) {
   const queryClient = useQueryClient();
 
@@ -95,7 +107,40 @@ export function useDeleteRecording(workspaceId: string | null | undefined) {
             },
       );
       queryClient.removeQueries({ queryKey: ['workspaces', workspaceId, 'recordings', recordingId] });
-      await queryClient.invalidateQueries({ queryKey: ['workspaces', workspaceId, 'recordings'] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['workspaces', workspaceId, 'recordings'], exact: true }),
+        queryClient.invalidateQueries({ queryKey: ['workspaces', workspaceId, 'recordings', 'trash'], exact: true }),
+      ]);
+    },
+  });
+}
+
+export function useRestoreRecording(workspaceId: string | null | undefined) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (recordingId: string) => restoreRecording(requireWorkspaceId(workspaceId), requireRecordingId(recordingId)),
+    onSuccess: async (recording) => {
+      if (!hasWorkspaceId(workspaceId)) {
+        return;
+      }
+      queryClient.setQueryData<ListRecordingsResponse>(
+        ['workspaces', workspaceId, 'recordings', 'trash'],
+        (current) => current === undefined
+          ? current
+          : {
+              ...current,
+              recordings: current.recordings.filter((item) => item.id !== recording.id),
+            },
+      );
+      queryClient.setQueryData<ListRecordingsResponse>(
+        ['workspaces', workspaceId, 'recordings'],
+        (current) => addRecordingToList(current, recording),
+      );
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['workspaces', workspaceId, 'recordings'], exact: true }),
+        queryClient.invalidateQueries({ queryKey: ['workspaces', workspaceId, 'recordings', 'trash'], exact: true }),
+      ]);
     },
   });
 }
@@ -193,6 +238,23 @@ function useAuthMutation<TInput, TResponse>(mutationFn: (input: TInput) => Promi
 
 function retryUnlessUnauthorized(failureCount: number, error: unknown) {
   return !isUnauthorizedApiError(error) && failureCount < 3;
+}
+
+function addRecordingToList(
+  current: ListRecordingsResponse | undefined,
+  recording: Recording,
+): ListRecordingsResponse | undefined {
+  if (current === undefined) {
+    return current;
+  }
+
+  return {
+    ...current,
+    recordings: [
+      recording,
+      ...current.recordings.filter((item) => item.id !== recording.id),
+    ],
+  };
 }
 
 function hasRecordingId(recordingId: string | null | undefined): recordingId is string {

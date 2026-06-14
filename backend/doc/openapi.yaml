@@ -251,6 +251,36 @@ paths:
           $ref: '#/components/responses/Error'
         default:
           $ref: '#/components/responses/Error'
+  /workspaces/{workspace_id}/recordings/trash:
+    get:
+      summary: List deleted workspace recordings
+      description: Returns soft-deleted recordings in the workspace Trash, newest deleted first.
+      operationId: listDeletedRecordings
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+            default: 50
+      responses:
+        '200':
+          description: Soft-deleted recordings in the workspace Trash.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListRecordingsResponse'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
   /workspaces/{workspace_id}/recordings/{recording_id}:
     get:
       summary: Get recording
@@ -339,6 +369,33 @@ paths:
         '404':
           $ref: '#/components/responses/Error'
         '409':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+  /workspaces/{workspace_id}/recordings/{recording_id}/restore:
+    post:
+      summary: Restore deleted recording
+      description: Clears soft-delete metadata for a Trash recording and returns it to the active library. Processing and generated artifacts are not modified.
+      operationId: restoreRecording
+      security:
+        - CookieAuth: []
+          CSRFToken: []
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
+        - $ref: '#/components/parameters/RecordingID'
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: Recording restored.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Recording'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
           $ref: '#/components/responses/Error'
         default:
           $ref: '#/components/responses/Error'

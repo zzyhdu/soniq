@@ -142,6 +142,24 @@ export async function listRecordings(
   );
 }
 
+export async function listDeletedRecordings(
+  workspaceId: string,
+  input: ListRecordingsInput = {},
+  options: SoniqApiClientOptions = {},
+): Promise<ListRecordingsResponse> {
+  const query = new URLSearchParams();
+  if (input.limit !== undefined) {
+    query.set('limit', String(input.limit));
+  }
+
+  const suffix = query.size > 0 ? `?${query.toString()}` : '';
+  return requestJSON<ListRecordingsResponse>(
+    `${workspaceRecordingsPath(workspaceId)}/trash${suffix}`,
+    { method: 'GET' },
+    options,
+  );
+}
+
 export async function createRecording(
   workspaceId: string,
   input: CreateRecordingInput,
@@ -229,6 +247,18 @@ export async function deleteRecording(
   await requestJSON<null>(
     recordingPath(workspaceId, recordingId),
     { method: 'DELETE' },
+    options,
+  );
+}
+
+export async function restoreRecording(
+  workspaceId: string,
+  recordingId: string,
+  options: SoniqApiClientOptions = {},
+): Promise<Recording> {
+  return requestJSON<Recording>(
+    `${recordingPath(workspaceId, recordingId)}/restore`,
+    { method: 'POST' },
     options,
   );
 }

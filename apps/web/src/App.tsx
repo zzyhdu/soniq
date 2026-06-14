@@ -25,6 +25,7 @@ import {
   Mic,
   Plus,
   RefreshCw,
+  RotateCcw,
   Search,
   Settings,
   Trash2,
@@ -37,10 +38,12 @@ import {
 import {
   isUnauthorizedApiError,
   useDeleteRecording,
+  useDeletedRecordings,
   useMe,
   useRecordingStatus,
   useRecordings,
   useRetryRecording,
+  useRestoreRecording,
   useSignIn,
   useSignOut,
   useSignUp,
@@ -154,21 +157,26 @@ export function App() {
   const selectedWorkspace = workspaces.find((workspace) => workspace.id === selectedWorkspaceId);
   const recordingsQuery = useRecordings(selectedWorkspaceId, isAuthenticated);
   const recordings = recordingsQuery.data?.recordings ?? [];
+  const deletedRecordingsQuery = useDeletedRecordings(selectedWorkspaceId, isAuthenticated && activeView === 'trash');
+  const deletedRecordings = deletedRecordingsQuery.data?.recordings ?? [];
   const uploadRecordingMutation = useUploadRecording(selectedWorkspaceId);
   const deleteRecordingMutation = useDeleteRecording(selectedWorkspaceId);
+  const restoreRecordingMutation = useRestoreRecording(selectedWorkspaceId);
   const retryRecordingMutation = useRetryRecording(selectedWorkspaceId, selectedRecordingId);
   const selectedRecording = recordings.find((recording) => recording.id === selectedRecordingId) ??
     (latestProcessingRequest?.recording.id === selectedRecordingId ? latestProcessingRequest.recording : undefined);
-  const statusQuery = useRecordingStatus(selectedWorkspaceId, selectedRecordingId, isAuthenticated);
+  const statusQuery = useRecordingStatus(selectedWorkspaceId, selectedRecordingId, isAuthenticated && activeView === 'recordings');
   const currentStatus = statusQuery.data?.status ?? selectedRecording?.status;
   const currentFailureReason = statusQuery.data?.failure_reason ?? selectedRecording?.failure_reason ?? null;
   const statusError = statusQuery.error instanceof Error ? statusQuery.error.message : null;
   const uploadError = uploadRecordingMutation.error instanceof Error ? uploadRecordingMutation.error.message : null;
   const retryError = retryRecordingMutation.error instanceof Error ? retryRecordingMutation.error.message : null;
   const deleteError = deleteRecordingMutation.error instanceof Error ? deleteRecordingMutation.error.message : null;
+  const restoreError = restoreRecordingMutation.error instanceof Error ? restoreRecordingMutation.error.message : null;
   const meError = meQuery.error instanceof Error ? meQuery.error.message : null;
   const workspacesError = workspacesQuery.error instanceof Error ? workspacesQuery.error.message : null;
   const recordingsError = recordingsQuery.error instanceof Error ? recordingsQuery.error.message : null;
+  const deletedRecordingsError = deletedRecordingsQuery.error instanceof Error ? deletedRecordingsQuery.error.message : null;
   const selectedProcessingEnqueued = latestProcessingRequest?.recording.id === selectedRecordingId
     ? latestProcessingRequest.processing_enqueued
     : undefined;
@@ -265,8 +273,18 @@ export function App() {
     setDeleteDialogRecording(recording);
   }
 
+  async function handleRestoreRecording(recordingId: string) {
+    restoreRecordingMutation.reset();
+    try {
+      await restoreRecordingMutation.mutateAsync(recordingId);
+    } catch {
+      return;
+    }
+  }
+
   function handleSelectView(view: AppView) {
     setActiveView(view);
+    setDeleteDialogRecording(null);
   }
 
   async function handleLogout() {
@@ -393,6 +411,16 @@ export function App() {
             onBack={handleBackToLibrary}
           />
           </>
+        ) : activeView === 'trash' ? (
+          <TrashWorkspaceView
+            recordings={deletedRecordings}
+            isLoading={selectedWorkspaceId !== null && deletedRecordingsQuery.isPending}
+            error={deletedRecordingsError}
+            restoreError={restoreError}
+            restoringRecordingId={restoreRecordingMutation.isPending ? restoreRecordingMutation.variables ?? null : null}
+            onRestore={handleRestoreRecording}
+            onBackToRecordings={() => setActiveView('recordings')}
+          />
         ) : (
           <ConstructionWorkspaceView view={activeView} onBackToRecordings={() => setActiveView('recordings')} />
         )}
@@ -424,7 +452,7 @@ export function App() {
 
 type AuthState = 'checking' | 'authenticated' | 'signed_out';
 
-type AppView = 'recordings' | ConstructionView;
+type AppView = 'recordings' | 'trash' | ConstructionView;
 
 type ConstructionView = 'analytics' | 'workflows' | 'library' | 'settings';
 
@@ -513,6 +541,7 @@ function SideNav({
 
       <div className="flex flex-1 flex-col gap-1">
         <SideNavItem icon={Mic} label="Recordings" active={activeView === 'recordings'} onClick={() => onSelectView('recordings')} />
+        <SideNavItem icon={Trash2} label="Trash" active={activeView === 'trash'} onClick={() => onSelectView('trash')} />
         <SideNavItem icon={BarChart3} label="Analytics" active={activeView === 'analytics'} onClick={() => onSelectView('analytics')} />
         <SideNavItem icon={Workflow} label="Workflows" active={activeView === 'workflows'} onClick={() => onSelectView('workflows')} />
         <SideNavItem icon={FolderOpen} label="Library" active={activeView === 'library'} onClick={() => onSelectView('library')} />
@@ -609,6 +638,98 @@ function ConstructionWorkspaceView({
         >
           Back to Recordings
         </Button>
+      </div>
+    </section>
+  );
+}
+
+function TrashWorkspaceView({
+  recordings,
+  isLoading,
+  error,
+  restoreError,
+  restoringRecordingId,
+  onRestore,
+  onBackToRecordings,
+}: {
+  recordings: Recording[];
+  isLoading: boolean;
+  error: string | null;
+  restoreError: string | null;
+  restoringRecordingId: string | null;
+  onRestore: (recordingId: string) => void;
+  onBackToRecordings: () => void;
+}) {
+  return (
+    <section className="flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-[#f7f9fb]" aria-label="Trash workspace">
+      <header className="shrink-0 border-b border-[#c5c6cd] bg-white px-5 py-4 shadow-sm md:px-8">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="font-mono text-[12px] font-medium uppercase leading-4 tracking-[0.08em] text-[#45474c]">Workspace</p>
+            <h2 className="mt-1 text-[24px] font-semibold leading-8 text-[#091426]">Trash</h2>
+          </div>
+          <Button type="button" variant="outline" className="h-10 shrink-0 rounded border-[#c5c6cd] bg-white px-3 text-[13px] font-normal text-[#191c1e] shadow-none hover:bg-[#f2f4f6]" onClick={onBackToRecordings}>
+            Back to Recordings
+          </Button>
+        </div>
+      </header>
+
+      <div className="min-h-0 flex-1 overflow-y-auto p-5 md:p-8">
+        {restoreError !== null && (
+          <p className="mb-4 rounded border border-[#ffdad6] bg-[#fff7f7] px-3 py-2 text-[13px] text-[#ba1a1a]" role="alert">
+            {restoreError}
+          </p>
+        )}
+
+        {isLoading ? (
+          <div className="rounded border border-[#c5c6cd] bg-white px-4 py-3 text-[14px] text-[#45474c]">Loading Trash...</div>
+        ) : error !== null ? (
+          <div className="rounded border border-[#ffdad6] bg-[#fff7f7] px-4 py-3 text-[14px] text-[#ba1a1a]" role="alert">{error}</div>
+        ) : recordings.length === 0 ? (
+          <div className="rounded border border-[#c5c6cd] bg-white px-6 py-10 text-center">
+            <div className="mx-auto mb-4 flex size-11 items-center justify-center rounded border border-[#c5c6cd] bg-[#f2f4f6]">
+              <Trash2 className="size-5 text-[#45474c]" aria-hidden="true" />
+            </div>
+            <h3 className="text-[18px] font-semibold leading-6 text-[#091426]">Trash is empty</h3>
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded border border-[#c5c6cd] bg-white">
+            <div className="grid grid-cols-[minmax(0,1fr)_120px_180px_120px] gap-4 border-b border-[#c5c6cd] bg-[#f2f4f6] px-4 py-3 font-mono text-[11px] font-medium uppercase leading-4 tracking-[0.08em] text-[#45474c]">
+              <span>Recording</span>
+              <span>Status</span>
+              <span>Deleted</span>
+              <span className="text-right">Action</span>
+            </div>
+            <div className="divide-y divide-[#e0e2e5]">
+              {recordings.map((recording) => {
+                const isRestoring = restoringRecordingId === recording.id;
+                return (
+                  <div key={recording.id} className="grid grid-cols-[minmax(0,1fr)_120px_180px_120px] items-center gap-4 px-4 py-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-[14px] font-medium leading-5 text-[#191c1e]">{recording.title}</p>
+                      <p className="mt-1 truncate text-[12px] leading-4 text-[#75777d]">{recording.language || 'unknown language'} / {recording.workflow_type}</p>
+                    </div>
+                    <StatusTag status={recording.status} />
+                    <span className="text-[13px] leading-5 text-[#45474c]">{recording.deleted_at !== undefined ? formatDateTime(recording.deleted_at) : 'Unknown'}</span>
+                    <div className="flex justify-end">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-9 rounded border-[#c5c6cd] bg-white px-3 text-[13px] font-normal text-[#191c1e] shadow-none hover:bg-[#f2f4f6]"
+                        disabled={restoringRecordingId !== null}
+                        onClick={() => onRestore(recording.id)}
+                      >
+                        <RotateCcw className="size-4" aria-hidden="true" />
+                        {isRestoring ? 'Restoring...' : 'Restore'}
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </section>
   );

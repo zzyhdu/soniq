@@ -175,6 +175,40 @@ describe('App workspace recording flow', () => {
     expect(screen.getByText(/Select a recording from the library/i)).toBeInTheDocument();
   });
 
+  it('restores a soft-deleted recording from Trash', async () => {
+    const requests = mockAppFetch();
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(await screen.findByRole('button', { name: /Weekly sync/i }));
+    await user.click(screen.getByRole('button', { name: /delete recording/i }));
+    const dialog = await screen.findByRole('dialog', { name: /delete recording/i });
+    await user.click(within(dialog).getByRole('button', { name: /^Delete recording$/i }));
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /Weekly sync/i })).not.toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /^Trash$/i }));
+
+    expect(await screen.findByRole('heading', { name: /^Trash$/i })).toBeInTheDocument();
+    expect(await screen.findByText('Weekly sync')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^Restore$/i }));
+
+    await waitFor(() => {
+      expect(requests.some((request) => (
+        request.method === 'POST' &&
+        request.url === '/workspaces/wsp_default/recordings/rec_done/restore'
+      ))).toBe(true);
+    });
+    expect(await screen.findByText(/Trash is empty/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^Recordings$/i }));
+
+    expect(await screen.findByRole('button', { name: /Weekly sync/i })).toBeInTheDocument();
+  });
+
   it('returns to sign in when recording details are unauthorized', async () => {
     mockAppFetch({ detailsUnauthorized: true });
     const user = userEvent.setup();
@@ -397,6 +431,20 @@ function mockAppFetch(options: {
       });
     }
 
+    if (url === '/workspaces/wsp_default/recordings/trash' && method === 'GET') {
+      return jsonResponse({
+        recordings: [
+          recordingFixture({
+            id: 'rec_done',
+            title: 'Weekly sync',
+            status: 'completed',
+            deleted_at: '2026-06-11T00:05:00Z',
+            deleted_by_user_id: 'usr_dev',
+          }),
+        ].filter((recording) => deletedRecordingIds.has(recording.id)),
+      });
+    }
+
     if (url === '/workspaces/wsp_team/recordings' && method === 'GET') {
       return jsonResponse({
         recordings: [
@@ -470,6 +518,17 @@ function mockAppFetch(options: {
     if (url === '/workspaces/wsp_default/recordings/rec_done' && method === 'DELETE') {
       deletedRecordingIds.add('rec_done');
       return new Response(null, { status: 204 });
+    }
+
+    if (url === '/workspaces/wsp_default/recordings/rec_done/restore' && method === 'POST') {
+      if (!deletedRecordingIds.has('rec_done')) {
+        return jsonResponse(apiError('not_found', 'not found', 404), {
+          status: 404,
+          statusText: 'Not Found',
+        });
+      }
+      deletedRecordingIds.delete('rec_done');
+      return jsonResponse(recordingFixture({ id: 'rec_done', title: 'Weekly sync', status: 'completed' }));
     }
 
     if (url === '/workspaces/wsp_default/recordings/rec_completing/details') {

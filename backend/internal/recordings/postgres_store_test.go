@@ -710,6 +710,123 @@ func TestPostgresStoreSoftDeleteForWorkspaceReturnsFalseForMissingRecording(t *t
 	}
 }
 
+func TestPostgresStoreListDeletedByWorkspaceReturnsDeletedRecordings(t *testing.T) {
+	createdAt := time.Date(2026, 6, 6, 1, 2, 3, 0, time.UTC)
+	deletedAt := createdAt.Add(time.Minute)
+	db := newPostgresExecutorSpy(
+		postgresRow(
+			"rec_deleted",
+			"wsp_default",
+			"Deleted",
+			domain.RecordingStatusCompleted,
+			domain.WorkflowTypeMeeting,
+			"en",
+			"recordings/rec_deleted/original.wav",
+			"audio/wav",
+			int64(12345),
+			"",
+			nil,
+			nil,
+			deletedAt,
+			"usr_dev",
+			createdAt,
+			deletedAt,
+		),
+	)
+	store := NewPostgresStore(db)
+
+	recordings, err := store.ListDeletedByWorkspace(ListDeletedRecordingsInput{WorkspaceID: "wsp_default", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListDeletedByWorkspace returned error: %v", err)
+	}
+	if got, want := len(recordings), 1; got != want {
+		t.Fatalf("recordings = %d, want %d", got, want)
+	}
+	if recordings[0].ID != "rec_deleted" {
+		t.Fatalf("recording ID = %q, want rec_deleted", recordings[0].ID)
+	}
+	if recordings[0].DeletedAt == nil || !recordings[0].DeletedAt.Equal(deletedAt) {
+		t.Fatalf("DeletedAt = %v, want %s", recordings[0].DeletedAt, deletedAt)
+	}
+	query := strings.ToLower(db.calls[0].query)
+	if !strings.Contains(query, "where workspace_id = $1") || !strings.Contains(query, "deleted_at is not null") || !strings.Contains(query, "order by deleted_at desc") || !strings.Contains(query, "limit $2") {
+		t.Fatalf("query = %q, want deleted workspace list query", db.calls[0].query)
+	}
+	if got, want := db.calls[0].args[0], "wsp_default"; got != want {
+		t.Fatalf("workspace id arg = %q, want %q", got, want)
+	}
+	if got, want := db.calls[0].args[1], 10; got != want {
+		t.Fatalf("limit arg = %v, want %v", got, want)
+	}
+}
+
+func TestPostgresStoreRestoreForWorkspaceClearsDeletionMetadata(t *testing.T) {
+	createdAt := time.Date(2026, 6, 6, 1, 2, 3, 0, time.UTC)
+	restoredAt := createdAt.Add(2 * time.Minute)
+	db := newPostgresExecutorSpy(postgresRow(
+		"rec_pg",
+		"wsp_default",
+		"Weekly sync",
+		domain.RecordingStatusCompleted,
+		domain.WorkflowTypeMeeting,
+		"en",
+		"recordings/rec_pg/original.wav",
+		"audio/wav",
+		int64(12345),
+		"",
+		nil,
+		nil,
+		nil,
+		nil,
+		createdAt,
+		restoredAt,
+	))
+	store := NewPostgresStore(db)
+
+	recording, ok, err := store.RestoreForWorkspace(RestoreRecordingInput{
+		WorkspaceID: "wsp_default",
+		ID:          "rec_pg",
+	})
+	if err != nil {
+		t.Fatalf("RestoreForWorkspace returned error: %v", err)
+	}
+	if !ok {
+		t.Fatal("RestoreForWorkspace ok = false, want true")
+	}
+	if recording.DeletedAt != nil || recording.DeletedByUserID != "" {
+		t.Fatalf("restored deletion metadata = %v/%q, want cleared", recording.DeletedAt, recording.DeletedByUserID)
+	}
+	query := strings.ToLower(db.calls[0].query)
+	if !strings.Contains(query, "update recordings") || !strings.Contains(query, "set deleted_at = null") || !strings.Contains(query, "deleted_by_user_id = null") || !strings.Contains(query, "deleted_at is not null") {
+		t.Fatalf("query = %q, want restore update", db.calls[0].query)
+	}
+	if got, want := db.calls[0].args[0], "wsp_default"; got != want {
+		t.Fatalf("workspace id arg = %q, want %q", got, want)
+	}
+	if got, want := db.calls[0].args[1], "rec_pg"; got != want {
+		t.Fatalf("recording id arg = %q, want %q", got, want)
+	}
+	if _, ok := db.calls[0].args[2].(time.Time); !ok {
+		t.Fatalf("updated_at arg = %#v, want time.Time", db.calls[0].args[2])
+	}
+}
+
+func TestPostgresStoreRestoreForWorkspaceReturnsFalseForMissingRecording(t *testing.T) {
+	db := newPostgresExecutorSpy(postgresErrorRow(sql.ErrNoRows))
+	store := NewPostgresStore(db)
+
+	_, ok, err := store.RestoreForWorkspace(RestoreRecordingInput{
+		WorkspaceID: "wsp_default",
+		ID:          "rec_missing",
+	})
+	if err != nil {
+		t.Fatalf("RestoreForWorkspace returned error: %v", err)
+	}
+	if ok {
+		t.Fatal("RestoreForWorkspace ok = true, want false")
+	}
+}
+
 func TestPostgresStoreUpsertAudioProbeInsertsOrUpdatesProbe(t *testing.T) {
 	probedAt := time.Date(2026, 6, 6, 1, 2, 3, 0, time.UTC)
 	createdAt := probedAt

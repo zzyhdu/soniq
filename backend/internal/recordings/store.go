@@ -32,6 +32,12 @@ type ListRecordingsInput struct {
 	Limit       int
 }
 
+// ListDeletedRecordingsInput contains filters for listing soft-deleted recordings in a workspace.
+type ListDeletedRecordingsInput struct {
+	WorkspaceID string
+	Limit       int
+}
+
 // UpdateRecordingStatusInput contains the state transition to persist for a recording.
 type UpdateRecordingStatusInput struct {
 	WorkspaceID   string
@@ -51,6 +57,12 @@ type SoftDeleteRecordingInput struct {
 	WorkspaceID     string
 	ID              string
 	DeletedByUserID string
+}
+
+// RestoreRecordingInput identifies a soft-deleted recording to restore.
+type RestoreRecordingInput struct {
+	WorkspaceID string
+	ID          string
 }
 
 // RecordingAudioProbe contains ffprobe metadata for a recording's original audio.
@@ -244,6 +256,26 @@ func validateSoftDeleteRecordingInput(input SoftDeleteRecordingInput) error {
 	}
 	if input.DeletedByUserID == "" {
 		return fmt.Errorf("deleted by user id is required")
+	}
+	return nil
+}
+
+func validateListDeletedRecordingsInput(input ListDeletedRecordingsInput) error {
+	if input.WorkspaceID == "" {
+		return fmt.Errorf("workspace id is required")
+	}
+	if input.Limit < 0 {
+		return fmt.Errorf("recording trash limit must not be negative")
+	}
+	return nil
+}
+
+func validateRestoreRecordingInput(input RestoreRecordingInput) error {
+	if input.WorkspaceID == "" {
+		return fmt.Errorf("workspace id is required")
+	}
+	if input.ID == "" {
+		return fmt.Errorf("recording id is required")
 	}
 	return nil
 }
