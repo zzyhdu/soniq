@@ -19,6 +19,7 @@ func requireAuth(authResolver AuthResolver) func(http.Handler) http.Handler {
 			if !ok {
 				return
 			}
+			setRequestLogUserID(r.Context(), currentUser.UserID)
 			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), currentUserContextKey{}, currentUser)))
 		})
 	}
@@ -45,6 +46,7 @@ func requireWorkspace(workspaceStore WorkspaceStore) func(http.Handler) http.Han
 				writeAPIError(w, http.StatusNotFound, errorCodeNotFound, "not found")
 				return
 			}
+			setRequestLogWorkspaceID(r.Context(), workspace.ID)
 			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), workspaceContextKey{}, workspace)))
 		})
 	}

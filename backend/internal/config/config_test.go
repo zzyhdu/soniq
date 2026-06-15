@@ -10,6 +10,8 @@ func clearConfigEnv(t *testing.T) {
 	for _, key := range []string{
 		"APP_ENV",
 		"APP_PUBLIC_URL",
+		"LOG_FORMAT",
+		"LOG_LEVEL",
 		"AUTH_SESSION_TTL_HOURS",
 		"AUTH_COOKIE_SECURE",
 		"API_ADDRESS",
@@ -61,6 +63,12 @@ func TestLoadFromEnvUsesDevelopmentDefaults(t *testing.T) {
 	}
 	if cfg.PublicURL != "http://localhost:8080" {
 		t.Fatalf("PublicURL = %q, want http://localhost:8080", cfg.PublicURL)
+	}
+	if cfg.LogFormat != "text" {
+		t.Fatalf("LogFormat = %q, want text", cfg.LogFormat)
+	}
+	if cfg.LogLevel != "info" {
+		t.Fatalf("LogLevel = %q, want info", cfg.LogLevel)
 	}
 	if cfg.AuthSessionTTLHours != 720 {
 		t.Fatalf("AuthSessionTTLHours = %d, want 720", cfg.AuthSessionTTLHours)
@@ -145,6 +153,8 @@ func TestLoadFromEnvUsesDevelopmentDefaults(t *testing.T) {
 func TestLoadFromEnvAppliesEnvironmentOverrides(t *testing.T) {
 	t.Setenv("APP_ENV", "test")
 	t.Setenv("APP_PUBLIC_URL", "http://127.0.0.1:9090")
+	t.Setenv("LOG_FORMAT", "json")
+	t.Setenv("LOG_LEVEL", "debug")
 	t.Setenv("AUTH_SESSION_TTL_HOURS", "168")
 	t.Setenv("AUTH_COOKIE_SECURE", "true")
 	t.Setenv("API_ADDRESS", ":9090")
@@ -180,6 +190,12 @@ func TestLoadFromEnvAppliesEnvironmentOverrides(t *testing.T) {
 	}
 	if cfg.PublicURL != "http://127.0.0.1:9090" {
 		t.Fatalf("PublicURL = %q, want override", cfg.PublicURL)
+	}
+	if cfg.LogFormat != "json" {
+		t.Fatalf("LogFormat = %q, want json", cfg.LogFormat)
+	}
+	if cfg.LogLevel != "debug" {
+		t.Fatalf("LogLevel = %q, want debug", cfg.LogLevel)
 	}
 	if cfg.AuthSessionTTLHours != 168 {
 		t.Fatalf("AuthSessionTTLHours = %d, want 168", cfg.AuthSessionTTLHours)
@@ -313,6 +329,20 @@ func TestValidateForStartupRejectsInvalidPurgeArtifactCleanupConfig(t *testing.T
 	cfg.PurgeArtifactCleanupBatchSize = 0
 	if err := cfg.ValidateForStartup(); err == nil {
 		t.Fatal("ValidateForStartup() error = nil, want invalid cleanup batch size error")
+	}
+}
+
+func TestValidateForStartupRejectsInvalidLogConfig(t *testing.T) {
+	cfg := LoadFromEnv()
+	cfg.LogFormat = "yaml"
+	if err := cfg.ValidateForStartup(); err == nil {
+		t.Fatal("ValidateForStartup() error = nil, want invalid log format error")
+	}
+
+	cfg = LoadFromEnv()
+	cfg.LogLevel = "verbose"
+	if err := cfg.ValidateForStartup(); err == nil {
+		t.Fatal("ValidateForStartup() error = nil, want invalid log level error")
 	}
 }
 

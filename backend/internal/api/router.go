@@ -202,6 +202,7 @@ func newRouterWithDependencies(store RecordingStore, workspaceStore WorkspaceSto
 	}
 
 	router := chi.NewRouter()
+	router.Use(requestLoggingMiddleware(nil))
 	if authConfig != nil {
 		router.Use(csrfProtectionMiddleware(*authConfig))
 	}

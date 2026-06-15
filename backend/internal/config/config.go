@@ -10,6 +10,8 @@ import (
 type Config struct {
 	AppEnv                                       string
 	PublicURL                                    string
+	LogFormat                                    string
+	LogLevel                                     string
 	AuthSessionTTLHours                          int64
 	AuthCookieSecure                             bool
 	APIAddress                                   string
@@ -44,6 +46,8 @@ func LoadFromEnv() Config {
 	return Config{
 		AppEnv:                              envString("APP_ENV", "development"),
 		PublicURL:                           envString("APP_PUBLIC_URL", "http://localhost:8080"),
+		LogFormat:                           envString("LOG_FORMAT", "text"),
+		LogLevel:                            envString("LOG_LEVEL", "info"),
 		AuthSessionTTLHours:                 envInt64("AUTH_SESSION_TTL_HOURS", 24*30),
 		AuthCookieSecure:                    envBool("AUTH_COOKIE_SECURE", false),
 		APIAddress:                          envString("API_ADDRESS", ":8080"),
@@ -78,6 +82,12 @@ func LoadFromEnv() Config {
 func (c Config) ValidateForStartup() error {
 	if strings.TrimSpace(c.PostgresDSN) == "" {
 		return fmt.Errorf("POSTGRES_DSN is required")
+	}
+	if !isSupportedLogFormat(c.LogFormat) {
+		return fmt.Errorf("LOG_FORMAT must be one of: json, text")
+	}
+	if !isSupportedLogLevel(c.LogLevel) {
+		return fmt.Errorf("LOG_LEVEL must be one of: debug, info, warn, error")
 	}
 	if c.AuthSessionTTLHours <= 0 {
 		return fmt.Errorf("AUTH_SESSION_TTL_HOURS must be positive")
@@ -171,6 +181,24 @@ func (c Config) NeedsLLMAPIKeyForExternalProvider() bool {
 func (c Config) isExternalLLMProvider() bool {
 	provider := strings.TrimSpace(c.LLMProvider)
 	return provider != "" && provider != "fake_llm" && provider != "ollama"
+}
+
+func isSupportedLogFormat(format string) bool {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "json", "text":
+		return true
+	default:
+		return false
+	}
+}
+
+func isSupportedLogLevel(level string) bool {
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case "debug", "info", "warn", "error":
+		return true
+	default:
+		return false
+	}
 }
 
 func envString(key, fallback string) string {

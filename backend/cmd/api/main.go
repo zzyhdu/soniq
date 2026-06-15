@@ -3,8 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	authstore "github.com/zzyhdu/soniq/backend/internal/auth"
 	"github.com/zzyhdu/soniq/backend/internal/config"
 	storedb "github.com/zzyhdu/soniq/backend/internal/db"
+	"github.com/zzyhdu/soniq/backend/internal/observability"
 	"github.com/zzyhdu/soniq/backend/internal/processing"
 	"github.com/zzyhdu/soniq/backend/internal/recordings"
 	"github.com/zzyhdu/soniq/backend/internal/storage"
@@ -24,19 +26,32 @@ import (
 func main() {
 	cfg := config.LoadFromEnv()
 	if err := cfg.ValidateForStartup(); err != nil {
-		log.Fatalf("invalid startup config: %v", err)
+		fmt.Fprintf(os.Stderr, "invalid startup config: %v\n", err)
+		os.Exit(1)
 	}
+	logger, err := observability.NewLogger(observability.LoggerConfig{
+		Service: "soniq-api",
+		Format:  cfg.LogFormat,
+		Level:   cfg.LogLevel,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "configure logger: %v\n", err)
+		os.Exit(1)
+	}
+	slog.SetDefault(logger)
 
 	handler, cleanup, err := buildHandler(context.Background(), cfg, dialTemporalClient, openPostgresAppStore)
 	if err != nil {
-		log.Fatalf("build api handler: %v", err)
+		logger.Error("build api handler", slog.String("event", "api_startup_failed"), slog.Any("error", err))
+		os.Exit(1)
 	}
 	defer cleanup()
 
 	addr := cfg.APIAddress
-	log.Printf("starting soniq-api on %s", addr)
+	logger.Info("starting soniq-api", slog.String("event", "api_starting"), slog.String("address", addr))
 	if err := http.ListenAndServe(addr, handler); err != nil {
-		log.Fatalf("api server stopped: %v", err)
+		logger.Error("api server stopped", slog.String("event", "api_stopped"), slog.Any("error", err))
+		os.Exit(1)
 	}
 }
 

@@ -3,7 +3,7 @@ package cleanup
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/zzyhdu/soniq/backend/internal/recordings"
@@ -21,6 +21,7 @@ type RecordingPurgeArtifactStore interface {
 type RecordingPurgeArtifactCleanerOptions struct {
 	Interval  time.Duration
 	BatchSize int
+	Logger    *slog.Logger
 }
 
 // RecordingPurgeArtifactCleaner deletes object-storage artifacts left by permanent recording purge.
@@ -29,6 +30,7 @@ type RecordingPurgeArtifactCleaner struct {
 	objectStore storage.ObjectStore
 	interval    time.Duration
 	batchSize   int
+	logger      *slog.Logger
 }
 
 // NewRecordingPurgeArtifactCleaner creates a purge artifact cleanup runner.
@@ -41,18 +43,26 @@ func NewRecordingPurgeArtifactCleaner(store RecordingPurgeArtifactStore, objectS
 	if batchSize <= 0 {
 		batchSize = 25
 	}
+	logger := options.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &RecordingPurgeArtifactCleaner{
 		store:       store,
 		objectStore: objectStore,
 		interval:    interval,
 		batchSize:   batchSize,
+		logger:      logger,
 	}
 }
 
 // Run starts the periodic cleanup loop until the context is canceled.
 func (c *RecordingPurgeArtifactCleaner) Run(ctx context.Context) {
 	if err := c.RunOnce(ctx); err != nil && !errors.Is(err, context.Canceled) {
-		log.Printf("recording purge artifact cleanup failed: %v", err)
+		c.logger.ErrorContext(ctx, "recording purge artifact cleanup failed",
+			slog.String("event", "purge_artifact_cleanup_run_failed"),
+			slog.Any("error", err),
+		)
 	}
 	ticker := time.NewTicker(c.interval)
 	defer ticker.Stop()
@@ -62,7 +72,10 @@ func (c *RecordingPurgeArtifactCleaner) Run(ctx context.Context) {
 			return
 		case <-ticker.C:
 			if err := c.RunOnce(ctx); err != nil && !errors.Is(err, context.Canceled) {
-				log.Printf("recording purge artifact cleanup failed: %v", err)
+				c.logger.ErrorContext(ctx, "recording purge artifact cleanup failed",
+					slog.String("event", "purge_artifact_cleanup_run_failed"),
+					slog.Any("error", err),
+				)
 			}
 		}
 	}
@@ -80,21 +93,61 @@ func (c *RecordingPurgeArtifactCleaner) RunOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if len(artifacts) > 0 {
+		c.logger.InfoContext(ctx, "claimed recording purge artifacts",
+			slog.String("event", "purge_artifact_cleanup_claimed"),
+			slog.Int("artifact_count", len(artifacts)),
+			slog.Int("batch_size", c.batchSize),
+		)
+	}
 	var runErr error
 	for _, artifact := range artifacts {
 		if err := c.objectStore.DeleteObject(ctx, artifact.ObjectKey); err != nil {
+			nextAttemptAt := time.Now().UTC().Add(purgeArtifactRetryDelay(artifact.AttemptCount + 1))
 			_, markErr := c.store.MarkPurgeArtifactFailed(recordings.MarkPurgeArtifactFailedInput{
 				ID:            artifact.ID,
 				LastError:     err.Error(),
-				NextAttemptAt: time.Now().UTC().Add(purgeArtifactRetryDelay(artifact.AttemptCount + 1)),
+				NextAttemptAt: nextAttemptAt,
 			})
+			c.logger.WarnContext(ctx, "recording purge artifact cleanup failed",
+				append(purgeArtifactLogAttrs("purge_artifact_cleanup_failed", artifact),
+					slog.Int("attempt_count", artifact.AttemptCount+1),
+					slog.Time("next_attempt_at", nextAttemptAt),
+					slog.String("error", err.Error()),
+					slog.Any("mark_error", markErr),
+				)...,
+			)
 			runErr = errors.Join(runErr, err, markErr)
 			continue
 		}
 		_, err := c.store.MarkPurgeArtifactDeleted(recordings.MarkPurgeArtifactDeletedInput{ID: artifact.ID})
-		runErr = errors.Join(runErr, err)
+		if err != nil {
+			c.logger.WarnContext(ctx, "recording purge artifact mark deleted failed",
+				append(purgeArtifactLogAttrs("purge_artifact_cleanup_failed", artifact),
+					slog.Int("attempt_count", artifact.AttemptCount),
+					slog.String("error", err.Error()),
+				)...,
+			)
+			runErr = errors.Join(runErr, err)
+			continue
+		}
+		c.logger.InfoContext(ctx, "recording purge artifact deleted",
+			append(purgeArtifactLogAttrs("purge_artifact_cleanup_deleted", artifact),
+				slog.Int("attempt_count", artifact.AttemptCount),
+			)...,
+		)
 	}
 	return runErr
+}
+
+func purgeArtifactLogAttrs(event string, artifact recordings.RecordingPurgeArtifact) []any {
+	return []any{
+		slog.String("event", event),
+		slog.String("artifact_id", artifact.ID),
+		slog.String("recording_id", artifact.RecordingID),
+		slog.String("workspace_id", artifact.WorkspaceID),
+		slog.String("artifact_kind", artifact.ArtifactKind),
+	}
 }
 
 func purgeArtifactRetryDelay(attemptCount int) time.Duration {

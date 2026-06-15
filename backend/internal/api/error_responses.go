@@ -30,7 +30,14 @@ type apiErrorResponse struct {
 	Status  int          `json:"status"`
 }
 
+type apiErrorObserver interface {
+	RecordAPIError(status int, code apiErrorCode, message string)
+}
+
 func writeAPIError(w http.ResponseWriter, status int, code apiErrorCode, message string) {
+	if observer, ok := w.(apiErrorObserver); ok {
+		observer.RecordAPIError(status, code, message)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(apiErrorResponse{

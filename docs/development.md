@@ -154,6 +154,8 @@ make api
 Default runtime configuration:
 
 - `API_ADDRESS=:8080`
+- `LOG_FORMAT=text`
+- `LOG_LEVEL=info`
 - `POSTGRES_DSN=postgres://soniq_user:***@localhost:5432/soniq?sslmode=disable`
 - `TEMPORAL_ADDRESS=localhost:7233`
 - `TEMPORAL_NAMESPACE=default`
@@ -193,6 +195,12 @@ Content-Type: application/json
 ```json
 {"status":"ok","service":"soniq-api"}
 ```
+
+Every API response includes `X-Request-ID`. If the client sends that header, the
+API returns the same value; otherwise the API generates one. API and worker logs
+use structured `slog` output. Keep `LOG_FORMAT=text` for local readability, or
+set `LOG_FORMAT=json` when logs will be collected by a log backend. `LOG_LEVEL`
+accepts `debug`, `info`, `warn`, or `error`.
 
 ## Use the Recording API
 
@@ -521,6 +529,8 @@ Default runtime configuration:
 - `TEMPORAL_ADDRESS=localhost:7233`
 - `TEMPORAL_NAMESPACE=default`
 - `TEMPORAL_TASK_QUEUE=soniq-audio-pipeline`
+- `LOG_FORMAT=text`
+- `LOG_LEVEL=info`
 
 Expected behavior:
 
@@ -629,6 +639,8 @@ The current backend reads environment variables directly. Important local settin
 |---|---:|---|
 | `APP_ENV` | `development` | Runtime environment name. |
 | `APP_PUBLIC_URL` | `http://localhost:8080` | Public API URL used by clients and links. |
+| `LOG_FORMAT` | `text` | Process log format: `text` for local readability or `json` for collection. |
+| `LOG_LEVEL` | `info` | Minimum log level: `debug`, `info`, `warn`, or `error`. |
 | `AUTH_SESSION_TTL_HOURS` | `720` | Session lifetime for email/password login cookies. |
 | `AUTH_COOKIE_SECURE` | `false` | Whether the `soniq_session` cookie is marked `Secure`. Keep `false` for local HTTP; use `true` behind HTTPS. |
 | `API_ADDRESS` | `:8080` | Local HTTP listen address for `make api`. |

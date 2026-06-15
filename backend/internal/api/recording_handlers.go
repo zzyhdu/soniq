@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"path"
 	"strconv"
@@ -347,14 +348,37 @@ func purgeRecordingHandler(store RecordingStore, objectStore storage.ObjectStore
 func cleanupPurgeArtifacts(ctx context.Context, store RecordingStore, objectStore storage.ObjectStore, artifacts []recordings.RecordingPurgeArtifact) {
 	for _, artifact := range artifacts {
 		if err := objectStore.DeleteObject(ctx, artifact.ObjectKey); err != nil {
+			nextAttemptAt := time.Now().UTC().Add(purgeArtifactRetryDelay(artifact.AttemptCount + 1))
 			_, _ = store.MarkPurgeArtifactFailed(recordings.MarkPurgeArtifactFailedInput{
 				ID:            artifact.ID,
 				LastError:     err.Error(),
-				NextAttemptAt: time.Now().UTC().Add(purgeArtifactRetryDelay(artifact.AttemptCount + 1)),
+				NextAttemptAt: nextAttemptAt,
 			})
+			slog.Default().WarnContext(ctx, "recording purge artifact cleanup failed",
+				append(recordingPurgeArtifactLogAttrs("purge_artifact_cleanup_failed", artifact),
+					slog.Int("attempt_count", artifact.AttemptCount+1),
+					slog.Time("next_attempt_at", nextAttemptAt),
+					slog.String("error", err.Error()),
+				)...,
+			)
 			continue
 		}
 		_, _ = store.MarkPurgeArtifactDeleted(recordings.MarkPurgeArtifactDeletedInput{ID: artifact.ID})
+		slog.Default().InfoContext(ctx, "recording purge artifact deleted",
+			append(recordingPurgeArtifactLogAttrs("purge_artifact_cleanup_deleted", artifact),
+				slog.Int("attempt_count", artifact.AttemptCount),
+			)...,
+		)
+	}
+}
+
+func recordingPurgeArtifactLogAttrs(event string, artifact recordings.RecordingPurgeArtifact) []any {
+	return []any{
+		slog.String("event", event),
+		slog.String("artifact_id", artifact.ID),
+		slog.String("recording_id", artifact.RecordingID),
+		slog.String("workspace_id", artifact.WorkspaceID),
+		slog.String("artifact_kind", artifact.ArtifactKind),
 	}
 }
 

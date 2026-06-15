@@ -1,8 +1,12 @@
 package cleanup
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -101,11 +105,85 @@ func TestRecordingPurgeArtifactCleanerRunOnceMarksFailedArtifactsRetryable(t *te
 	}
 }
 
+func TestRecordingPurgeArtifactCleanerRunOnceWritesStructuredLogs(t *testing.T) {
+	artifact := recordings.RecordingPurgeArtifact{
+		ID:           "rpa_1",
+		RecordingID:  "rec_1",
+		WorkspaceID:  "wsp_1",
+		ObjectKey:    "workspaces/wsp_1/recordings/rec_1/original.wav",
+		ArtifactKind: recordings.RecordingPurgeArtifactKindOriginalAudio,
+		AttemptCount: 1,
+	}
+	store := &purgeArtifactStoreSpy{claimed: []recordings.RecordingPurgeArtifact{artifact}}
+	objectStore := &purgeObjectStoreSpy{err: errCleanupObjectDelete}
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	cleaner := NewRecordingPurgeArtifactCleaner(store, objectStore, RecordingPurgeArtifactCleanerOptions{
+		BatchSize: 10,
+		Logger:    logger,
+	})
+
+	err := cleaner.RunOnce(context.Background())
+	if err == nil {
+		t.Fatal("RunOnce returned nil error, want delete error")
+	}
+
+	entries := decodeCleanupLogEntries(t, logs.String())
+	claimed := findCleanupLogEvent(t, entries, "purge_artifact_cleanup_claimed")
+	if got, want := int(claimed["artifact_count"].(float64)), 1; got != want {
+		t.Fatalf("artifact_count = %d, want %d", got, want)
+	}
+	failed := findCleanupLogEvent(t, entries, "purge_artifact_cleanup_failed")
+	assertCleanupLogField(t, failed, "artifact_id", "rpa_1")
+	assertCleanupLogField(t, failed, "recording_id", "rec_1")
+	assertCleanupLogField(t, failed, "workspace_id", "wsp_1")
+	assertCleanupLogField(t, failed, "artifact_kind", recordings.RecordingPurgeArtifactKindOriginalAudio)
+	assertCleanupLogField(t, failed, "error", errCleanupObjectDelete.Error())
+	if strings.Contains(logs.String(), artifact.ObjectKey) {
+		t.Fatalf("cleanup log leaked object key: %s", logs.String())
+	}
+}
+
 func TestRecordingPurgeArtifactCleanerRunOnceReturnsClaimErrors(t *testing.T) {
 	store := &purgeArtifactStoreSpy{err: errors.New("claim failed")}
 	cleaner := NewRecordingPurgeArtifactCleaner(store, &purgeObjectStoreSpy{}, RecordingPurgeArtifactCleanerOptions{})
 
 	if err := cleaner.RunOnce(context.Background()); err == nil {
 		t.Fatal("RunOnce returned nil error, want claim error")
+	}
+}
+
+func decodeCleanupLogEntries(t *testing.T, output string) []map[string]any {
+	t.Helper()
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	entries := make([]map[string]any, 0, len(lines))
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var entry map[string]any
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			t.Fatalf("decode log line %q: %v", line, err)
+		}
+		entries = append(entries, entry)
+	}
+	return entries
+}
+
+func findCleanupLogEvent(t *testing.T, entries []map[string]any, event string) map[string]any {
+	t.Helper()
+	for _, entry := range entries {
+		if entry["event"] == event {
+			return entry
+		}
+	}
+	t.Fatalf("event %q not found in entries %#v", event, entries)
+	return nil
+}
+
+func assertCleanupLogField(t *testing.T, entry map[string]any, key string, want string) {
+	t.Helper()
+	if got, ok := entry[key].(string); !ok || got != want {
+		t.Fatalf("%s = %#v, want %q", key, entry[key], want)
 	}
 }

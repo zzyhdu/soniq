@@ -3,7 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
+	"os"
 	"strings"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/zzyhdu/soniq/backend/internal/cleanup"
 	"github.com/zzyhdu/soniq/backend/internal/config"
 	storedb "github.com/zzyhdu/soniq/backend/internal/db"
+	"github.com/zzyhdu/soniq/backend/internal/observability"
 	"github.com/zzyhdu/soniq/backend/internal/recordings"
 	"github.com/zzyhdu/soniq/backend/internal/storage"
 	"github.com/zzyhdu/soniq/backend/internal/workflows"
@@ -24,16 +26,30 @@ import (
 func main() {
 	cfg := config.LoadFromEnv()
 	if err := cfg.ValidateForStartup(); err != nil {
-		log.Fatalf("invalid startup config: %v", err)
+		fmt.Fprintf(os.Stderr, "invalid startup config: %v\n", err)
+		os.Exit(1)
 	}
+	logger, err := observability.NewLogger(observability.LoggerConfig{
+		Service: "soniq-worker",
+		Format:  cfg.LogFormat,
+		Level:   cfg.LogLevel,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "configure logger: %v\n", err)
+		os.Exit(1)
+	}
+	slog.SetDefault(logger)
 
-	log.Printf("starting temporal worker")
-	log.Printf("temporal_address=%s", cfg.TemporalAddress)
-	log.Printf("temporal_namespace=%s", cfg.TemporalNamespace)
-	log.Printf("temporal_task_queue=%s", cfg.TemporalTaskQueue)
+	logger.Info("starting temporal worker",
+		slog.String("event", "worker_starting"),
+		slog.String("temporal_address", cfg.TemporalAddress),
+		slog.String("temporal_namespace", cfg.TemporalNamespace),
+		slog.String("temporal_task_queue", cfg.TemporalTaskQueue),
+	)
 
 	if err := run(context.Background(), cfg); err != nil {
-		log.Fatalf("worker stopped: %v", err)
+		logger.Error("worker stopped", slog.String("event", "worker_stopped"), slog.Any("error", err))
+		os.Exit(1)
 	}
 }
 
@@ -70,6 +86,7 @@ func run(ctx context.Context, cfg config.Config) error {
 	cleanupRunner := cleanup.NewRecordingPurgeArtifactCleaner(recordingStore, objectStore, cleanup.RecordingPurgeArtifactCleanerOptions{
 		Interval:  time.Duration(cfg.PurgeArtifactCleanupIntervalSeconds) * time.Second,
 		BatchSize: int(cfg.PurgeArtifactCleanupBatchSize),
+		Logger:    slog.Default(),
 	})
 	cleanupDone := make(chan struct{})
 	go func() {
