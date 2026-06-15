@@ -15,6 +15,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/healthz': 'http://localhost:8080',
+      '/readyz': 'http://localhost:8080',
       '/auth': 'http://localhost:8080',
       '/me': 'http://localhost:8080',
       '/recordings': 'http://localhost:8080',

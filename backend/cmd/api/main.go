@@ -23,6 +23,11 @@ import (
 	"go.temporal.io/sdk/client"
 )
 
+const (
+	requiredSchemaMigrationVersion = 6
+	readinessCheckTimeout          = 2 * time.Second
+)
+
 func main() {
 	cfg := config.LoadFromEnv()
 	if err := cfg.ValidateForStartup(); err != nil {
@@ -57,6 +62,7 @@ func main() {
 
 type temporalWorkflowClient interface {
 	processing.WorkflowStarter
+	CheckHealth(ctx context.Context, request *client.CheckHealthRequest) (*client.CheckHealthResponse, error)
 	Close()
 }
 
@@ -66,6 +72,8 @@ type appStoreClient interface {
 	RecordingStore() api.RecordingStore
 	WorkspaceStore() api.WorkspaceStore
 	AuthStore() appAuthStore
+	Ping(ctx context.Context) error
+	LatestSchemaMigrationVersion(ctx context.Context) (int, error)
 	Close()
 }
 
@@ -104,13 +112,113 @@ func buildHandler(ctx context.Context, cfg config.Config, temporalFactory tempor
 		temporalClient.Close()
 		return nil, func() {}, err
 	}
-	handler := api.NewRouterWithStorageIdentityAndPasswordAuth(appStore.RecordingStore(), appStore.WorkspaceStore(), authResolver, processor, objectStore, passwordAuthConfig)
+	readinessChecker := apiReadinessChecker{
+		appStore:                       appStore,
+		temporalClient:                 temporalClient,
+		storageProvider:                cfg.StorageProvider,
+		localStoragePath:               cfg.LocalStoragePath,
+		requiredSchemaMigrationVersion: requiredSchemaMigrationVersion,
+	}
+	handler := api.NewRouterWithStorageIdentityPasswordAuthAndReadiness(appStore.RecordingStore(), appStore.WorkspaceStore(), authResolver, processor, objectStore, passwordAuthConfig, readinessChecker)
 	cleanup := func() {
 		appStore.Close()
 		temporalClient.Close()
 	}
 
 	return handler, cleanup, nil
+}
+
+type apiReadinessChecker struct {
+	appStore                       appStoreClient
+	temporalClient                 temporalWorkflowClient
+	storageProvider                string
+	localStoragePath               string
+	requiredSchemaMigrationVersion int
+}
+
+func (c apiReadinessChecker) CheckReadiness(ctx context.Context) api.ReadinessReport {
+	checkCtx, cancel := context.WithTimeout(ctx, readinessCheckTimeout)
+	defer cancel()
+
+	return api.ReadinessReport{Checks: map[string]api.ReadinessCheck{
+		"postgres":       c.checkPostgres(checkCtx),
+		"migrations":     c.checkMigrations(checkCtx),
+		"temporal":       c.checkTemporal(checkCtx),
+		"object_storage": c.checkObjectStorage(),
+	}}
+}
+
+func (c apiReadinessChecker) checkPostgres(ctx context.Context) api.ReadinessCheck {
+	if c.appStore == nil {
+		return api.ReadinessCheckFailed("postgres store is not configured")
+	}
+	if err := c.appStore.Ping(ctx); err != nil {
+		return api.ReadinessCheckFailed("postgres unavailable")
+	}
+	return api.ReadinessCheckOK()
+}
+
+func (c apiReadinessChecker) checkMigrations(ctx context.Context) api.ReadinessCheck {
+	if c.appStore == nil {
+		return api.ReadinessCheckFailed("schema migration status unavailable")
+	}
+	version, err := c.appStore.LatestSchemaMigrationVersion(ctx)
+	if err != nil {
+		return api.ReadinessCheckFailed("schema migration status unavailable")
+	}
+	required := c.requiredSchemaMigrationVersion
+	if required <= 0 {
+		required = requiredSchemaMigrationVersion
+	}
+	if version < required {
+		return api.ReadinessCheckFailed(fmt.Sprintf("schema migration version %d is below required %d", version, required))
+	}
+	return api.ReadinessCheckOK()
+}
+
+func (c apiReadinessChecker) checkTemporal(ctx context.Context) api.ReadinessCheck {
+	if c.temporalClient == nil {
+		return api.ReadinessCheckFailed("temporal client is not configured")
+	}
+	if _, err := c.temporalClient.CheckHealth(ctx, &client.CheckHealthRequest{}); err != nil {
+		return api.ReadinessCheckFailed("temporal unavailable")
+	}
+	return api.ReadinessCheckOK()
+}
+
+func (c apiReadinessChecker) checkObjectStorage() api.ReadinessCheck {
+	switch strings.ToLower(strings.TrimSpace(c.storageProvider)) {
+	case "", "local":
+		if err := checkLocalObjectStorageRoot(c.localStoragePath); err != nil {
+			return api.ReadinessCheckFailed(err.Error())
+		}
+		return api.ReadinessCheckOK()
+	default:
+		return api.ReadinessCheckFailed("object storage provider is unsupported")
+	}
+}
+
+func checkLocalObjectStorageRoot(root string) error {
+	root = strings.TrimSpace(root)
+	if root == "" {
+		return fmt.Errorf("object storage root is not configured")
+	}
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		return fmt.Errorf("object storage root is not writable")
+	}
+	file, err := os.CreateTemp(root, ".readyz-*")
+	if err != nil {
+		return fmt.Errorf("object storage root is not writable")
+	}
+	name := file.Name()
+	if err := file.Close(); err != nil {
+		_ = os.Remove(name)
+		return fmt.Errorf("object storage root is not writable")
+	}
+	if err := os.Remove(name); err != nil {
+		return fmt.Errorf("object storage root is not writable")
+	}
+	return nil
 }
 
 func buildAuthDependencies(cfg config.Config, appStore appStoreClient) (api.AuthResolver, api.PasswordAuthConfig, error) {
@@ -227,6 +335,18 @@ func (s *postgresAppStoreClient) WorkspaceStore() api.WorkspaceStore {
 
 func (s *postgresAppStoreClient) AuthStore() appAuthStore {
 	return s.auth
+}
+
+func (s *postgresAppStoreClient) Ping(ctx context.Context) error {
+	return s.pool.Ping(ctx)
+}
+
+func (s *postgresAppStoreClient) LatestSchemaMigrationVersion(ctx context.Context) (int, error) {
+	var version int
+	if err := s.pool.QueryRow(ctx, `SELECT COALESCE(MAX(CASE WHEN version ~ '^[0-9]+$' THEN version::integer ELSE NULL END), 0) FROM schema_migrations`).Scan(&version); err != nil {
+		return 0, fmt.Errorf("read schema migration version: %w", err)
+	}
+	return version, nil
 }
 
 func (s *postgresAppStoreClient) Close() {

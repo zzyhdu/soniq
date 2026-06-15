@@ -172,7 +172,7 @@ func NewRouterWithProcessor(store RecordingStore, processor RecordingProcessor) 
 
 // NewRouterWithIdentity builds the HTTP handler with recording, workspace, auth, and processor dependencies.
 func NewRouterWithIdentity(store RecordingStore, workspaceStore WorkspaceStore, authResolver AuthResolver, processor RecordingProcessor) http.Handler {
-	return newRouterWithDependencies(store, workspaceStore, authResolver, processor, nil, nil)
+	return newRouterWithDependencies(store, workspaceStore, authResolver, processor, nil, nil, nil)
 }
 
 // NewRouterWithStorage builds the HTTP handler with injected recording store, processor, and object storage dependencies.
@@ -182,15 +182,29 @@ func NewRouterWithStorage(store RecordingStore, processor RecordingProcessor, ob
 
 // NewRouterWithStorageAndIdentity builds the HTTP handler with all API dependencies.
 func NewRouterWithStorageAndIdentity(store RecordingStore, workspaceStore WorkspaceStore, authResolver AuthResolver, processor RecordingProcessor, objectStore storage.ObjectStore) http.Handler {
-	return newRouterWithDependencies(store, workspaceStore, authResolver, processor, objectStore, nil)
+	return newRouterWithDependencies(store, workspaceStore, authResolver, processor, objectStore, nil, nil)
 }
 
 // NewRouterWithStorageIdentityAndPasswordAuth builds the HTTP handler with password auth endpoints enabled.
 func NewRouterWithStorageIdentityAndPasswordAuth(store RecordingStore, workspaceStore WorkspaceStore, authResolver AuthResolver, processor RecordingProcessor, objectStore storage.ObjectStore, authConfig PasswordAuthConfig) http.Handler {
-	return newRouterWithDependencies(store, workspaceStore, authResolver, processor, objectStore, &authConfig)
+	return newRouterWithStorageIdentityPasswordAuthAndReadiness(store, workspaceStore, authResolver, processor, objectStore, authConfig, nil)
 }
 
-func newRouterWithDependencies(store RecordingStore, workspaceStore WorkspaceStore, authResolver AuthResolver, processor RecordingProcessor, objectStore storage.ObjectStore, authConfig *PasswordAuthConfig) http.Handler {
+// NewRouterWithStorageIdentityPasswordAuthAndReadiness builds the HTTP handler with production API dependencies and readiness checks.
+func NewRouterWithStorageIdentityPasswordAuthAndReadiness(store RecordingStore, workspaceStore WorkspaceStore, authResolver AuthResolver, processor RecordingProcessor, objectStore storage.ObjectStore, authConfig PasswordAuthConfig, readinessChecker ReadinessChecker) http.Handler {
+	return newRouterWithStorageIdentityPasswordAuthAndReadiness(store, workspaceStore, authResolver, processor, objectStore, authConfig, readinessChecker)
+}
+
+// NewRouterWithReadiness builds a local/test HTTP handler with an injected readiness checker.
+func NewRouterWithReadiness(readinessChecker ReadinessChecker) http.Handler {
+	return newRouterWithDependencies(unconfiguredRecordingStore{}, unconfiguredWorkspaceStore{}, NewDevAuthResolver("usr_dev"), noopRecordingProcessor{}, nil, nil, readinessChecker)
+}
+
+func newRouterWithStorageIdentityPasswordAuthAndReadiness(store RecordingStore, workspaceStore WorkspaceStore, authResolver AuthResolver, processor RecordingProcessor, objectStore storage.ObjectStore, authConfig PasswordAuthConfig, readinessChecker ReadinessChecker) http.Handler {
+	return newRouterWithDependencies(store, workspaceStore, authResolver, processor, objectStore, &authConfig, readinessChecker)
+}
+
+func newRouterWithDependencies(store RecordingStore, workspaceStore WorkspaceStore, authResolver AuthResolver, processor RecordingProcessor, objectStore storage.ObjectStore, authConfig *PasswordAuthConfig, readinessChecker ReadinessChecker) http.Handler {
 	if processor == nil {
 		processor = noopRecordingProcessor{}
 	}
@@ -207,6 +221,7 @@ func newRouterWithDependencies(store RecordingStore, workspaceStore WorkspaceSto
 		router.Use(csrfProtectionMiddleware(*authConfig))
 	}
 	router.MethodFunc(http.MethodGet, "/healthz", healthzHandler)
+	router.MethodFunc(http.MethodGet, "/readyz", readyzHandler(readinessChecker))
 	router.MethodFunc(http.MethodGet, "/openapi.yaml", openAPIHandler)
 	router.MethodFunc(http.MethodGet, "/api-console", apiConsoleHandler)
 	if authConfig != nil {

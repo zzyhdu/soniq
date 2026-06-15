@@ -45,9 +45,9 @@ endif
 
 $(foreach key,$(CONFIG_ENV_KEYS),$(if $(filter environment command line,$(__ENV_ORIGIN_$(key))),$(eval override $(key) := $(__ENV_VALUE_$(key)))))
 
-.PHONY: fmt lint test api worker env-check migrate temporal-up temporal-down temporal-logs temporal-ps smoke-postgres-temporal
+.PHONY: fmt lint test api worker env-check migrate debug-purge-artifacts temporal-up temporal-down temporal-logs temporal-ps smoke-postgres-temporal
 
-$(foreach key,$(CONFIG_ENV_KEYS),$(eval api worker env-check migrate smoke-postgres-temporal: export $(key) := $($(key))))
+$(foreach key,$(CONFIG_ENV_KEYS),$(eval api worker env-check migrate debug-purge-artifacts smoke-postgres-temporal: export $(key) := $($(key))))
 
 fmt:
 	cd backend && go fmt ./...
@@ -81,6 +81,12 @@ env-check:
 
 migrate:
 	./scripts/migrate-local.sh
+
+debug-purge-artifacts: export ENV_FILE := $(ENV_FILE)
+debug-purge-artifacts: export LIMIT := $(LIMIT)
+debug-purge-artifacts: export STUCK_AFTER_MINUTES := $(STUCK_AFTER_MINUTES)
+debug-purge-artifacts:
+	./scripts/debug-purge-artifacts.sh
 
 temporal-up:
 	docker compose -f $(COMPOSE_FILE) up -d

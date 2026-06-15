@@ -228,6 +228,98 @@ func TestBuildHandlerLoginSessionCanReadMe(t *testing.T) {
 	}
 }
 
+func TestBuildHandlerReadyzChecksRuntimeDependencies(t *testing.T) {
+	temporalClient := &temporalClientSpy{}
+	store := newBuildHandlerRecordingStoreSpy()
+	enableBuildHandlerPassword(t, store)
+	storeFactory := &appStoreFactorySpy{store: store}
+	cfg := config.Config{
+		PostgresDSN:       "postgres://custom_user:***@db:5432/custom?sslmode=disable",
+		TemporalAddress:   "temporal.example:7233",
+		TemporalNamespace: "default",
+		TemporalTaskQueue: "soniq-audio-pipeline",
+		StorageProvider:   "local",
+		LocalStoragePath:  t.TempDir(),
+	}
+
+	handler, cleanup, err := buildHandler(context.Background(), cfg, func(context.Context, config.Config) (temporalWorkflowClient, error) {
+		return temporalClient, nil
+	}, storeFactory.Open)
+	if err != nil {
+		t.Fatalf("buildHandler returned error: %v", err)
+	}
+	defer cleanup()
+
+	request := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("readyz status code = %d, want %d; body=%s", response.Code, http.StatusOK, response.Body.String())
+	}
+	var body struct {
+		Status string            `json:"status"`
+		Checks map[string]string `json:"checks"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode readyz body: %v", err)
+	}
+	if body.Status != "ready" {
+		t.Fatalf("readyz status = %q, want ready", body.Status)
+	}
+	for _, checkName := range []string{"postgres", "migrations", "temporal", "object_storage"} {
+		if body.Checks[checkName] != "ok" {
+			t.Fatalf("readyz check %s = %q, want ok; body=%s", checkName, body.Checks[checkName], response.Body.String())
+		}
+	}
+}
+
+func TestBuildHandlerReadyzReportsOutdatedMigrations(t *testing.T) {
+	temporalClient := &temporalClientSpy{}
+	store := newBuildHandlerRecordingStoreSpy()
+	store.migrationVersion = requiredSchemaMigrationVersion - 1
+	enableBuildHandlerPassword(t, store)
+	storeFactory := &appStoreFactorySpy{store: store}
+	cfg := config.Config{
+		PostgresDSN:       "postgres://custom_user:***@db:5432/custom?sslmode=disable",
+		TemporalAddress:   "temporal.example:7233",
+		TemporalNamespace: "default",
+		TemporalTaskQueue: "soniq-audio-pipeline",
+		StorageProvider:   "local",
+		LocalStoragePath:  t.TempDir(),
+	}
+
+	handler, cleanup, err := buildHandler(context.Background(), cfg, func(context.Context, config.Config) (temporalWorkflowClient, error) {
+		return temporalClient, nil
+	}, storeFactory.Open)
+	if err != nil {
+		t.Fatalf("buildHandler returned error: %v", err)
+	}
+	defer cleanup()
+
+	request := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("readyz status code = %d, want %d; body=%s", response.Code, http.StatusServiceUnavailable, response.Body.String())
+	}
+	var body struct {
+		Status string            `json:"status"`
+		Checks map[string]string `json:"checks"`
+		Errors map[string]string `json:"errors,omitempty"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode readyz body: %v", err)
+	}
+	if body.Status != "not_ready" {
+		t.Fatalf("readyz status = %q, want not_ready", body.Status)
+	}
+	if body.Checks["migrations"] != "error" || body.Errors["migrations"] == "" {
+		t.Fatalf("readyz migrations check = %q error=%q, want error with message", body.Checks["migrations"], body.Errors["migrations"])
+	}
+}
+
 func enableBuildHandlerPassword(t *testing.T, store *buildHandlerRecordingStoreSpy) {
 	t.Helper()
 
@@ -321,10 +413,13 @@ func (s *appStoreFactorySpy) Open(ctx context.Context, dsn string) (appStoreClie
 }
 
 type buildHandlerRecordingStoreSpy struct {
-	stored map[string]domain.Recording
-	auth   *buildHandlerAuthStoreSpy
-	nextID int
-	closed bool
+	stored           map[string]domain.Recording
+	auth             *buildHandlerAuthStoreSpy
+	nextID           int
+	migrationVersion int
+	pingErr          error
+	migrationErr     error
+	closed           bool
 }
 
 func newBuildHandlerRecordingStoreSpy() *buildHandlerRecordingStoreSpy {
@@ -344,6 +439,20 @@ func (s *buildHandlerRecordingStoreSpy) WorkspaceStore() api.WorkspaceStore {
 
 func (s *buildHandlerRecordingStoreSpy) AuthStore() appAuthStore {
 	return s.auth
+}
+
+func (s *buildHandlerRecordingStoreSpy) Ping(context.Context) error {
+	return s.pingErr
+}
+
+func (s *buildHandlerRecordingStoreSpy) LatestSchemaMigrationVersion(context.Context) (int, error) {
+	if s.migrationErr != nil {
+		return 0, s.migrationErr
+	}
+	if s.migrationVersion == 0 {
+		return requiredSchemaMigrationVersion, nil
+	}
+	return s.migrationVersion, nil
 }
 
 func (s *buildHandlerRecordingStoreSpy) Create(input recordings.CreateRecordingInput) (domain.Recording, error) {
@@ -573,8 +682,9 @@ func (s *buildHandlerAuthStoreSpy) RevokeSession(context.Context, string, time.T
 }
 
 type temporalClientSpy struct {
-	calls  []workflowStartCall
-	closed bool
+	calls     []workflowStartCall
+	healthErr error
+	closed    bool
 }
 
 type workflowStartCall struct {
@@ -590,6 +700,13 @@ func (s *temporalClientSpy) ExecuteWorkflow(ctx context.Context, options client.
 		args:     args,
 	})
 	return nil, nil
+}
+
+func (s *temporalClientSpy) CheckHealth(context.Context, *client.CheckHealthRequest) (*client.CheckHealthResponse, error) {
+	if s.healthErr != nil {
+		return nil, s.healthErr
+	}
+	return &client.CheckHealthResponse{}, nil
 }
 
 func (s *temporalClientSpy) Close() {

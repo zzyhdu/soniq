@@ -28,6 +28,28 @@ paths:
           $ref: '#/components/responses/Error'
         default:
           $ref: '#/components/responses/Error'
+  /readyz:
+    get:
+      summary: Check API readiness
+      operationId: getReadyz
+      security: []
+      responses:
+        '200':
+          description: API dependencies are ready.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyzResponse'
+        '503':
+          description: One or more API dependencies are unavailable or not ready.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyzResponse'
+        '405':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
   /auth/signup:
     post:
       summary: Sign up with email and password
@@ -781,6 +803,22 @@ components:
         service:
           type: string
           enum: [soniq-api]
+    ReadyzResponse:
+      type: object
+      required: [status, checks]
+      properties:
+        status:
+          type: string
+          enum: [ready, not_ready]
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [ok, error]
+        errors:
+          type: object
+          additionalProperties:
+            type: string
     ErrorResponse:
       type: object
       required: [code, message, status]

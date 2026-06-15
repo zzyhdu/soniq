@@ -4,7 +4,7 @@ This document describes the current local backend and Web UI workflow for Soniq.
 
 Soniq is currently in the password-session identity, workspace-scoped recording, Postgres-backed recording persistence, original-audio probe, normalized-audio artifact, fake transcription/summarization/mind-map generation, and failed-recording retry milestone. The commands below intentionally run a small backend foundation:
 
-- the API exposes `GET /healthz`;
+- the API exposes `GET /healthz` for process liveness and `GET /readyz` for dependency readiness;
 - the API exposes identity endpoints: `GET /me` and `GET /workspaces`;
 - the API exposes `POST /auth/signup`, `POST /auth/signin`, and `POST /auth/signout` for email/password accounts backed by an httpOnly session cookie;
 - the API exposes workspace-scoped recording endpoints: `GET /workspaces/{workspace_id}/recordings`, `POST /workspaces/{workspace_id}/recordings`, `POST /workspaces/{workspace_id}/recordings/upload`, `GET /workspaces/{workspace_id}/recordings/trash`, `GET /workspaces/{workspace_id}/recordings/{recording_id}`, `GET /workspaces/{workspace_id}/recordings/{recording_id}/status`, `GET /workspaces/{workspace_id}/recordings/{recording_id}/details`, `POST /workspaces/{workspace_id}/recordings/{recording_id}/retry`, `DELETE /workspaces/{workspace_id}/recordings/{recording_id}`, `POST /workspaces/{workspace_id}/recordings/{recording_id}/restore`, and `DELETE /workspaces/{workspace_id}/recordings/{recording_id}/purge`;
@@ -195,6 +195,19 @@ Content-Type: application/json
 ```json
 {"status":"ok","service":"soniq-api"}
 ```
+
+`/healthz` is intentionally lightweight: it only means the API process is alive.
+Use `/readyz` to check whether the API can serve real traffic:
+
+```bash
+curl -i http://localhost:8080/readyz
+```
+
+`/readyz` checks Postgres, the current Soniq application migration version,
+Temporal health, and local object storage writability. It returns `200` with
+`status: "ready"` when all checks pass, and `503` with `status: "not_ready"`
+plus short check errors when a dependency is unavailable. It does not return
+DSNs, secrets, or local absolute storage paths.
 
 Every API response includes `X-Request-ID`. If the client sends that header, the
 API returns the same value; otherwise the API generates one. API and worker logs
@@ -496,7 +509,7 @@ Apply missing local application migrations:
 make migrate
 ```
 
-`make migrate` runs `scripts/migrate-local.sh`. The script maintains a local `schema_migrations` table. The current baseline application schema is represented by `backend/migrations/0001_baseline.up.sql` and recorded as version `1`. Recording failure metadata is added by `backend/migrations/0002_add_recording_failure_metadata.up.sql` and recorded as version `2`.
+`make migrate` runs `scripts/migrate-local.sh`. The script maintains a local `schema_migrations` table. The current baseline application schema is represented by `backend/migrations/0001_baseline.up.sql` and recorded as version `1`. Later migrations add recording failure metadata, password sessions, mind maps, soft delete, and purge artifact cleanup rows. The current required application schema version is `6`; `/readyz` reports `503` when the database has not reached that version.
 
 For older local databases that were created before `schema_migrations` existed, the script can recognize a complete pre-baseline schema and record `version='1'` without reapplying SQL. If a local database only contains part of the baseline schema, inspect or reset that local application database before running `make migrate` again.
 
@@ -506,9 +519,33 @@ Baseline migration `0001` seeds legacy local fixture identity data:
 - workspace: `wsp_default`
 - owner membership: `usr_dev` in `wsp_default`
 
-After the baseline is present, the script records `version='1'` in `schema_migrations`, then applies later migration versions such as `version='2'`. Future schema changes should be added as later migration versions instead of extending baseline version `1`.
+After the baseline is present, the script records `version='1'` in `schema_migrations`, then applies later migration versions in order. Future schema changes should be added as later migration versions instead of extending baseline version `1`.
 
 For local reset/testing, use the matching down migration only when you intentionally want to destroy local application schema/data. The normal local workflow should use `make migrate`.
+
+### Debug purge artifact cleanup
+
+Permanent recording purge removes database rows first and records object-storage
+cleanup work in `recording_purge_artifacts`. The API attempts immediate object
+cleanup, and the worker retries pending or failed rows.
+
+To inspect cleanup state without writing SQL manually:
+
+```bash
+make debug-purge-artifacts
+```
+
+The script reads `POSTGRES_DSN` from the shell or `.env` through the Makefile.
+When local `psql` is not installed, it falls back to `docker compose exec` using
+the same Postgres service settings as `make migrate`. It prints status counts,
+failed rows, and rows stuck in `deleting` for more than 10 minutes. It does not
+print `object_key` by default because object keys can contain user-provided
+filenames. Useful overrides:
+
+```bash
+LIMIT=50 make debug-purge-artifacts
+STUCK_AFTER_MINUTES=30 make debug-purge-artifacts
+```
 
 ## Run the Temporal worker skeleton
 
@@ -591,7 +628,7 @@ Open the Vite URL, usually:
 http://localhost:5173
 ```
 
-The Vite dev server proxies `/healthz`, `/auth/*`, `/me`, `/workspaces/*`, and legacy `/recordings/*` to `http://localhost:8080`, so keep `make api` running while using the browser UI. Keep `make worker` running if you want Temporal processing to continue after upload.
+The Vite dev server proxies `/healthz`, `/readyz`, `/auth/*`, `/me`, `/workspaces/*`, and legacy `/recordings/*` to `http://localhost:8080`, so keep `make api` running while using the browser UI. Keep `make worker` running if you want Temporal processing to continue after upload.
 
 Manual browser verification:
 
@@ -724,7 +761,7 @@ The current backend foundation provides:
 - a pnpm workspace with `apps/web` for the product Web UI and `packages/api-client` for shared typed recording API calls;
 - config loading and validation;
 - a chi HTTP router;
-- `GET /healthz`;
+- `GET /healthz` and `GET /readyz`;
 - identity endpoints for `GET /me` and `GET /workspaces`;
 - email/password auth endpoints for signup, signin, and signout;
 - Postgres-backed workspace-scoped recording endpoints for listing, metadata-only creation, audio upload, full-recording lookup, and status lookup;
