@@ -213,6 +213,17 @@ The local Temporal frontend listens on `localhost:7233`, and the Temporal Web UI
 http://localhost:8233
 ```
 
+The same Compose stack also starts a local MinIO service for upcoming
+S3-compatible storage work. MinIO's S3 API listens on `localhost:9000`, the
+console listens on `localhost:9001`, and a one-shot `minio-init` service creates
+the `soniq` bucket. Local credentials are:
+
+- access key: `soniq_minio_user`
+- secret key: `soniq_minio_password`
+
+The backend still defaults to `STORAGE_PROVIDER=local`; MinIO is available for
+manual verification and the planned S3-compatible provider path.
+
 Then start the API server:
 
 ```bash
@@ -761,8 +772,14 @@ The current backend reads environment variables directly. Important local settin
 | `TEMPORAL_ADDRESS` | `localhost:7233` | Temporal server address used by `make api` and `make worker`. |
 | `TEMPORAL_NAMESPACE` | `default` | Temporal namespace used by `make api` and `make worker`. |
 | `TEMPORAL_TASK_QUEUE` | `soniq-audio-pipeline` | Task queue used when the API starts workflows and the worker polls work. |
-| `STORAGE_PROVIDER` | `local` | Object storage provider selector. The implemented local development provider is `local`; S3-compatible storage is future-facing. |
+| `STORAGE_PROVIDER` | `local` | Object storage provider selector. The implemented local development provider is `local`; the local Compose stack includes MinIO for upcoming S3-compatible storage work. |
 | `LOCAL_STORAGE_PATH` | `var/uploads` | Local object storage root used when `STORAGE_PROVIDER=local`. |
+| `S3_ENDPOINT` | `http://localhost:9000` | Future S3-compatible endpoint; points at local MinIO in the Compose stack. |
+| `S3_REGION` | `us-east-1` | Future S3-compatible region value. |
+| `S3_BUCKET` | `soniq` | Future S3-compatible bucket; created by the local `minio-init` service. |
+| `S3_ACCESS_KEY` | `soniq_minio_user` | Future S3-compatible access key for local MinIO. |
+| `S3_SECRET_KEY` | `soniq_minio_password` | Future S3-compatible secret key for local MinIO. |
+| `S3_FORCE_PATH_STYLE` | `true` | Future S3-compatible path-style setting required by local MinIO. |
 | `TRANSCRIPTION_PROVIDER` | `fake_transcription` | Transcription provider selector. Use `openai_compatible_asr` for Xiaomi MiMo/OpenAI-compatible ASR. |
 | `TRANSCRIPTION_BASE_URL` | `https://api.xiaomimimo.com/v1` | OpenAI-compatible ASR base URL. |
 | `TRANSCRIPTION_API_KEY` | empty | External ASR API key loaded from local `.env`; never commit real values. |

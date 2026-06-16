@@ -230,6 +230,12 @@ soniq-migrate
 
 目标：移除 Kubernetes 部署对本地共享磁盘的依赖。
 
+当前进展：
+
+- 已在 `compose.temporal.yml` 增加本地 MinIO 和一次性 `minio-init`
+  bucket 初始化服务，用于后续 S3-compatible provider 验证。
+- 已在 `.env.example` 记录本地 MinIO 对应的未来 S3-compatible 配置。
+
 范围：
 
 - 新增 `STORAGE_PROVIDER=s3_compatible`。
