@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log/slog"
 	"os"
@@ -12,10 +13,18 @@ import (
 	storedb "github.com/zzyhdu/soniq/backend/internal/db"
 	appmigrations "github.com/zzyhdu/soniq/backend/internal/migrations"
 	"github.com/zzyhdu/soniq/backend/internal/observability"
+	"github.com/zzyhdu/soniq/backend/internal/version"
 	sqlmigrations "github.com/zzyhdu/soniq/backend/migrations"
 )
 
 func main() {
+	showVersion := flag.Bool("version", false, "print build version and exit")
+	flag.Parse()
+	if *showVersion {
+		fmt.Println(version.Summary("soniq-migrate"))
+		return
+	}
+
 	cfg := config.LoadFromEnv()
 	logger, err := observability.NewLogger(observability.LoggerConfig{
 		Service: "soniq-migrate",
@@ -28,6 +37,11 @@ func main() {
 	}
 	slog.SetDefault(logger)
 
+	logger.Info("starting soniq-migrate",
+		slog.String("event", "migration_starting"),
+		slog.String("version", version.Version),
+		slog.String("commit", version.Commit),
+	)
 	if err := run(context.Background(), cfg, logger); err != nil {
 		logger.Error("migration failed", slog.String("event", "migration_failed"), slog.Any("error", err))
 		os.Exit(1)

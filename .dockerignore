@@ -1,0 +1,33 @@
+# VCS and local editor state
+.git/
+.idea/
+.vscode/
+
+# Secrets and local environment files
+.env
+.env.*
+!.env.example
+
+# Dependency directories
+node_modules/
+apps/**/node_modules/
+packages/**/node_modules/
+.venv/
+__pycache__/
+
+# Build and coverage outputs
+bin/
+dist/
+build/
+coverage/
+.tmp/
+
+# Runtime data and local service volumes
+.data/
+var/
+backend/var/
+minio-data/
+postgres-data/
+
+# Local-only test artifacts
+testdata/

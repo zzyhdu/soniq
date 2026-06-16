@@ -218,6 +218,14 @@ soniq-migrate
 - 容器以非 root 用户运行。
 - API `/healthz` 和 `/readyz` 可访问。
 
+当前进展：
+
+- 已新增根 `Dockerfile`，使用多阶段构建产出 `api`、`worker`、`migrate` 三个 target。
+- 已新增 `.dockerignore`，排除 `.env`、依赖目录、本地上传数据、本地服务卷和测试素材。
+- API/migrate 使用 distroless nonroot runtime；worker 使用 slim Debian nonroot runtime，并包含 `ffmpeg`/`ffprobe`。
+- `make docker-build-api`、`make docker-build-worker`、`make docker-build-migrate`、`make docker-build` 已作为本地验证入口。
+- `soniq-api`、`soniq-worker`、`soniq-migrate` 支持 `--version`，Docker build 可通过 `APP_VERSION`、`VCS_REF`、`BUILD_DATE` 注入 release metadata。
+
 ## Phase K2 — S3-compatible storage provider
 
 目标：移除 Kubernetes 部署对本地共享磁盘的依赖。

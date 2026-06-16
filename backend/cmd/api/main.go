@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	"github.com/zzyhdu/soniq/backend/internal/processing"
 	"github.com/zzyhdu/soniq/backend/internal/recordings"
 	"github.com/zzyhdu/soniq/backend/internal/storage"
+	"github.com/zzyhdu/soniq/backend/internal/version"
 	"github.com/zzyhdu/soniq/backend/internal/workspaces"
 	"go.temporal.io/sdk/client"
 )
@@ -28,6 +30,13 @@ const (
 )
 
 func main() {
+	showVersion := flag.Bool("version", false, "print build version and exit")
+	flag.Parse()
+	if *showVersion {
+		fmt.Println(version.Summary("soniq-api"))
+		return
+	}
+
 	cfg := config.LoadFromEnv()
 	if err := cfg.ValidateForStartup(); err != nil {
 		fmt.Fprintf(os.Stderr, "invalid startup config: %v\n", err)
@@ -52,7 +61,12 @@ func main() {
 	defer cleanup()
 
 	addr := cfg.APIAddress
-	logger.Info("starting soniq-api", slog.String("event", "api_starting"), slog.String("address", addr))
+	logger.Info("starting soniq-api",
+		slog.String("event", "api_starting"),
+		slog.String("address", addr),
+		slog.String("version", version.Version),
+		slog.String("commit", version.Commit),
+	)
 	if err := http.ListenAndServe(addr, handler); err != nil {
 		logger.Error("api server stopped", slog.String("event", "api_stopped"), slog.Any("error", err))
 		os.Exit(1)

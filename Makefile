@@ -3,6 +3,15 @@ COMPOSE_FILE ?= compose.temporal.yml
 POSTGRES_USER ?= soniq_user
 POSTGRES_DB ?= soniq
 POSTGRES_DSN ?= postgres://soniq_user:soniq_password@localhost:5432/soniq?sslmode=disable
+DOCKER ?= docker
+APP_VERSION ?= dev
+DEFAULT_VCS_REF := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+DEFAULT_BUILD_DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+VCS_REF ?= $(DEFAULT_VCS_REF)
+BUILD_DATE ?= $(DEFAULT_BUILD_DATE)
+SONIQ_API_IMAGE ?= soniq-api:$(APP_VERSION)
+SONIQ_WORKER_IMAGE ?= soniq-worker:$(APP_VERSION)
+SONIQ_MIGRATE_IMAGE ?= soniq-migrate:$(APP_VERSION)
 CONFIG_ENV_KEYS := \
 	APP_ENV \
 	APP_PUBLIC_URL \
@@ -46,7 +55,7 @@ endif
 
 $(foreach key,$(CONFIG_ENV_KEYS),$(if $(filter environment command line,$(__ENV_ORIGIN_$(key))),$(eval override $(key) := $(__ENV_VALUE_$(key)))))
 
-.PHONY: fmt lint test api worker env-check migrate debug-purge-artifacts temporal-up temporal-down temporal-logs temporal-ps smoke-postgres-temporal
+.PHONY: fmt lint test api worker env-check migrate debug-purge-artifacts temporal-up temporal-down temporal-logs temporal-ps smoke-postgres-temporal docker-build docker-build-api docker-build-worker docker-build-migrate
 
 $(foreach key,$(CONFIG_ENV_KEYS),$(eval api worker env-check migrate debug-purge-artifacts smoke-postgres-temporal: export $(key) := $($(key))))
 
@@ -82,6 +91,29 @@ env-check:
 
 migrate:
 	cd backend && go run ./cmd/migrate
+
+docker-build: docker-build-api docker-build-worker docker-build-migrate
+
+docker-build-api:
+	$(DOCKER) build --target api \
+		--build-arg APP_VERSION=$(APP_VERSION) \
+		--build-arg VCS_REF=$(VCS_REF) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		-t $(SONIQ_API_IMAGE) .
+
+docker-build-worker:
+	$(DOCKER) build --target worker \
+		--build-arg APP_VERSION=$(APP_VERSION) \
+		--build-arg VCS_REF=$(VCS_REF) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		-t $(SONIQ_WORKER_IMAGE) .
+
+docker-build-migrate:
+	$(DOCKER) build --target migrate \
+		--build-arg APP_VERSION=$(APP_VERSION) \
+		--build-arg VCS_REF=$(VCS_REF) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		-t $(SONIQ_MIGRATE_IMAGE) .
 
 debug-purge-artifacts: export ENV_FILE := $(ENV_FILE)
 debug-purge-artifacts: export LIMIT := $(LIMIT)

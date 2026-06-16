@@ -92,6 +92,74 @@ ENV_FILE=.env.local make env-check
 ENV_FILE=.env.local make worker
 ```
 
+## Build production backend images
+
+The root `Dockerfile` builds three backend runtime targets from the same source
+and embedded migrations:
+
+```bash
+make docker-build-api
+make docker-build-worker
+make docker-build-migrate
+```
+
+Or build all three:
+
+```bash
+make docker-build
+```
+
+Default image tags are:
+
+- `soniq-api:dev`
+- `soniq-worker:dev`
+- `soniq-migrate:dev`
+
+Set `APP_VERSION` to tag images and inject build metadata into the binaries:
+
+```bash
+APP_VERSION=0.1.0 make docker-build
+```
+
+Each image runs as a non-root user and excludes local `.env` files, dependency
+directories, local uploads, local service volumes, and test artifacts via
+`.dockerignore`. The API and migration images use a distroless runtime. The
+worker image uses a slim Debian runtime because audio processing requires
+`ffmpeg` and `ffprobe`.
+
+Verify the built binaries without connecting to Postgres or Temporal:
+
+```bash
+docker run --rm soniq-api:dev --version
+docker run --rm soniq-worker:dev --version
+docker run --rm soniq-migrate:dev --version
+```
+
+To run the API container against local dependencies, start the local services
+and migrations first, then connect the container to the host network:
+
+```bash
+make temporal-up
+make migrate
+docker run --rm --network host \
+  -e 'POSTGRES_DSN=postgres://soniq_user:soniq_password@localhost:5432/soniq?sslmode=disable' \
+  -e TEMPORAL_ADDRESS=localhost:7233 \
+  -e API_ADDRESS=:8080 \
+  soniq-api:dev
+```
+
+Then verify:
+
+```bash
+curl -i http://localhost:8080/healthz
+curl -i http://localhost:8080/readyz
+```
+
+The current container path still defaults to local object storage under
+`/tmp/soniq/uploads`. That is acceptable for image verification, but production
+Kubernetes deployment should wait for the planned S3-compatible storage
+provider so API and worker pods do not depend on shared local disk.
+
 ## Full local smoke verification
 
 To avoid opening several terminals manually, run the full smoke target from the repository root:

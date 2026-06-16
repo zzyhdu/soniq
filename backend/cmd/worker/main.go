@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log/slog"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"github.com/zzyhdu/soniq/backend/internal/observability"
 	"github.com/zzyhdu/soniq/backend/internal/recordings"
 	"github.com/zzyhdu/soniq/backend/internal/storage"
+	"github.com/zzyhdu/soniq/backend/internal/version"
 	"github.com/zzyhdu/soniq/backend/internal/workflows"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
@@ -23,6 +25,13 @@ import (
 )
 
 func main() {
+	showVersion := flag.Bool("version", false, "print build version and exit")
+	flag.Parse()
+	if *showVersion {
+		fmt.Println(version.Summary("soniq-worker"))
+		return
+	}
+
 	cfg := config.LoadFromEnv()
 	if err := cfg.ValidateForStartup(); err != nil {
 		fmt.Fprintf(os.Stderr, "invalid startup config: %v\n", err)
@@ -44,6 +53,8 @@ func main() {
 		slog.String("temporal_address", cfg.TemporalAddress),
 		slog.String("temporal_namespace", cfg.TemporalNamespace),
 		slog.String("temporal_task_queue", cfg.TemporalTaskQueue),
+		slog.String("version", version.Version),
+		slog.String("commit", version.Commit),
 	)
 
 	if err := run(context.Background(), cfg); err != nil {
