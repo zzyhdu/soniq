@@ -2,6 +2,7 @@ ENV_FILE ?= .env
 COMPOSE_FILE ?= compose.temporal.yml
 POSTGRES_USER ?= soniq_user
 POSTGRES_DB ?= soniq
+POSTGRES_DSN ?= postgres://soniq_user:soniq_password@localhost:5432/soniq?sslmode=disable
 CONFIG_ENV_KEYS := \
 	APP_ENV \
 	APP_PUBLIC_URL \
@@ -80,7 +81,7 @@ env-check:
 	@echo "privacy_allow_external_model_providers=$(PRIVACY_ALLOW_EXTERNAL_MODEL_PROVIDERS)"
 
 migrate:
-	./scripts/migrate-local.sh
+	cd backend && go run ./cmd/migrate
 
 debug-purge-artifacts: export ENV_FILE := $(ENV_FILE)
 debug-purge-artifacts: export LIMIT := $(LIMIT)

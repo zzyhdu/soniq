@@ -164,6 +164,12 @@ External dependencies
 - 本地文件存储不再是生产部署必需项。
 - `/readyz` 可以表达 Postgres/Temporal/object storage/migration 状态。
 
+当前进展：
+
+- 已完成 Observability Phase 1/2：结构化日志、request ID、`/readyz`、purge artifact debug script。
+- 已新增容器可执行的 Go migration command：`backend/cmd/migrate`，未来镜像中可编译为 `soniq-migrate`，用于 Kubernetes Job。
+- `make migrate` 已切到 Go migration command；旧 Docker Compose migration 脚本已移除，避免 pre-release 兼容路径增加复杂度。
+
 ## Phase K1 — Production Docker images
 
 目标：提供可部署的 API 和 worker 镜像。

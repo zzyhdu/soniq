@@ -115,7 +115,7 @@ Implementation shape:
 - `backend/internal/api/recordings_test.go`
 - `backend/doc/openapi.yaml`
 - `backend/migrations/0006_add_recording_purge_artifacts.*.sql`
-- `scripts/migrate-local.sh`
+- `backend/cmd/migrate`
 
 ## Frontend Files
 

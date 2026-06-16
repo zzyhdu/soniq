@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/zzyhdu/soniq/backend/internal/activities"
 	"github.com/zzyhdu/soniq/backend/internal/cleanup"
@@ -228,54 +227,9 @@ func openPostgresRecordingStore(ctx context.Context, dsn string) (recordingStore
 		return nil, fmt.Errorf("ping postgres: %w", err)
 	}
 	return &postgresRecordingStoreClient{
-		PostgresStore: recordings.NewPostgresStore(postgresExecutor{pool: pool}),
+		PostgresStore: recordings.NewPostgresStore(storedb.NewPgxPoolExecutor(pool)),
 		pool:          pool,
 	}, nil
-}
-
-type postgresExecutor struct {
-	pool *pgxpool.Pool
-}
-
-func (e postgresExecutor) QueryRow(ctx context.Context, query string, args ...any) storedb.PostgresRow {
-	return e.pool.QueryRow(ctx, query, args...)
-}
-
-func (e postgresExecutor) Query(ctx context.Context, query string, args ...any) (storedb.PostgresRows, error) {
-	return e.pool.Query(ctx, query, args...)
-}
-
-func (e postgresExecutor) Begin(ctx context.Context) (storedb.PostgresTx, error) {
-	tx, err := e.pool.Begin(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return postgresTx{tx: tx}, nil
-}
-
-type postgresTx struct {
-	tx pgx.Tx
-}
-
-func (t postgresTx) QueryRow(ctx context.Context, query string, args ...any) storedb.PostgresRow {
-	return t.tx.QueryRow(ctx, query, args...)
-}
-
-func (t postgresTx) Query(ctx context.Context, query string, args ...any) (storedb.PostgresRows, error) {
-	return t.tx.Query(ctx, query, args...)
-}
-
-func (t postgresTx) Exec(ctx context.Context, query string, args ...any) error {
-	_, err := t.tx.Exec(ctx, query, args...)
-	return err
-}
-
-func (t postgresTx) Commit(ctx context.Context) error {
-	return t.tx.Commit(ctx)
-}
-
-func (t postgresTx) Rollback(ctx context.Context) error {
-	return t.tx.Rollback(ctx)
 }
 
 type postgresRecordingStoreClient struct {

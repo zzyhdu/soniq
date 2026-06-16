@@ -509,9 +509,17 @@ Apply missing local application migrations:
 make migrate
 ```
 
-`make migrate` runs `scripts/migrate-local.sh`. The script maintains a local `schema_migrations` table. The current baseline application schema is represented by `backend/migrations/0001_baseline.up.sql` and recorded as version `1`. Later migrations add recording failure metadata, password sessions, mind maps, soft delete, and purge artifact cleanup rows. The current required application schema version is `6`; `/readyz` reports `503` when the database has not reached that version.
+`make migrate` runs the Go migration command:
 
-For older local databases that were created before `schema_migrations` existed, the script can recognize a complete pre-baseline schema and record `version='1'` without reapplying SQL. If a local database only contains part of the baseline schema, inspect or reset that local application database before running `make migrate` again.
+```bash
+cd backend && go run ./cmd/migrate
+```
+
+The command reads `POSTGRES_DSN`, creates `schema_migrations` when needed, applies embedded `backend/migrations/*.up.sql` files in version order, and records each applied version. This is the same migration path intended for future container/Kubernetes jobs; a production image can run the compiled `soniq-migrate` binary without Docker Compose.
+
+The current baseline application schema is represented by `backend/migrations/0001_baseline.up.sql` and recorded as version `1`. Later migrations add recording failure metadata, password sessions, mind maps, soft delete, and purge artifact cleanup rows. The current required application schema version is `6`; `/readyz` reports `503` when the database has not reached that version.
+
+If a local database was created before the current migration system and does not have `schema_migrations`, reset that local application database before running migrations again. The project has not shipped yet, so we do not keep backward-compatibility migration paths for pre-release local schemas.
 
 Baseline migration `0001` seeds legacy local fixture identity data:
 
@@ -519,7 +527,7 @@ Baseline migration `0001` seeds legacy local fixture identity data:
 - workspace: `wsp_default`
 - owner membership: `usr_dev` in `wsp_default`
 
-After the baseline is present, the script records `version='1'` in `schema_migrations`, then applies later migration versions in order. Future schema changes should be added as later migration versions instead of extending baseline version `1`.
+After the baseline is present, the migration command records `version='1'` in `schema_migrations`, then applies later migration versions in order. Future schema changes should be added as later migration versions instead of extending baseline version `1`.
 
 For local reset/testing, use the matching down migration only when you intentionally want to destroy local application schema/data. The normal local workflow should use `make migrate`.
 
@@ -766,7 +774,8 @@ The current backend foundation provides:
 - email/password auth endpoints for signup, signin, and signout;
 - Postgres-backed workspace-scoped recording endpoints for listing, metadata-only creation, audio upload, full-recording lookup, and status lookup;
 - completed-recording details lookup for transcript segments, summary, and mind map results;
-- SQL migrations for `users`, `workspaces`, `workspace_members`, `user_sessions`, the `recordings` table, failure metadata, audio object metadata columns, `recording_audio_probes`, `recording_normalized_audios`, `recording_transcripts`, `recording_transcript_segments`, `recording_summaries`, and `recording_mind_maps`;
+- embedded SQL migrations for `users`, `workspaces`, `workspace_members`, `user_sessions`, the `recordings` table, failure metadata, audio object metadata columns, `recording_audio_probes`, `recording_normalized_audios`, `recording_transcripts`, `recording_transcript_segments`, `recording_summaries`, `recording_mind_maps`, and purge artifact cleanup rows;
+- a container-ready Go migration command under `backend/cmd/migrate`;
 - a local filesystem object-store provider selected with `STORAGE_PROVIDER=local` and rooted at `LOCAL_STORAGE_PATH`;
 - API and Temporal worker command entrypoints;
 - a Temporal-backed recording processor that starts `RecordingProcessingWorkflow` after successful audio upload requests;

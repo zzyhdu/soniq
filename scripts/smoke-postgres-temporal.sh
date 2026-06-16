@@ -269,7 +269,7 @@ assert_json_field_equals() {
 
 apply_application_migrations() {
   log "applying missing Soniq application migrations"
-  COMPOSE_FILE="$COMPOSE_FILE" POSTGRES_USER="$POSTGRES_USER" POSTGRES_DB="$POSTGRES_DB" make migrate
+  POSTGRES_DSN="$POSTGRES_DSN" make migrate
 }
 
 assert_uploaded_object() {
