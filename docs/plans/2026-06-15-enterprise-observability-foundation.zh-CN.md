@@ -293,7 +293,7 @@ API readiness 检查：
 - Postgres ping。
 - migration version 是否达到当前应用要求。
 - Temporal client 可连接，或至少可 dial。
-- local object storage root 可写/可访问。
+- S3-compatible object storage bucket 可访问。
 
 返回：
 

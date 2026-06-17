@@ -130,7 +130,6 @@ func buildHandler(ctx context.Context, cfg config.Config, temporalFactory tempor
 		temporalClient:                 temporalClient,
 		objectStore:                    objectStore,
 		storageProvider:                cfg.StorageProvider,
-		localStoragePath:               cfg.LocalStoragePath,
 		requiredSchemaMigrationVersion: requiredSchemaMigrationVersion,
 	}
 	handler := api.NewRouterWithStorageIdentityPasswordAuthAndReadiness(appStore.RecordingStore(), appStore.WorkspaceStore(), authResolver, processor, objectStore, passwordAuthConfig, readinessChecker)
@@ -147,7 +146,6 @@ type apiReadinessChecker struct {
 	temporalClient                 temporalWorkflowClient
 	objectStore                    storage.ObjectStore
 	storageProvider                string
-	localStoragePath               string
 	requiredSchemaMigrationVersion int
 }
 
@@ -202,49 +200,19 @@ func (c apiReadinessChecker) checkTemporal(ctx context.Context) api.ReadinessChe
 }
 
 func (c apiReadinessChecker) checkObjectStorage(ctx context.Context) api.ReadinessCheck {
-	switch strings.ToLower(strings.TrimSpace(c.storageProvider)) {
-	case "", "local":
-		if err := checkLocalObjectStorageRoot(c.localStoragePath); err != nil {
-			return api.ReadinessCheckFailed(err.Error())
-		}
-		return api.ReadinessCheckOK()
-	case "s3_compatible":
-		checker, ok := c.objectStore.(interface {
-			Check(context.Context) error
-		})
-		if !ok {
-			return api.ReadinessCheckFailed("object storage readiness check is not configured")
-		}
-		if err := checker.Check(ctx); err != nil {
-			return api.ReadinessCheckFailed("object storage unavailable")
-		}
-		return api.ReadinessCheckOK()
-	default:
+	if strings.ToLower(strings.TrimSpace(c.storageProvider)) != "s3_compatible" {
 		return api.ReadinessCheckFailed("object storage provider is unsupported")
 	}
-}
-
-func checkLocalObjectStorageRoot(root string) error {
-	root = strings.TrimSpace(root)
-	if root == "" {
-		return fmt.Errorf("object storage root is not configured")
+	checker, ok := c.objectStore.(interface {
+		Check(context.Context) error
+	})
+	if !ok {
+		return api.ReadinessCheckFailed("object storage readiness check is not configured")
 	}
-	if err := os.MkdirAll(root, 0o755); err != nil {
-		return fmt.Errorf("object storage root is not writable")
+	if err := checker.Check(ctx); err != nil {
+		return api.ReadinessCheckFailed("object storage unavailable")
 	}
-	file, err := os.CreateTemp(root, ".readyz-*")
-	if err != nil {
-		return fmt.Errorf("object storage root is not writable")
-	}
-	name := file.Name()
-	if err := file.Close(); err != nil {
-		_ = os.Remove(name)
-		return fmt.Errorf("object storage root is not writable")
-	}
-	if err := os.Remove(name); err != nil {
-		return fmt.Errorf("object storage root is not writable")
-	}
-	return nil
+	return api.ReadinessCheckOK()
 }
 
 func buildAuthDependencies(cfg config.Config, appStore appStoreClient) (api.AuthResolver, api.PasswordAuthConfig, error) {
@@ -268,7 +236,6 @@ func buildAuthDependencies(cfg config.Config, appStore appStoreClient) (api.Auth
 func buildObjectStore(ctx context.Context, cfg config.Config) (storage.ObjectStore, error) {
 	return storage.NewObjectStore(ctx, storage.ProviderConfig{
 		Provider:         cfg.StorageProvider,
-		LocalStoragePath: cfg.LocalStoragePath,
 		S3Endpoint:       cfg.S3Endpoint,
 		S3Region:         cfg.S3Region,
 		S3Bucket:         cfg.S3Bucket,

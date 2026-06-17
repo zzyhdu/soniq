@@ -15,8 +15,7 @@ type ObjectStore interface {
 
 Current implementation:
 
-- `local` filesystem provider for development. Original uploads and derived normalized audio artifacts are stored under `LOCAL_STORAGE_PATH`; normalized audio uses a deterministic sibling object key ending in `/normalized.wav`.
-- `s3_compatible` provider for MinIO, AWS S3, Cloudflare R2, Aliyun OSS, Tencent COS, Huawei OBS, and other S3-compatible services. The implementation uses the AWS SDK as a generic S3 protocol client; it is not an AWS cloud-service dependency. API upload uses `PutObject`, worker processing downloads objects to temporary local files for `ffprobe` and `ffmpeg`, normalized audio is uploaded back through object storage, URL-capable ASR providers can receive a presigned normalized audio URL, and deletion/purge cleanup use `DeleteObject`.
+- `s3_compatible` provider for MinIO, AWS S3, Cloudflare R2, Aliyun OSS, Tencent COS, Huawei OBS, and other S3-compatible services. The implementation uses the AWS SDK as a generic S3 protocol client; it is not an AWS cloud-service dependency. API upload uses `PutObject`, worker processing downloads objects to temporary local files for `ffprobe` and `ffmpeg`, normalized audio is uploaded back through object storage, real ASR providers receive a presigned normalized audio URL, and deletion/purge cleanup use `DeleteObject`.
 
 S3-compatible target examples:
 
@@ -47,7 +46,7 @@ Provider categories:
 
 Current implementation:
 
-- `fake_transcription`, a deterministic local provider used by default smoke tests to verify the real API/storage/Postgres/Temporal/worker/persistence pipeline without credentials. In the current workflow it receives the normalized audio local path from `recording_normalized_audios`, not the original upload path.
+- `fake_transcription`, a deterministic local provider used by default smoke tests to verify the real API/storage/Postgres/Temporal/worker/persistence pipeline without credentials. It uses the same URL-based transcription request contract without calling an external provider.
 - `openai_compatible_asr`, a real provider adapter shape that is covered by automated fake-server smoke tests and can be pointed at real compatible providers manually.
 - `dashscope_asr`, a native DashScope ASR adapter for explicit/manual real-provider runs.
 
@@ -56,7 +55,7 @@ Verification boundary:
 - Automated smoke (`make smoke-postgres-temporal`) should keep deterministic fake model providers by default. It validates the real processing pipeline and persistence boundary without network, credentials, provider cost, or privacy risk.
 - Automated provider-shape smoke should use local fake servers such as `scripts/smoke-openai-compatible-asr-fake.sh`; this verifies request/response wiring without calling external model providers.
 - Real external ASR verification is manual/opt-in. Set provider-specific credentials in a local ignored environment and run `scripts/smoke-postgres-temporal.sh` explicitly. Do not make real provider calls part of the default smoke path.
-- For URL-capable ASR providers, prefer object-storage URLs over Base64 payloads. DashScope native non-realtime ASR uses `file_urls` and receives a presigned normalized audio URL when S3-compatible storage is configured; it falls back to local file Base64 only when no URL is available. This allows large audio files to avoid the local `TRANSCRIPTION_MAX_BASE64_BYTES` payload limit.
+- Real ASR providers are URL-only. They receive object-storage URLs and do not read local audio files or Base64 payloads. DashScope native non-realtime ASR uses `file_urls`; OpenAI-compatible ASR providers receive the same URL in `input_audio.data`. For manual real-provider runs, configure `STORAGE_PROVIDER=s3_compatible` with an endpoint the ASR provider can reach. Local MinIO URLs are useful for fake-server smoke tests but are not reachable by external providers.
 
 Initial real target providers:
 
@@ -130,6 +129,6 @@ Fallback must be explicit because compliance-sensitive deployments may forbid ex
 
 ## Xiaomi MiMo ASR configuration target
 
-The first real transcription provider target is Xiaomi MiMo ASR (`mimo-v2.5-asr`). It uses `POST /chat/completions` at `https://api.xiaomimimo.com/v1` with a Base64 `input_audio` content part, not multipart `/audio/transcriptions`. Runtime API keys must come from local environment variables such as `TRANSCRIPTION_API_KEY` or `MIMO_API_KEY`; repository files must contain placeholders only.
+The first real transcription provider target is Xiaomi MiMo ASR (`mimo-v2.5-asr`). It uses `POST /chat/completions` at `https://api.xiaomimimo.com/v1` with a URL in the `input_audio` content part, not multipart `/audio/transcriptions`. Runtime API keys must come from local environment variables such as `TRANSCRIPTION_API_KEY` or `MIMO_API_KEY`; repository files must contain placeholders only.
 
-Automated verification must use `scripts/smoke-openai-compatible-asr-fake.sh`, which starts a local fake ASR server and does not call Xiaomi. Real Xiaomi verification is manual-only: set `TRANSCRIPTION_PROVIDER=openai_compatible_asr`, `TRANSCRIPTION_API_KEY`, `TRANSCRIPTION_MODEL=mimo-v2.5-asr`, `TRANSCRIPTION_AUTH_HEADER=api-key`, and `TRANSCRIPTION_LANGUAGE=zh` in local `.env`, then run `scripts/smoke-postgres-temporal.sh`. That manual smoke sends normalized WAV audio to Xiaomi MiMo, so use only appropriate test audio and never commit real keys.
+Automated verification must use `scripts/smoke-openai-compatible-asr-fake.sh`, which starts a local fake ASR server and does not call Xiaomi. Real Xiaomi verification is manual-only: set `STORAGE_PROVIDER=s3_compatible` with externally reachable object storage, `TRANSCRIPTION_PROVIDER=openai_compatible_asr`, `TRANSCRIPTION_API_KEY`, `TRANSCRIPTION_MODEL=mimo-v2.5-asr`, `TRANSCRIPTION_AUTH_HEADER=api-key`, and `TRANSCRIPTION_LANGUAGE=zh` in local `.env`, then run `scripts/smoke-postgres-temporal.sh` with `SMOKE_EXTERNAL_PROVIDERS=1`. That manual smoke sends a normalized-audio URL to Xiaomi MiMo, so use only appropriate test audio and never commit real keys.

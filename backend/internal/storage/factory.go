@@ -9,7 +9,6 @@ import (
 // ProviderConfig contains object storage provider settings.
 type ProviderConfig struct {
 	Provider         string
-	LocalStoragePath string
 	S3Endpoint       string
 	S3Region         string
 	S3Bucket         string
@@ -21,8 +20,6 @@ type ProviderConfig struct {
 // NewObjectStore creates the configured object store.
 func NewObjectStore(ctx context.Context, cfg ProviderConfig) (ObjectStore, error) {
 	switch strings.ToLower(strings.TrimSpace(cfg.Provider)) {
-	case "", "local":
-		return NewLocalStore(cfg.LocalStoragePath), nil
 	case "s3_compatible":
 		return NewS3CompatibleStore(ctx, S3CompatibleConfig{
 			Endpoint:       cfg.S3Endpoint,

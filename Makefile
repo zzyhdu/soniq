@@ -28,7 +28,6 @@ CONFIG_ENV_KEYS := \
 	TEMPORAL_NAMESPACE \
 	TEMPORAL_TASK_QUEUE \
 	STORAGE_PROVIDER \
-	LOCAL_STORAGE_PATH \
 	S3_ENDPOINT \
 	S3_REGION \
 	S3_BUCKET \
@@ -42,7 +41,6 @@ CONFIG_ENV_KEYS := \
 	TRANSCRIPTION_MODEL \
 	TRANSCRIPTION_AUTH_HEADER \
 	TRANSCRIPTION_LANGUAGE \
-	TRANSCRIPTION_MAX_BASE64_BYTES \
 	DASHSCOPE_BASE_URL \
 	DASHSCOPE_API_KEY \
 	DASHSCOPE_ASR_MODEL \
@@ -139,5 +137,6 @@ temporal-logs:
 temporal-ps:
 	docker compose -f $(COMPOSE_FILE) ps
 
+smoke-postgres-temporal: override STORAGE_PROVIDER := s3_compatible
 smoke-postgres-temporal:
 	./scripts/smoke-postgres-temporal.sh

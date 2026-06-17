@@ -19,8 +19,7 @@ SMOKE_WORKSPACE_ID="${SMOKE_WORKSPACE_ID:-}"
 SMOKE_EMAIL="${SMOKE_EMAIL:-smoke@local.soniq}"
 SMOKE_DISPLAY_NAME="${SMOKE_DISPLAY_NAME:-Smoke Tester}"
 SMOKE_PASSWORD="${SMOKE_PASSWORD:-correct horse smoke}"
-STORAGE_PROVIDER="${STORAGE_PROVIDER:-local}"
-LOCAL_STORAGE_PATH="${LOCAL_STORAGE_PATH:-$ROOT_DIR/var/uploads/smoke}"
+STORAGE_PROVIDER="${STORAGE_PROVIDER:-s3_compatible}"
 S3_ENDPOINT="${S3_ENDPOINT:-http://localhost:9000}"
 S3_REGION="${S3_REGION:-us-east-1}"
 S3_BUCKET="${S3_BUCKET:-soniq}"
@@ -34,7 +33,6 @@ MIMO_API_KEY="${MIMO_API_KEY:-}"
 TRANSCRIPTION_MODEL="${TRANSCRIPTION_MODEL:-mimo-v2.5-asr}"
 TRANSCRIPTION_AUTH_HEADER="${TRANSCRIPTION_AUTH_HEADER:-api-key}"
 TRANSCRIPTION_LANGUAGE="${TRANSCRIPTION_LANGUAGE:-auto}"
-TRANSCRIPTION_MAX_BASE64_BYTES="${TRANSCRIPTION_MAX_BASE64_BYTES:-10485760}"
 DASHSCOPE_BASE_URL="${DASHSCOPE_BASE_URL:-https://dashscope.aliyuncs.com/api/v1}"
 DASHSCOPE_API_KEY="${DASHSCOPE_API_KEY:-}"
 DASHSCOPE_ASR_MODEL="${DASHSCOPE_ASR_MODEL:-paraformer-v2}"
@@ -46,6 +44,11 @@ EXPECTED_TRANSCRIPT_MODEL="${EXPECTED_TRANSCRIPT_MODEL:-}"
 EXPECTED_SUMMARY_PROVIDER="${EXPECTED_SUMMARY_PROVIDER:-}"
 EXPECTED_SUMMARY_MODEL="${EXPECTED_SUMMARY_MODEL:-}"
 SMOKE_DOWN="${SMOKE_DOWN:-0}"
+
+if [[ "$STORAGE_PROVIDER" != "s3_compatible" ]]; then
+  printf '[smoke] unsupported STORAGE_PROVIDER=%s; smoke requires s3_compatible\n' "$STORAGE_PROVIDER" >&2
+  exit 1
+fi
 
 if [[ "$SMOKE_EXTERNAL_PROVIDERS" == "1" ]]; then
   TRANSCRIPTION_PROVIDER="${TRANSCRIPTION_PROVIDER:-fake_transcription}"
@@ -61,10 +64,6 @@ LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/soniq-smoke.XXXXXX")"
 API_LOG="$LOG_DIR/api.log"
 WORKER_LOG="$LOG_DIR/worker.log"
 COOKIE_JAR="$LOG_DIR/cookies.txt"
-case "$LOCAL_STORAGE_PATH" in
-  /*) EFFECTIVE_LOCAL_STORAGE_PATH="$LOCAL_STORAGE_PATH" ;;
-  *) EFFECTIVE_LOCAL_STORAGE_PATH="$ROOT_DIR/$LOCAL_STORAGE_PATH" ;;
-esac
 EXPECTED_TRANSCRIPT_LANGUAGE="${EXPECTED_TRANSCRIPT_LANGUAGE:-}"
 
 log() {
@@ -133,7 +132,6 @@ start_worker() {
     LOG_FORMAT="$LOG_FORMAT" \
     LOG_LEVEL="$LOG_LEVEL" \
     STORAGE_PROVIDER="$STORAGE_PROVIDER" \
-    LOCAL_STORAGE_PATH="$EFFECTIVE_LOCAL_STORAGE_PATH" \
     S3_ENDPOINT="$S3_ENDPOINT" \
     S3_REGION="$S3_REGION" \
     S3_BUCKET="$S3_BUCKET" \
@@ -147,7 +145,6 @@ start_worker() {
     TRANSCRIPTION_MODEL="$TRANSCRIPTION_MODEL" \
     TRANSCRIPTION_AUTH_HEADER="$TRANSCRIPTION_AUTH_HEADER" \
     TRANSCRIPTION_LANGUAGE="$TRANSCRIPTION_LANGUAGE" \
-    TRANSCRIPTION_MAX_BASE64_BYTES="$TRANSCRIPTION_MAX_BASE64_BYTES" \
     DASHSCOPE_BASE_URL="$DASHSCOPE_BASE_URL" \
     DASHSCOPE_API_KEY="$DASHSCOPE_API_KEY" \
     DASHSCOPE_ASR_MODEL="$DASHSCOPE_ASR_MODEL" \
@@ -175,7 +172,6 @@ start_api() {
     TEMPORAL_NAMESPACE="$TEMPORAL_NAMESPACE" \
     TEMPORAL_TASK_QUEUE="$TEMPORAL_TASK_QUEUE" \
     STORAGE_PROVIDER="$STORAGE_PROVIDER" \
-    LOCAL_STORAGE_PATH="$EFFECTIVE_LOCAL_STORAGE_PATH" \
     S3_ENDPOINT="$S3_ENDPOINT" \
     S3_REGION="$S3_REGION" \
     S3_BUCKET="$S3_BUCKET" \
@@ -310,26 +306,11 @@ assert_s3_bucket_ready() {
 assert_object_exists() {
   local object_key="$1"
   local expected_size_bytes="$2"
-  if [[ "$STORAGE_PROVIDER" == "s3_compatible" ]]; then
-    local stat_json actual_size_bytes
-    stat_json="$(run_minio_mc stat --json "smoke/$S3_BUCKET/$object_key")"
-    actual_size_bytes="$(printf '%s\n' "$stat_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["size"])')"
-    if [[ "$actual_size_bytes" != "$expected_size_bytes" ]]; then
-      log "S3 object size mismatch for $object_key: $actual_size_bytes, want $expected_size_bytes"
-      return 1
-    fi
-    return 0
-  fi
-
-  local object_path="$EFFECTIVE_LOCAL_STORAGE_PATH/$object_key"
-  if [[ ! -f "$object_path" ]]; then
-    log "uploaded object does not exist: $object_path"
-    return 1
-  fi
-  local actual_size_bytes
-  actual_size_bytes="$(wc -c <"$object_path" | tr -d ' ')"
+  local stat_json actual_size_bytes
+  stat_json="$(run_minio_mc stat --json "smoke/$S3_BUCKET/$object_key")"
+  actual_size_bytes="$(printf '%s\n' "$stat_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["size"])')"
   if [[ "$actual_size_bytes" != "$expected_size_bytes" ]]; then
-    log "uploaded object size mismatch: $actual_size_bytes, want $expected_size_bytes"
+    log "S3 object size mismatch for $object_key: $actual_size_bytes, want $expected_size_bytes"
     return 1
   fi
 }
@@ -500,16 +481,9 @@ main() {
   wait_for_command "Temporal frontend" 60 \
     docker compose -f "$COMPOSE_FILE" exec -T temporal temporal --address temporal:7233 operator namespace list
 
-  if [[ "$STORAGE_PROVIDER" == "s3_compatible" ]]; then
-    wait_for_command "MinIO bucket $S3_BUCKET" 60 assert_s3_bucket_ready
-  fi
+  wait_for_command "MinIO bucket $S3_BUCKET" 60 assert_s3_bucket_ready
 
   apply_application_migrations
-
-  if [[ "$STORAGE_PROVIDER" == "local" ]]; then
-    rm -rf "$EFFECTIVE_LOCAL_STORAGE_PATH"
-    mkdir -p "$EFFECTIVE_LOCAL_STORAGE_PATH"
-  fi
 
   start_worker
   start_api

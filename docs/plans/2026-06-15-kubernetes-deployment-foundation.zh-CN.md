@@ -17,7 +17,7 @@ chart 只会把问题搬进集群。
 - Go worker 进程。
 - Soniq application Postgres。
 - Temporal worker/task queue。
-- local filesystem object storage。
+- S3-compatible object storage。
 - Docker Compose 本地 Temporal/Postgres。
 - 基础 `/healthz`。
 - 正在计划中的企业级 observability foundation。
@@ -138,7 +138,7 @@ External dependencies
 - Soniq migration 只作用于 Soniq application Postgres。
 - 不迁移 Temporal database。
 - 不在 chart 中默认创建 Temporal schema。
-- 不把 local object storage 用作生产存储。
+- 不重新引入 filesystem object storage；部署统一走 S3-compatible object storage。
 
 ## 分阶段实现
 
@@ -238,8 +238,9 @@ soniq-migrate
 - 已实现 S3-compatible object store：API upload 使用 `PutObject`，worker
   processing 使用 `GetObject` 下载到临时文件并上传 normalized artifact，删除和
   purge cleanup 使用 `DeleteObject`。
-- 已支持为 URL-capable ASR provider 生成 normalized audio presigned URL；
-  DashScope native ASR 优先使用 URL，避免大文件走 Base64 payload。
+- 已支持为真实 ASR provider 生成 normalized audio presigned URL；
+  DashScope native ASR 和 OpenAI-compatible ASR 都走 URL，不再保留本地文件/Base64
+  转写路径。
 - `/readyz` 在 S3-compatible 模式下会检查 bucket 可访问。
 - `STORAGE_PROVIDER=s3_compatible make smoke-postgres-temporal` 可用于本地
   MinIO smoke 验证。
@@ -479,24 +480,16 @@ Kubernetes 部署应默认使用：
 STORAGE_PROVIDER=s3_compatible
 ```
 
-local storage 只适合：
-
-- 单机开发。
-- 测试。
-- 极简 demo。
-
-不适合：
-
-- 多副本 API。
-- API/worker 分布在不同节点。
-- pod 重启后仍需保留上传文件。
+`local` filesystem storage provider 已移除；Kubernetes 和本地开发都应使用
+S3-compatible object storage。多副本 API、API/worker 分布在不同节点、pod 重启
+后保留上传文件，都依赖外部 object storage 边界。
 
 ## 风险
 
 - 太早写 Helm 会固化错误的配置和存储边界。
 - 内置 Postgres/Temporal/MinIO 会让第一版 chart 复杂度过高。
 - Secret 处理不当会导致企业部署不可接受。
-- local filesystem 进入生产会导致 worker 随机找不到文件。
+- object storage 配置错误会导致 worker 无法读取上传文件或生成 presigned ASR URL。
 - readiness 太浅会让 K8s 把不可用 pod 加入流量。
 - readiness 太深或太慢会导致误杀和启动慢。
 

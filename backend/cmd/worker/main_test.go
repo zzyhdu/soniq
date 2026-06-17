@@ -21,7 +21,7 @@ func TestRegisterRecordingProcessingRegistersWorkflowAndActivities(t *testing.T)
 	worker := &recordingWorkerSpy{}
 	store := &workerRecordingStoreSpy{}
 
-	registerRecordingProcessing(worker, store, localPathResolverTestStub{}, objectStoreTestStub{}, audioProbeRunnerTestStub{}, audioNormalizeRunnerTestStub{}, activities.FakeTranscriptionProvider{}, activities.FakeSummaryProvider{})
+	registerRecordingProcessing(worker, store, objectStoreTestStub{}, audioProbeRunnerTestStub{}, audioNormalizeRunnerTestStub{}, activities.FakeTranscriptionProvider{}, activities.FakeSummaryProvider{})
 
 	if got, want := len(worker.workflows), 1; got != want {
 		t.Fatalf("registered workflows = %d, want %d", got, want)
@@ -74,7 +74,6 @@ func TestTranscriptionProviderForConfigBuildsOpenAICompatibleASR(t *testing.T) {
 	cfg.TranscriptionModel = "mimo-v2.5-asr"
 	cfg.TranscriptionAuthHeader = "bearer"
 	cfg.TranscriptionLanguage = "zh"
-	cfg.TranscriptionMaxBase64Bytes = 12345
 
 	provider, err := transcriptionProviderForConfig(cfg)
 	if err != nil {
@@ -84,7 +83,7 @@ func TestTranscriptionProviderForConfigBuildsOpenAICompatibleASR(t *testing.T) {
 	if !ok {
 		t.Fatalf("provider = %T, want OpenAICompatibleASRProvider", provider)
 	}
-	if asr.BaseURL != cfg.TranscriptionBaseURL || asr.APIKey != cfg.TranscriptionAPIKey || asr.Model != cfg.TranscriptionModel || asr.AuthHeader != cfg.TranscriptionAuthHeader || asr.Language != cfg.TranscriptionLanguage || asr.MaxBase64Bytes != cfg.TranscriptionMaxBase64Bytes {
+	if asr.BaseURL != cfg.TranscriptionBaseURL || asr.APIKey != cfg.TranscriptionAPIKey || asr.Model != cfg.TranscriptionModel || asr.AuthHeader != cfg.TranscriptionAuthHeader || asr.Language != cfg.TranscriptionLanguage {
 		t.Fatalf("asr provider = %+v, want config-derived fields", asr)
 	}
 }
@@ -96,7 +95,6 @@ func TestTranscriptionProviderForConfigBuildsDashScopeASR(t *testing.T) {
 	cfg.DashScopeAPIKey = "dashscope-key"
 	cfg.DashScopeASRModel = "paraformer-v2"
 	cfg.TranscriptionLanguage = "zh"
-	cfg.TranscriptionMaxBase64Bytes = 54321
 
 	provider, err := transcriptionProviderForConfig(cfg)
 	if err != nil {
@@ -106,7 +104,7 @@ func TestTranscriptionProviderForConfigBuildsDashScopeASR(t *testing.T) {
 	if !ok {
 		t.Fatalf("provider = %T, want DashScopeASRProvider", provider)
 	}
-	if asr.BaseURL != cfg.DashScopeBaseURL || asr.APIKey != cfg.DashScopeAPIKey || asr.Model != cfg.DashScopeASRModel || asr.Language != cfg.TranscriptionLanguage || asr.MaxBase64Bytes != cfg.TranscriptionMaxBase64Bytes {
+	if asr.BaseURL != cfg.DashScopeBaseURL || asr.APIKey != cfg.DashScopeAPIKey || asr.Model != cfg.DashScopeASRModel || asr.Language != cfg.TranscriptionLanguage {
 		t.Fatalf("asr provider = %+v, want DashScope config-derived fields", asr)
 	}
 }
@@ -194,12 +192,6 @@ func TestSummaryProviderForConfigRejectsExternalProviderInPrivateMode(t *testing
 
 func sameFunction(a, b interface{}) bool {
 	return reflect.ValueOf(a).Pointer() == reflect.ValueOf(b).Pointer()
-}
-
-type localPathResolverTestStub struct{}
-
-func (localPathResolverTestStub) LocalPathForObject(key string) (string, error) {
-	return key, nil
 }
 
 type objectStoreTestStub struct{}

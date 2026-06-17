@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import base64
 import json
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -34,11 +33,9 @@ class Handler(BaseHTTPRequestHandler):
             content = messages[0]["content"]
             assert len(content) == 1
             assert content[0]["type"] == "input_audio"
-            data_url = content[0]["input_audio"]["data"]
-            prefix = "data:audio/wav;base64,"
-            assert data_url.startswith(prefix)
-            audio = base64.b64decode(data_url[len(prefix):], validate=True)
-            assert len(audio) > 0
+            audio_url = content[0]["input_audio"]["data"]
+            assert audio_url.startswith("http://") or audio_url.startswith("https://")
+            assert "normalized.wav" in audio_url
         except Exception as exc:
             self.send_error(400, f"invalid request: {exc}")
             return

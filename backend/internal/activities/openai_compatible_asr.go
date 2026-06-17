@@ -3,13 +3,11 @@ package activities
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 )
@@ -18,19 +16,17 @@ const (
 	openAICompatibleASRProviderName = "openai_compatible_asr"
 	openAICompatibleASRDefaultModel = "mimo-v2.5-asr"
 	openAICompatibleASRDefaultLang  = "auto"
-	openAICompatibleASRDefaultLimit = int64(10 * 1024 * 1024)
 )
 
 // OpenAICompatibleASRProvider calls an OpenAI-compatible chat-completions ASR endpoint.
 type OpenAICompatibleASRProvider struct {
-	BaseURL        string
-	APIKey         string
-	Model          string
-	AuthHeader     string
-	Language       string
-	MaxBase64Bytes int64
-	HTTPClient     *http.Client
-	Now            func() time.Time
+	BaseURL    string
+	APIKey     string
+	Model      string
+	AuthHeader string
+	Language   string
+	HTTPClient *http.Client
+	Now        func() time.Time
 }
 
 type openAICompatibleASRRequest struct {
@@ -71,8 +67,9 @@ type openAICompatibleASRChoiceMessage struct {
 }
 
 func (p OpenAICompatibleASRProvider) Transcribe(ctx context.Context, request TranscriptionRequest) (TranscriptionResult, error) {
-	if strings.TrimSpace(request.AudioPath) == "" {
-		return TranscriptionResult{}, errors.New("audio path is required")
+	audioURL := strings.TrimSpace(request.AudioURL)
+	if audioURL == "" {
+		return TranscriptionResult{}, errors.New("audio URL is required")
 	}
 	baseURL := strings.TrimRight(strings.TrimSpace(p.BaseURL), "/")
 	if baseURL == "" {
@@ -89,26 +86,13 @@ func (p OpenAICompatibleASRProvider) Transcribe(ctx context.Context, request Tra
 	if language == "" {
 		language = openAICompatibleASRDefaultLang
 	}
-	maxBase64Bytes := p.MaxBase64Bytes
-	if maxBase64Bytes <= 0 {
-		maxBase64Bytes = openAICompatibleASRDefaultLimit
-	}
-
-	audio, err := os.ReadFile(request.AudioPath)
-	if err != nil {
-		return TranscriptionResult{}, fmt.Errorf("read audio file: %w", err)
-	}
-	encoded := base64.StdEncoding.EncodeToString(audio)
-	if int64(len(encoded)) > maxBase64Bytes {
-		return TranscriptionResult{}, fmt.Errorf("base64 audio payload size %d exceeds limit %d", len(encoded), maxBase64Bytes)
-	}
 	body := openAICompatibleASRRequest{
 		Model: model,
 		Messages: []openAICompatibleASRMessage{{
 			Role: "user",
 			Content: []openAICompatibleASRContentPart{{
 				Type:       "input_audio",
-				InputAudio: openAICompatibleASRAudio{Data: "data:audio/wav;base64," + encoded},
+				InputAudio: openAICompatibleASRAudio{Data: audioURL},
 			}},
 		}},
 		ASROptions: openAICompatibleASRRequestOpts{Language: language},

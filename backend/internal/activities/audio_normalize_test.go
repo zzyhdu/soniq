@@ -196,23 +196,6 @@ func (s *normalizeRecordingStoreSpy) GetNormalizedAudio(recordingID string) (rec
 	return recordings.RecordingNormalizedAudio{}, false, nil
 }
 
-type normalizePathResolverSpy struct {
-	paths map[string]string
-	keys  []string
-	err   error
-}
-
-func (s *normalizePathResolverSpy) LocalPathForObject(key string) (string, error) {
-	s.keys = append(s.keys, key)
-	if s.err != nil {
-		return "", s.err
-	}
-	if path, ok := s.paths[key]; ok {
-		return path, nil
-	}
-	return "/tmp/soniq/" + key, nil
-}
-
 type audioNormalizeRunnerSpy struct {
 	requests []AudioNormalizeRequest
 	result   AudioNormalizeResult
@@ -224,6 +207,7 @@ type normalizeObjectStoreSpy struct {
 	objects map[string]string
 	gets    []string
 	puts    []storage.PutObjectInput
+	err     error
 }
 
 func (s *normalizeObjectStoreSpy) PutObject(ctx context.Context, input storage.PutObjectInput) (storage.PutObjectResult, error) {
@@ -243,6 +227,9 @@ func (s *normalizeObjectStoreSpy) PutObject(ctx context.Context, input storage.P
 }
 
 func (s *normalizeObjectStoreSpy) GetObject(ctx context.Context, key string) (storage.GetObjectResult, error) {
+	if s.err != nil {
+		return storage.GetObjectResult{}, s.err
+	}
 	s.gets = append(s.gets, key)
 	return storage.GetObjectResult{Key: key, Body: io.NopCloser(strings.NewReader(s.objects[key])), SizeBytes: int64(len(s.objects[key]))}, nil
 }
@@ -335,9 +322,8 @@ func TestRecordingProcessingActivitiesPrepareRecordingAudioPersistsProbeAndNorma
 	store := &normalizeRecordingStoreSpy{recordings: map[string]domain.Recording{
 		"rec_normalize": {ID: "rec_normalize", AudioObjectKey: "recordings/rec_normalize/original.wav"},
 	}}
-	resolver := &normalizePathResolverSpy{paths: map[string]string{
-		"recordings/rec_normalize/original.wav":   t.TempDir() + "/original.wav",
-		"recordings/rec_normalize/normalized.wav": t.TempDir() + "/normalized.wav",
+	objectStore := &normalizeObjectStoreSpy{objects: map[string]string{
+		"recordings/rec_normalize/original.wav": "original-audio",
 	}}
 	probedAt := time.Date(2026, 6, 6, 1, 2, 3, 0, time.UTC)
 	probeRunner := &audioProbeRunnerSpy{result: AudioProbeResult{
@@ -351,25 +337,22 @@ func TestRecordingProcessingActivitiesPrepareRecordingAudioPersistsProbeAndNorma
 		ProbedAt:        probedAt,
 	}}
 	runner := &audioNormalizeRunnerSpy{write: []byte("normalized-audio")}
-	activities := &RecordingProcessingActivities{store: store, normalizedAudioStore: store, pathResolver: resolver, probeRunner: probeRunner, normalizeRunner: runner}
+	activities := &RecordingProcessingActivities{store: store, normalizedAudioStore: store, objectStore: objectStore, probeRunner: probeRunner, normalizeRunner: runner}
 
 	if err := activities.PrepareRecordingAudio(context.Background(), "rec_normalize"); err != nil {
 		t.Fatalf("PrepareRecordingAudio returned error: %v", err)
 	}
-	if len(resolver.keys) != 2 {
-		t.Fatalf("resolved keys = %+v, want original and normalized keys", resolver.keys)
-	}
-	if resolver.keys[0] != "recordings/rec_normalize/original.wav" || resolver.keys[1] != "recordings/rec_normalize/normalized.wav" {
-		t.Fatalf("resolved keys = %+v, want original then normalized object key", resolver.keys)
-	}
 	if len(runner.requests) != 1 {
 		t.Fatalf("normalize runner requests = %d, want 1", len(runner.requests))
 	}
-	if len(probeRunner.paths) != 1 || probeRunner.paths[0] != resolver.paths["recordings/rec_normalize/original.wav"] {
-		t.Fatalf("probe runner paths = %+v, want resolved original path", probeRunner.paths)
+	if len(objectStore.gets) != 1 || objectStore.gets[0] != "recordings/rec_normalize/original.wav" {
+		t.Fatalf("get objects = %+v, want original audio download", objectStore.gets)
 	}
-	if runner.requests[0].InputPath != resolver.paths["recordings/rec_normalize/original.wav"] || runner.requests[0].OutputPath != resolver.paths["recordings/rec_normalize/normalized.wav"] {
-		t.Fatalf("normalize request = %+v, want resolved input/output paths", runner.requests[0])
+	if len(probeRunner.paths) != 1 || probeRunner.paths[0] != runner.requests[0].InputPath {
+		t.Fatalf("probe path = %+v normalize request = %+v, want shared staged input", probeRunner.paths, runner.requests[0])
+	}
+	if runner.requests[0].InputPath == "" || runner.requests[0].OutputPath == "" || runner.requests[0].InputPath == runner.requests[0].OutputPath {
+		t.Fatalf("normalize request = %+v, want distinct temporary paths", runner.requests[0])
 	}
 	if len(store.probes) != 1 {
 		t.Fatalf("stored probes = %d, want 1", len(store.probes))
@@ -400,10 +383,13 @@ func TestRecordingProcessingActivitiesPrepareRecordingAudioPersistsProbeAndNorma
 	if persisted.SampleRate != 16000 || persisted.Channels != 1 || persisted.SizeBytes != int64(len("normalized-audio")) {
 		t.Fatalf("persisted numeric metadata = %+v, want 16k mono with output size", persisted)
 	}
+	if got := objectStore.objects["recordings/rec_normalize/normalized.wav"]; got != "normalized-audio" {
+		t.Fatalf("uploaded normalized audio = %q, want normalized-audio", got)
+	}
 }
 
 func TestRecordingProcessingActivitiesPrepareRecordingAudioRejectsMissingRecordingID(t *testing.T) {
-	activities := &RecordingProcessingActivities{store: &normalizeRecordingStoreSpy{}, normalizedAudioStore: &normalizeRecordingStoreSpy{}, pathResolver: &normalizePathResolverSpy{}, probeRunner: &audioProbeRunnerSpy{}, normalizeRunner: &audioNormalizeRunnerSpy{}}
+	activities := &RecordingProcessingActivities{store: &normalizeRecordingStoreSpy{}, normalizedAudioStore: &normalizeRecordingStoreSpy{}, objectStore: &normalizeObjectStoreSpy{}, probeRunner: &audioProbeRunnerSpy{}, normalizeRunner: &audioNormalizeRunnerSpy{}}
 	if err := activities.PrepareRecordingAudio(context.Background(), ""); err == nil {
 		t.Fatal("PrepareRecordingAudio returned nil error, want missing recording id error")
 	}
@@ -415,11 +401,11 @@ func TestRecordingProcessingActivitiesPrepareRecordingAudioRequiresDependencies(
 		name       string
 		activities *RecordingProcessingActivities
 	}{
-		{name: "store", activities: &RecordingProcessingActivities{normalizedAudioStore: store, pathResolver: &normalizePathResolverSpy{}, probeRunner: &audioProbeRunnerSpy{}, normalizeRunner: &audioNormalizeRunnerSpy{}}},
-		{name: "normalized store", activities: &RecordingProcessingActivities{store: store, pathResolver: &normalizePathResolverSpy{}, probeRunner: &audioProbeRunnerSpy{}, normalizeRunner: &audioNormalizeRunnerSpy{}}},
-		{name: "path resolver", activities: &RecordingProcessingActivities{store: store, normalizedAudioStore: store, probeRunner: &audioProbeRunnerSpy{}, normalizeRunner: &audioNormalizeRunnerSpy{}}},
-		{name: "probe runner", activities: &RecordingProcessingActivities{store: store, normalizedAudioStore: store, pathResolver: &normalizePathResolverSpy{}, normalizeRunner: &audioNormalizeRunnerSpy{}}},
-		{name: "normalize runner", activities: &RecordingProcessingActivities{store: store, normalizedAudioStore: store, pathResolver: &normalizePathResolverSpy{}, probeRunner: &audioProbeRunnerSpy{}}},
+		{name: "store", activities: &RecordingProcessingActivities{normalizedAudioStore: store, objectStore: &normalizeObjectStoreSpy{}, probeRunner: &audioProbeRunnerSpy{}, normalizeRunner: &audioNormalizeRunnerSpy{}}},
+		{name: "normalized store", activities: &RecordingProcessingActivities{store: store, objectStore: &normalizeObjectStoreSpy{}, probeRunner: &audioProbeRunnerSpy{}, normalizeRunner: &audioNormalizeRunnerSpy{}}},
+		{name: "object store", activities: &RecordingProcessingActivities{store: store, normalizedAudioStore: store, probeRunner: &audioProbeRunnerSpy{}, normalizeRunner: &audioNormalizeRunnerSpy{}}},
+		{name: "probe runner", activities: &RecordingProcessingActivities{store: store, normalizedAudioStore: store, objectStore: &normalizeObjectStoreSpy{}, normalizeRunner: &audioNormalizeRunnerSpy{}}},
+		{name: "normalize runner", activities: &RecordingProcessingActivities{store: store, normalizedAudioStore: store, objectStore: &normalizeObjectStoreSpy{}, probeRunner: &audioProbeRunnerSpy{}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -431,7 +417,7 @@ func TestRecordingProcessingActivitiesPrepareRecordingAudioRequiresDependencies(
 }
 
 func TestRecordingProcessingActivitiesPrepareRecordingAudioRequiresExistingRecording(t *testing.T) {
-	activities := &RecordingProcessingActivities{store: &normalizeRecordingStoreSpy{}, normalizedAudioStore: &normalizeRecordingStoreSpy{}, pathResolver: &normalizePathResolverSpy{}, probeRunner: &audioProbeRunnerSpy{}, normalizeRunner: &audioNormalizeRunnerSpy{}}
+	activities := &RecordingProcessingActivities{store: &normalizeRecordingStoreSpy{}, normalizedAudioStore: &normalizeRecordingStoreSpy{}, objectStore: &normalizeObjectStoreSpy{}, probeRunner: &audioProbeRunnerSpy{}, normalizeRunner: &audioNormalizeRunnerSpy{}}
 	if err := activities.PrepareRecordingAudio(context.Background(), "rec_missing"); err == nil {
 		t.Fatal("PrepareRecordingAudio returned nil error, want missing recording error")
 	}
@@ -439,26 +425,26 @@ func TestRecordingProcessingActivitiesPrepareRecordingAudioRequiresExistingRecor
 
 func TestRecordingProcessingActivitiesPrepareRecordingAudioRequiresAudioObjectKey(t *testing.T) {
 	store := &normalizeRecordingStoreSpy{recordings: map[string]domain.Recording{"rec_normalize": {ID: "rec_normalize"}}}
-	activities := &RecordingProcessingActivities{store: store, normalizedAudioStore: store, pathResolver: &normalizePathResolverSpy{}, probeRunner: &audioProbeRunnerSpy{}, normalizeRunner: &audioNormalizeRunnerSpy{}}
+	activities := &RecordingProcessingActivities{store: store, normalizedAudioStore: store, objectStore: &normalizeObjectStoreSpy{}, probeRunner: &audioProbeRunnerSpy{}, normalizeRunner: &audioNormalizeRunnerSpy{}}
 	if err := activities.PrepareRecordingAudio(context.Background(), "rec_normalize"); err == nil {
 		t.Fatal("PrepareRecordingAudio returned nil error, want missing audio object key error")
 	}
 }
 
-func TestRecordingProcessingActivitiesPrepareRecordingAudioReturnsResolverError(t *testing.T) {
+func TestRecordingProcessingActivitiesPrepareRecordingAudioReturnsObjectStoreReadError(t *testing.T) {
 	store := &normalizeRecordingStoreSpy{recordings: map[string]domain.Recording{"rec_normalize": {ID: "rec_normalize", AudioObjectKey: "recordings/rec_normalize/original.wav"}}}
-	resolverErr := errors.New("resolve failed")
-	activities := &RecordingProcessingActivities{store: store, normalizedAudioStore: store, pathResolver: &normalizePathResolverSpy{err: resolverErr}, probeRunner: &audioProbeRunnerSpy{}, normalizeRunner: &audioNormalizeRunnerSpy{}}
+	readErr := errors.New("read object failed")
+	activities := &RecordingProcessingActivities{store: store, normalizedAudioStore: store, objectStore: &normalizeObjectStoreSpy{err: readErr}, probeRunner: &audioProbeRunnerSpy{}, normalizeRunner: &audioNormalizeRunnerSpy{}}
 
-	if err := activities.PrepareRecordingAudio(context.Background(), "rec_normalize"); !errors.Is(err, resolverErr) {
-		t.Fatalf("PrepareRecordingAudio error = %v, want resolver error", err)
+	if err := activities.PrepareRecordingAudio(context.Background(), "rec_normalize"); !errors.Is(err, readErr) {
+		t.Fatalf("PrepareRecordingAudio error = %v, want object store read error", err)
 	}
 }
 
 func TestRecordingProcessingActivitiesPrepareRecordingAudioReturnsProbeRunnerErrorWithoutPersisting(t *testing.T) {
 	store := &normalizeRecordingStoreSpy{recordings: map[string]domain.Recording{"rec_normalize": {ID: "rec_normalize", AudioObjectKey: "recordings/rec_normalize/original.wav"}}}
 	runnerErr := errors.New("ffprobe failed")
-	activities := &RecordingProcessingActivities{store: store, normalizedAudioStore: store, pathResolver: &normalizePathResolverSpy{}, probeRunner: &audioProbeRunnerSpy{err: runnerErr}, normalizeRunner: &audioNormalizeRunnerSpy{}}
+	activities := &RecordingProcessingActivities{store: store, normalizedAudioStore: store, objectStore: &normalizeObjectStoreSpy{objects: map[string]string{"recordings/rec_normalize/original.wav": "original-audio"}}, probeRunner: &audioProbeRunnerSpy{err: runnerErr}, normalizeRunner: &audioNormalizeRunnerSpy{}}
 
 	if err := activities.PrepareRecordingAudio(context.Background(), "rec_normalize"); !errors.Is(err, runnerErr) {
 		t.Fatalf("PrepareRecordingAudio error = %v, want runner error", err)
@@ -474,7 +460,7 @@ func TestRecordingProcessingActivitiesPrepareRecordingAudioReturnsProbeRunnerErr
 func TestRecordingProcessingActivitiesPrepareRecordingAudioReturnsNormalizeRunnerErrorWithoutPersistingNormalizedAudio(t *testing.T) {
 	store := &normalizeRecordingStoreSpy{recordings: map[string]domain.Recording{"rec_normalize": {ID: "rec_normalize", AudioObjectKey: "recordings/rec_normalize/original.wav"}}}
 	runnerErr := errors.New("ffmpeg failed")
-	activities := &RecordingProcessingActivities{store: store, normalizedAudioStore: store, pathResolver: &normalizePathResolverSpy{}, probeRunner: &audioProbeRunnerSpy{}, normalizeRunner: &audioNormalizeRunnerSpy{err: runnerErr}}
+	activities := &RecordingProcessingActivities{store: store, normalizedAudioStore: store, objectStore: &normalizeObjectStoreSpy{objects: map[string]string{"recordings/rec_normalize/original.wav": "original-audio"}}, probeRunner: &audioProbeRunnerSpy{}, normalizeRunner: &audioNormalizeRunnerSpy{err: runnerErr}}
 
 	if err := activities.PrepareRecordingAudio(context.Background(), "rec_normalize"); !errors.Is(err, runnerErr) {
 		t.Fatalf("PrepareRecordingAudio error = %v, want runner error", err)

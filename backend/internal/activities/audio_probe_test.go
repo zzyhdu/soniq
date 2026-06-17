@@ -22,20 +22,6 @@ func (s *audioProbeRunnerSpy) Probe(ctx context.Context, path string) (AudioProb
 	return s.result, nil
 }
 
-type localPathResolverSpy struct {
-	paths []string
-	path  string
-	err   error
-}
-
-func (s *localPathResolverSpy) LocalPathForObject(key string) (string, error) {
-	s.paths = append(s.paths, key)
-	if s.err != nil {
-		return "", s.err
-	}
-	return s.path, nil
-}
-
 func TestFFProbeRunnerReturnsClearErrorForMissingAudioFile(t *testing.T) {
 	runner := FFProbeRunner{Binary: "ffprobe"}
 	missingPath := filepath.Join(t.TempDir(), "missing.wav")

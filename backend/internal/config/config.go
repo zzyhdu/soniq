@@ -22,7 +22,6 @@ type Config struct {
 	PurgeArtifactCleanupIntervalSeconds          int64
 	PurgeArtifactCleanupBatchSize                int64
 	StorageProvider                              string
-	LocalStoragePath                             string
 	S3Endpoint                                   string
 	S3Region                                     string
 	S3Bucket                                     string
@@ -35,7 +34,6 @@ type Config struct {
 	TranscriptionModel                           string
 	TranscriptionAuthHeader                      string
 	TranscriptionLanguage                        string
-	TranscriptionMaxBase64Bytes                  int64
 	DashScopeBaseURL                             string
 	DashScopeAPIKey                              string
 	DashScopeASRModel                            string
@@ -63,8 +61,7 @@ func LoadFromEnv() Config {
 		TemporalTaskQueue:                   envString("TEMPORAL_TASK_QUEUE", "soniq-audio-pipeline"),
 		PurgeArtifactCleanupIntervalSeconds: envInt64("PURGE_ARTIFACT_CLEANUP_INTERVAL_SECONDS", 300),
 		PurgeArtifactCleanupBatchSize:       envInt64("PURGE_ARTIFACT_CLEANUP_BATCH_SIZE", 25),
-		StorageProvider:                     envString("STORAGE_PROVIDER", "local"),
-		LocalStoragePath:                    envString("LOCAL_STORAGE_PATH", "var/uploads"),
+		StorageProvider:                     envString("STORAGE_PROVIDER", "s3_compatible"),
 		S3Endpoint:                          envString("S3_ENDPOINT", "http://localhost:9000"),
 		S3Region:                            envString("S3_REGION", "us-east-1"),
 		S3Bucket:                            envString("S3_BUCKET", "soniq"),
@@ -77,7 +74,6 @@ func LoadFromEnv() Config {
 		TranscriptionModel:                  envString("TRANSCRIPTION_MODEL", "mimo-v2.5-asr"),
 		TranscriptionAuthHeader:             envString("TRANSCRIPTION_AUTH_HEADER", "api-key"),
 		TranscriptionLanguage:               envString("TRANSCRIPTION_LANGUAGE", "auto"),
-		TranscriptionMaxBase64Bytes:         envInt64("TRANSCRIPTION_MAX_BASE64_BYTES", 10*1024*1024),
 		DashScopeBaseURL:                    envString("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/api/v1"),
 		DashScopeAPIKey:                     envString("DASHSCOPE_API_KEY", ""),
 		DashScopeASRModel:                   envString("DASHSCOPE_ASR_MODEL", "paraformer-v2"),
@@ -117,10 +113,6 @@ func (c Config) ValidateForStartup() error {
 		return fmt.Errorf("STORAGE_PROVIDER is required")
 	}
 	switch strings.ToLower(strings.TrimSpace(c.StorageProvider)) {
-	case "local":
-		if strings.TrimSpace(c.LocalStoragePath) == "" {
-			return fmt.Errorf("LOCAL_STORAGE_PATH is required")
-		}
 	case "s3_compatible":
 		if strings.TrimSpace(c.S3Endpoint) == "" {
 			return fmt.Errorf("S3_ENDPOINT is required for s3_compatible storage")
@@ -142,9 +134,6 @@ func (c Config) ValidateForStartup() error {
 	}
 	if strings.TrimSpace(c.TranscriptionProvider) == "" {
 		return fmt.Errorf("TRANSCRIPTION_PROVIDER is required")
-	}
-	if c.TranscriptionMaxBase64Bytes <= 0 {
-		return fmt.Errorf("TRANSCRIPTION_MAX_BASE64_BYTES must be positive")
 	}
 	if strings.TrimSpace(c.TranscriptionProvider) == "dashscope_asr" {
 		if strings.TrimSpace(c.DashScopeBaseURL) == "" {

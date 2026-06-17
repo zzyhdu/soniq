@@ -22,7 +22,6 @@ func clearConfigEnv(t *testing.T) {
 		"PURGE_ARTIFACT_CLEANUP_INTERVAL_SECONDS",
 		"PURGE_ARTIFACT_CLEANUP_BATCH_SIZE",
 		"STORAGE_PROVIDER",
-		"LOCAL_STORAGE_PATH",
 		"S3_ENDPOINT",
 		"S3_REGION",
 		"S3_BUCKET",
@@ -36,7 +35,6 @@ func clearConfigEnv(t *testing.T) {
 		"TRANSCRIPTION_MODEL",
 		"TRANSCRIPTION_AUTH_HEADER",
 		"TRANSCRIPTION_LANGUAGE",
-		"TRANSCRIPTION_MAX_BASE64_BYTES",
 		"DASHSCOPE_BASE_URL",
 		"DASHSCOPE_API_KEY",
 		"DASHSCOPE_ASR_MODEL",
@@ -103,11 +101,8 @@ func TestLoadFromEnvUsesDevelopmentDefaults(t *testing.T) {
 	if cfg.PurgeArtifactCleanupBatchSize != 25 {
 		t.Fatalf("PurgeArtifactCleanupBatchSize = %d, want 25", cfg.PurgeArtifactCleanupBatchSize)
 	}
-	if cfg.StorageProvider != "local" {
-		t.Fatalf("StorageProvider = %q, want local", cfg.StorageProvider)
-	}
-	if cfg.LocalStoragePath != "var/uploads" {
-		t.Fatalf("LocalStoragePath = %q, want var/uploads", cfg.LocalStoragePath)
+	if cfg.StorageProvider != "s3_compatible" {
+		t.Fatalf("StorageProvider = %q, want s3_compatible", cfg.StorageProvider)
 	}
 	if cfg.S3Endpoint != "http://localhost:9000" {
 		t.Fatalf("S3Endpoint = %q, want local MinIO endpoint", cfg.S3Endpoint)
@@ -144,9 +139,6 @@ func TestLoadFromEnvUsesDevelopmentDefaults(t *testing.T) {
 	}
 	if cfg.TranscriptionLanguage != "auto" {
 		t.Fatalf("TranscriptionLanguage = %q, want auto", cfg.TranscriptionLanguage)
-	}
-	if cfg.TranscriptionMaxBase64Bytes != 10*1024*1024 {
-		t.Fatalf("TranscriptionMaxBase64Bytes = %d, want 10MiB", cfg.TranscriptionMaxBase64Bytes)
 	}
 	if cfg.DashScopeBaseURL != "https://dashscope.aliyuncs.com/api/v1" {
 		t.Fatalf("DashScopeBaseURL = %q, want DashScope default", cfg.DashScopeBaseURL)
@@ -188,8 +180,7 @@ func TestLoadFromEnvAppliesEnvironmentOverrides(t *testing.T) {
 	t.Setenv("TEMPORAL_TASK_QUEUE", "custom-queue")
 	t.Setenv("PURGE_ARTIFACT_CLEANUP_INTERVAL_SECONDS", "15")
 	t.Setenv("PURGE_ARTIFACT_CLEANUP_BATCH_SIZE", "7")
-	t.Setenv("STORAGE_PROVIDER", "local_fs")
-	t.Setenv("LOCAL_STORAGE_PATH", "/tmp/soniq-uploads")
+	t.Setenv("STORAGE_PROVIDER", "s3_compatible")
 	t.Setenv("S3_ENDPOINT", "https://s3.example.test")
 	t.Setenv("S3_REGION", "ap-southeast-1")
 	t.Setenv("S3_BUCKET", "custom-bucket")
@@ -202,7 +193,6 @@ func TestLoadFromEnvAppliesEnvironmentOverrides(t *testing.T) {
 	t.Setenv("TRANSCRIPTION_MODEL", "mimo-v2.5-asr")
 	t.Setenv("TRANSCRIPTION_AUTH_HEADER", "bearer")
 	t.Setenv("TRANSCRIPTION_LANGUAGE", "zh")
-	t.Setenv("TRANSCRIPTION_MAX_BASE64_BYTES", "12345")
 	t.Setenv("DASHSCOPE_BASE_URL", "http://dashscope.example.test/api/v1")
 	t.Setenv("DASHSCOPE_API_KEY", "dashscope-secret")
 	t.Setenv("DASHSCOPE_ASR_MODEL", "fun-asr")
@@ -254,11 +244,8 @@ func TestLoadFromEnvAppliesEnvironmentOverrides(t *testing.T) {
 	if cfg.PurgeArtifactCleanupBatchSize != 7 {
 		t.Fatalf("PurgeArtifactCleanupBatchSize = %d, want override", cfg.PurgeArtifactCleanupBatchSize)
 	}
-	if cfg.StorageProvider != "local_fs" {
-		t.Fatalf("StorageProvider = %q, want local_fs", cfg.StorageProvider)
-	}
-	if cfg.LocalStoragePath != "/tmp/soniq-uploads" {
-		t.Fatalf("LocalStoragePath = %q, want override", cfg.LocalStoragePath)
+	if cfg.StorageProvider != "s3_compatible" {
+		t.Fatalf("StorageProvider = %q, want s3_compatible", cfg.StorageProvider)
 	}
 	if cfg.S3Endpoint != "https://s3.example.test" {
 		t.Fatalf("S3Endpoint = %q, want override", cfg.S3Endpoint)
@@ -295,9 +282,6 @@ func TestLoadFromEnvAppliesEnvironmentOverrides(t *testing.T) {
 	}
 	if cfg.TranscriptionLanguage != "zh" {
 		t.Fatalf("TranscriptionLanguage = %q, want zh", cfg.TranscriptionLanguage)
-	}
-	if cfg.TranscriptionMaxBase64Bytes != 12345 {
-		t.Fatalf("TranscriptionMaxBase64Bytes = %d, want 12345", cfg.TranscriptionMaxBase64Bytes)
 	}
 	if cfg.DashScopeBaseURL != "http://dashscope.example.test/api/v1" {
 		t.Fatalf("DashScopeBaseURL = %q, want override", cfg.DashScopeBaseURL)
@@ -357,19 +341,9 @@ func TestValidateForStartupRejectsEmptyPostgresDSN(t *testing.T) {
 	}
 }
 
-func TestValidateForStartupRejectsEmptyLocalStoragePath(t *testing.T) {
-	cfg := LoadFromEnv()
-	cfg.LocalStoragePath = ""
-
-	if err := cfg.ValidateForStartup(); err == nil {
-		t.Fatal("ValidateForStartup() error = nil, want error for empty LocalStoragePath")
-	}
-}
-
-func TestValidateForStartupAllowsS3CompatibleStorageWithoutLocalStoragePath(t *testing.T) {
+func TestValidateForStartupAllowsS3CompatibleStorage(t *testing.T) {
 	cfg := LoadFromEnv()
 	cfg.StorageProvider = "s3_compatible"
-	cfg.LocalStoragePath = ""
 	cfg.S3Endpoint = "http://localhost:9000"
 	cfg.S3Region = "us-east-1"
 	cfg.S3Bucket = "soniq"

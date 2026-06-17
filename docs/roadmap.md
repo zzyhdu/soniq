@@ -81,13 +81,12 @@ Status: complete.
 - Verify the full smoke path reaches both Temporal `COMPLETED` and `recordings.status=completed`.
 - Consider a `workflow_runs` table once workflow metadata is needed beyond recording status.
 
-### 1E — Audio upload, local object storage, and original-audio probe
+### 1E — Audio upload, object storage, and original-audio probe
 
 Status: complete.
 
 - Audio upload endpoint and original audio metadata persistence.
-- Local filesystem object storage for development.
-- S3-compatible object storage provider for MinIO and compatible services, including worker-side object download, normalized artifact upload, deletion/purge cleanup, and presigned normalized-audio read URLs.
+- S3-compatible object storage provider for MinIO and compatible services, including worker-side object download, normalized artifact upload, deletion/purge cleanup, and presigned normalized-audio read URLs. The earlier local filesystem provider has been removed.
 - `recording_audio_probes` table for original-audio ffprobe metadata.
 - Worker audio preparation activity that resolves the original audio once, runs `ffprobe`, and upserts probe metadata before normalization.
 
@@ -105,7 +104,7 @@ Completed scope:
 - `recording_transcripts`, `recording_transcript_segments`, `recording_summaries`, `recording_mind_maps`, and `recording_normalized_audios` persistence.
 - Workflow status transitions through `processing`, `transcribing`, `summarizing`, and `completed`.
 - Original-audio probe plus ffmpeg normalization to WAV/PCM (`pcm_s16le`, 16 kHz, mono).
-- Deterministic local fake transcription, summary, and mind map providers wired into worker registration; transcription requires normalized audio metadata and reads the normalized artifact through a staged local path.
+- Deterministic local fake transcription, summary, and mind map providers wired into worker registration; transcription requires normalized audio metadata and uses the same URL-based transcription request contract as real providers.
 - Full local smoke verifies probe metadata, normalized audio metadata and artifact, transcript rows, segment rows, summary rows, mind map rows, Temporal `COMPLETED`, and `recordings.status=completed`.
 
 Remaining future scope:

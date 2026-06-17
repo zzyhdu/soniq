@@ -2,19 +2,16 @@ package activities
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
 
 func TestDashScopeASRProviderSubmitsPollsDownloadsAndMapsSegments(t *testing.T) {
-	audioPath := writeDashScopeASRTestAudio(t, []byte("normalized mp3 bytes"))
+	audioURL := "https://objects.example.test/audio/normalized.wav?signature=redacted"
 	var capturedSubmit struct {
 		Path          string
 		Method        string
@@ -42,7 +39,7 @@ func TestDashScopeASRProviderSubmitsPollsDownloadsAndMapsSegments(t *testing.T) 
 		case "/result.json":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{
-				"file_url":"data:audio/mpeg;base64,redacted",
+				"file_url":"https://objects.example.test/audio/normalized.wav",
 				"transcripts":[{"channel_id":0,"text":"你好，Soniq。收到。","sentences":[
 					{"sentence_id":1,"begin_time":100,"end_time":1200,"speaker_id":0,"text":"你好，Soniq。"},
 					{"sentence_id":2,"begin_time":1300,"end_time":1800,"speaker_id":1,"text":"收到。"}
@@ -55,18 +52,17 @@ func TestDashScopeASRProviderSubmitsPollsDownloadsAndMapsSegments(t *testing.T) 
 	defer server.Close()
 
 	provider := DashScopeASRProvider{
-		BaseURL:        server.URL + "/api/v1",
-		APIKey:         "dashscope-test-key",
-		Model:          "paraformer-v2",
-		LanguageHints:  []string{"zh", "en"},
-		Diarization:    true,
-		MaxBase64Bytes: 1024,
-		HTTPClient:     server.Client(),
-		PollInterval:   time.Millisecond,
-		Now:            func() time.Time { return time.Date(2026, 6, 7, 2, 3, 4, 0, time.UTC) },
+		BaseURL:       server.URL + "/api/v1",
+		APIKey:        "dashscope-test-key",
+		Model:         "paraformer-v2",
+		LanguageHints: []string{"zh", "en"},
+		Diarization:   true,
+		HTTPClient:    server.Client(),
+		PollInterval:  time.Millisecond,
+		Now:           func() time.Time { return time.Date(2026, 6, 7, 2, 3, 4, 0, time.UTC) },
 	}
 
-	result, err := provider.Transcribe(context.Background(), TranscriptionRequest{RecordingID: "rec_dashscope", AudioPath: audioPath, Language: "zh"})
+	result, err := provider.Transcribe(context.Background(), TranscriptionRequest{RecordingID: "rec_dashscope", AudioURL: audioURL, Language: "zh"})
 	if err != nil {
 		t.Fatalf("Transcribe returned error: %v", err)
 	}
@@ -87,14 +83,9 @@ func TestDashScopeASRProviderSubmitsPollsDownloadsAndMapsSegments(t *testing.T) 
 		t.Fatalf("model = %v, want paraformer-v2", capturedSubmit.Body["model"])
 	}
 	input := capturedSubmit.Body["input"].(map[string]any)
-	fileURLs := input["file_urls"].([]any)
-	dataURL := fileURLs[0].(string)
-	if !strings.HasPrefix(dataURL, "data:audio/mpeg;base64,") {
-		t.Fatalf("file_urls[0] = %.32q, want audio/mpeg data URL", dataURL)
-	}
-	decoded, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(dataURL, "data:audio/mpeg;base64,"))
-	if err != nil || string(decoded) != "normalized mp3 bytes" {
-		t.Fatalf("decoded audio = %q err=%v, want original bytes", string(decoded), err)
+	fileURL := input["file_urls"].([]any)[0].(string)
+	if fileURL != audioURL {
+		t.Fatalf("file_urls[0] = %q, want audio URL", fileURL)
 	}
 	parameters := capturedSubmit.Body["parameters"].(map[string]any)
 	if parameters["diarization_enabled"] != true {
@@ -121,67 +112,15 @@ func TestDashScopeASRProviderSubmitsPollsDownloadsAndMapsSegments(t *testing.T) 
 	}
 }
 
-func TestDashScopeASRProviderPrefersAudioURL(t *testing.T) {
-	var submittedFileURL string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/api/v1/services/audio/asr/transcription":
-			var body map[string]any
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				t.Fatalf("decode submit body: %v", err)
-			}
-			input := body["input"].(map[string]any)
-			submittedFileURL = input["file_urls"].([]any)[0].(string)
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"output":{"task_id":"task_123"}}`))
-		case "/api/v1/tasks/task_123":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"output":{"task_status":"SUCCEEDED","results":[{"subtask_status":"SUCCEEDED","transcription_url":"` + serverResultURL(t, r, "/result.json") + `"}]}}`))
-		case "/result.json":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"transcripts":[{"text":"URL 输入识别成功。","sentences":[{"begin_time":0,"end_time":1000,"text":"URL 输入识别成功。"}]}]}`))
-		default:
-			t.Fatalf("unexpected request path: %s", r.URL.Path)
-		}
-	}))
-	defer server.Close()
-
-	provider := DashScopeASRProvider{
-		BaseURL:        server.URL + "/api/v1",
-		APIKey:         "dashscope-test-key",
-		Model:          "paraformer-v2",
-		MaxBase64Bytes: 1,
-		HTTPClient:     server.Client(),
-		PollInterval:   time.Millisecond,
-	}
-
-	result, err := provider.Transcribe(context.Background(), TranscriptionRequest{
-		RecordingID: "rec_dashscope",
-		AudioPath:   "/tmp/local-fallback-should-not-be-read.wav",
-		AudioURL:    "https://objects.example.test/audio/normalized.wav?signature=redacted",
-		Language:    "zh",
-	})
-	if err != nil {
-		t.Fatalf("Transcribe returned error: %v", err)
-	}
-	if submittedFileURL != "https://objects.example.test/audio/normalized.wav?signature=redacted" {
-		t.Fatalf("submitted file URL = %q, want request AudioURL", submittedFileURL)
-	}
-	if result.Text != "URL 输入识别成功。" {
-		t.Fatalf("result text = %q, want URL transcription result", result.Text)
-	}
-}
-
-func TestDashScopeASRProviderRejectsOversizedPayloadBeforeRequest(t *testing.T) {
-	audioPath := writeDashScopeASRTestAudio(t, []byte("1234567890"))
+func TestDashScopeASRProviderRejectsMissingAudioURLBeforeRequest(t *testing.T) {
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests++ }))
 	defer server.Close()
 
-	provider := DashScopeASRProvider{BaseURL: server.URL, APIKey: "test-key", Model: "paraformer-v2", MaxBase64Bytes: 4, HTTPClient: server.Client()}
-	_, err := provider.Transcribe(context.Background(), TranscriptionRequest{RecordingID: "rec", AudioPath: audioPath})
-	if err == nil || !strings.Contains(err.Error(), "base64") {
-		t.Fatalf("error = %v, want base64 size error", err)
+	provider := DashScopeASRProvider{BaseURL: server.URL, APIKey: "test-key", Model: "paraformer-v2", HTTPClient: server.Client()}
+	_, err := provider.Transcribe(context.Background(), TranscriptionRequest{RecordingID: "rec"})
+	if err == nil || !strings.Contains(err.Error(), "audio URL") {
+		t.Fatalf("error = %v, want missing audio URL error", err)
 	}
 	if requests != 0 {
 		t.Fatalf("requests = %d, want 0", requests)
@@ -189,14 +128,13 @@ func TestDashScopeASRProviderRejectsOversizedPayloadBeforeRequest(t *testing.T) 
 }
 
 func TestDashScopeASRProviderReturnsUsefulErrorsWithoutLeakingKey(t *testing.T) {
-	audioPath := writeDashScopeASRTestAudio(t, []byte("wav"))
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "dashscope upstream exploded", http.StatusBadGateway)
 	}))
 	defer server.Close()
 
-	provider := DashScopeASRProvider{BaseURL: server.URL, APIKey: "super-secret-dashscope-key", Model: "paraformer-v2", MaxBase64Bytes: 1024, HTTPClient: server.Client()}
-	_, err := provider.Transcribe(context.Background(), TranscriptionRequest{RecordingID: "rec", AudioPath: audioPath})
+	provider := DashScopeASRProvider{BaseURL: server.URL, APIKey: "super-secret-dashscope-key", Model: "paraformer-v2", HTTPClient: server.Client()}
+	_, err := provider.Transcribe(context.Background(), TranscriptionRequest{RecordingID: "rec", AudioURL: "https://objects.example.test/audio.wav"})
 	if err == nil {
 		t.Fatal("Transcribe returned nil error, want upstream error")
 	}
@@ -209,7 +147,6 @@ func TestDashScopeASRProviderReturnsUsefulErrorsWithoutLeakingKey(t *testing.T) 
 }
 
 func TestDashScopeASRProviderRejectsInvalidTaskResponses(t *testing.T) {
-	audioPath := writeDashScopeASRTestAudio(t, []byte("wav"))
 	tests := []struct {
 		name string
 		body string
@@ -229,22 +166,13 @@ func TestDashScopeASRProviderRejectsInvalidTaskResponses(t *testing.T) {
 				_, _ = w.Write([]byte(`{"output":{"task_status":"FAILED","message":"provider failed","results":[{"subtask_status":"FAILED","message":"bad audio"}]}}`))
 			}))
 			defer server.Close()
-			provider := DashScopeASRProvider{BaseURL: server.URL + "/api/v1", APIKey: "test-key", Model: "paraformer-v2", MaxBase64Bytes: 1024, HTTPClient: server.Client(), PollInterval: time.Millisecond}
-			_, err := provider.Transcribe(context.Background(), TranscriptionRequest{RecordingID: "rec", AudioPath: audioPath})
+			provider := DashScopeASRProvider{BaseURL: server.URL + "/api/v1", APIKey: "test-key", Model: "paraformer-v2", HTTPClient: server.Client(), PollInterval: time.Millisecond}
+			_, err := provider.Transcribe(context.Background(), TranscriptionRequest{RecordingID: "rec", AudioURL: "https://objects.example.test/audio.wav"})
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("error = %v, want containing %q", err, tt.want)
 			}
 		})
 	}
-}
-
-func writeDashScopeASRTestAudio(t *testing.T, content []byte) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "normalized.mp3")
-	if err := os.WriteFile(path, content, 0o600); err != nil {
-		t.Fatalf("write test audio: %v", err)
-	}
-	return path
 }
 
 func serverResultURL(t *testing.T, r *http.Request, path string) string {

@@ -6,12 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/textproto"
-	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -31,15 +30,13 @@ func TestBuildHandlerCreatesRecordingSessionWithoutStartingWorkflow(t *testing.T
 	store := newBuildHandlerRecordingStoreSpy()
 	enableBuildHandlerPassword(t, store)
 	storeFactory := &appStoreFactorySpy{store: store}
-	cfg := config.Config{
+	cfg := withTestS3Config(config.Config{
 		APIAddress:        ":0",
 		PostgresDSN:       "postgres://custom_user:***@db:5432/custom?sslmode=disable",
 		TemporalAddress:   "temporal.example:7233",
 		TemporalNamespace: "default",
 		TemporalTaskQueue: "soniq-audio-pipeline",
-		StorageProvider:   "local",
-		LocalStoragePath:  t.TempDir(),
-	}
+	}, "http://127.0.0.1:1")
 
 	handler, cleanup, err := buildHandler(context.Background(), cfg, func(ctx context.Context, cfg config.Config) (temporalWorkflowClient, error) {
 		if cfg.TemporalAddress != "temporal.example:7233" {
@@ -80,20 +77,38 @@ func TestBuildHandlerCreatesRecordingSessionWithoutStartingWorkflow(t *testing.T
 	}
 }
 
-func TestBuildHandlerWiresUploadEndpointToLocalObjectStorage(t *testing.T) {
+func TestBuildHandlerWiresUploadEndpointToS3CompatibleObjectStorage(t *testing.T) {
+	var storedObjectKey string
+	var storedContentType string
+	var storedBody string
+	s3Server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			t.Fatalf("s3 request method = %s, want PUT", r.Method)
+		}
+		if !strings.HasPrefix(r.URL.Path, "/soniq/") {
+			t.Fatalf("s3 request path = %q, want /soniq/<object-key>", r.URL.Path)
+		}
+		storedObjectKey = strings.TrimPrefix(r.URL.Path, "/soniq/")
+		storedContentType = r.Header.Get("Content-Type")
+		rawBody, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read s3 request body: %v", err)
+		}
+		storedBody = string(rawBody)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer s3Server.Close()
+
 	temporalClient := &temporalClientSpy{}
 	store := newBuildHandlerRecordingStoreSpy()
 	enableBuildHandlerPassword(t, store)
 	storeFactory := &appStoreFactorySpy{store: store}
-	uploadRoot := t.TempDir()
-	cfg := config.Config{
+	cfg := withTestS3Config(config.Config{
 		PostgresDSN:       "postgres://custom_user:***@db:5432/custom?sslmode=disable",
 		TemporalAddress:   "temporal.example:7233",
 		TemporalNamespace: "default",
 		TemporalTaskQueue: "soniq-audio-pipeline",
-		StorageProvider:   "local",
-		LocalStoragePath:  uploadRoot,
-	}
+	}, s3Server.URL)
 
 	handler, cleanup, err := buildHandler(context.Background(), cfg, func(context.Context, config.Config) (temporalWorkflowClient, error) {
 		return temporalClient, nil
@@ -128,7 +143,7 @@ func TestBuildHandlerWiresUploadEndpointToLocalObjectStorage(t *testing.T) {
 	}
 	recording := body.Recording
 	if recording.AudioObjectKey == "" {
-		t.Fatal("AudioObjectKey is empty, want stored local object key")
+		t.Fatal("AudioObjectKey is empty, want stored object key")
 	}
 	if recording.AudioContentType != "audio/wav" {
 		t.Fatalf("AudioContentType = %q, want audio/wav", recording.AudioContentType)
@@ -136,12 +151,14 @@ func TestBuildHandlerWiresUploadEndpointToLocalObjectStorage(t *testing.T) {
 	if recording.AudioSizeBytes != int64(len("audio-bytes")) {
 		t.Fatalf("AudioSizeBytes = %d, want %d", recording.AudioSizeBytes, len("audio-bytes"))
 	}
-	storedBytes, err := os.ReadFile(filepath.Join(uploadRoot, filepath.FromSlash(recording.AudioObjectKey)))
-	if err != nil {
-		t.Fatalf("read uploaded object: %v", err)
+	if storedObjectKey != recording.AudioObjectKey {
+		t.Fatalf("stored object key = %q, want %q", storedObjectKey, recording.AudioObjectKey)
 	}
-	if string(storedBytes) != "audio-bytes" {
-		t.Fatalf("stored object = %q, want audio-bytes", string(storedBytes))
+	if storedContentType != "audio/wav" {
+		t.Fatalf("stored content type = %q, want audio/wav", storedContentType)
+	}
+	if storedBody != "audio-bytes" {
+		t.Fatalf("stored object = %q, want audio-bytes", storedBody)
 	}
 	if got, want := len(temporalClient.calls), 1; got != want {
 		t.Fatalf("ExecuteWorkflow calls = %d, want %d", got, want)
@@ -179,7 +196,7 @@ func TestBuildHandlerCleanupClosesTemporalClient(t *testing.T) {
 	store := newBuildHandlerRecordingStoreSpy()
 	storeFactory := &appStoreFactorySpy{store: store}
 
-	_, cleanup, err := buildHandler(context.Background(), config.Config{TemporalTaskQueue: "soniq-audio-pipeline", PostgresDSN: "postgres://custom_user:***@db:5432/custom?sslmode=disable", StorageProvider: "local", LocalStoragePath: t.TempDir()}, func(context.Context, config.Config) (temporalWorkflowClient, error) {
+	_, cleanup, err := buildHandler(context.Background(), withTestS3Config(config.Config{TemporalTaskQueue: "soniq-audio-pipeline", PostgresDSN: "postgres://custom_user:***@db:5432/custom?sslmode=disable"}, "http://127.0.0.1:1"), func(context.Context, config.Config) (temporalWorkflowClient, error) {
 		return temporalClient, nil
 	}, storeFactory.Open)
 	if err != nil {
@@ -201,15 +218,13 @@ func TestBuildHandlerLoginSessionCanReadMe(t *testing.T) {
 	store := newBuildHandlerRecordingStoreSpy()
 	enableBuildHandlerPassword(t, store)
 	storeFactory := &appStoreFactorySpy{store: store}
-	cfg := config.Config{
+	cfg := withTestS3Config(config.Config{
 		AuthSessionTTLHours: 24,
 		PostgresDSN:         "postgres://custom_user:***@db:5432/custom?sslmode=disable",
 		TemporalAddress:     "temporal.example:7233",
 		TemporalNamespace:   "default",
 		TemporalTaskQueue:   "soniq-audio-pipeline",
-		StorageProvider:     "local",
-		LocalStoragePath:    t.TempDir(),
-	}
+	}, "http://127.0.0.1:1")
 
 	handler, cleanup, err := buildHandler(context.Background(), cfg, func(context.Context, config.Config) (temporalWorkflowClient, error) {
 		return temporalClient, nil
@@ -230,17 +245,17 @@ func TestBuildHandlerLoginSessionCanReadMe(t *testing.T) {
 
 func TestBuildHandlerReadyzChecksRuntimeDependencies(t *testing.T) {
 	temporalClient := &temporalClientSpy{}
+	s3Server := newHeadBucketServer(t)
+	defer s3Server.Close()
 	store := newBuildHandlerRecordingStoreSpy()
 	enableBuildHandlerPassword(t, store)
 	storeFactory := &appStoreFactorySpy{store: store}
-	cfg := config.Config{
+	cfg := withTestS3Config(config.Config{
 		PostgresDSN:       "postgres://custom_user:***@db:5432/custom?sslmode=disable",
 		TemporalAddress:   "temporal.example:7233",
 		TemporalNamespace: "default",
 		TemporalTaskQueue: "soniq-audio-pipeline",
-		StorageProvider:   "local",
-		LocalStoragePath:  t.TempDir(),
-	}
+	}, s3Server.URL)
 
 	handler, cleanup, err := buildHandler(context.Background(), cfg, func(context.Context, config.Config) (temporalWorkflowClient, error) {
 		return temporalClient, nil
@@ -325,18 +340,18 @@ func TestBuildHandlerReadyzChecksS3CompatibleStorage(t *testing.T) {
 
 func TestBuildHandlerReadyzReportsOutdatedMigrations(t *testing.T) {
 	temporalClient := &temporalClientSpy{}
+	s3Server := newHeadBucketServer(t)
+	defer s3Server.Close()
 	store := newBuildHandlerRecordingStoreSpy()
 	store.migrationVersion = requiredSchemaMigrationVersion - 1
 	enableBuildHandlerPassword(t, store)
 	storeFactory := &appStoreFactorySpy{store: store}
-	cfg := config.Config{
+	cfg := withTestS3Config(config.Config{
 		PostgresDSN:       "postgres://custom_user:***@db:5432/custom?sslmode=disable",
 		TemporalAddress:   "temporal.example:7233",
 		TemporalNamespace: "default",
 		TemporalTaskQueue: "soniq-audio-pipeline",
-		StorageProvider:   "local",
-		LocalStoragePath:  t.TempDir(),
-	}
+	}, s3Server.URL)
 
 	handler, cleanup, err := buildHandler(context.Background(), cfg, func(context.Context, config.Config) (temporalWorkflowClient, error) {
 		return temporalClient, nil
@@ -377,6 +392,27 @@ func enableBuildHandlerPassword(t *testing.T, store *buildHandlerRecordingStoreS
 		t.Fatalf("HashPassword returned error: %v", err)
 	}
 	store.auth.passwordHash = passwordHash
+}
+
+func withTestS3Config(cfg config.Config, endpoint string) config.Config {
+	cfg.StorageProvider = "s3_compatible"
+	cfg.S3Endpoint = endpoint
+	cfg.S3Region = "us-east-1"
+	cfg.S3Bucket = "soniq"
+	cfg.S3AccessKey = "test-access"
+	cfg.S3SecretKey = "test-secret"
+	cfg.S3ForcePathStyle = true
+	return cfg
+}
+
+func newHeadBucketServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodHead || r.URL.Path != "/soniq" {
+			t.Fatalf("s3 readiness request = %s %s, want HEAD /soniq", r.Method, r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
 }
 
 type handlerAuthCookies struct {

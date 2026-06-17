@@ -93,7 +93,7 @@ func run(ctx context.Context, cfg config.Config) error {
 	if err != nil {
 		return err
 	}
-	registerRecordingProcessing(worker, recordingStore, nil, objectStore, activities.FFProbeRunner{}, activities.FFmpegNormalizeRunner{}, transcriptionProvider, summaryProvider)
+	registerRecordingProcessing(worker, recordingStore, objectStore, activities.FFProbeRunner{}, activities.FFmpegNormalizeRunner{}, transcriptionProvider, summaryProvider)
 	cleanupCtx, cancelCleanup := context.WithCancel(ctx)
 	defer cancelCleanup()
 	cleanupRunner := cleanup.NewRecordingPurgeArtifactCleaner(recordingStore, objectStore, cleanup.RecordingPurgeArtifactCleanerOptions{
@@ -119,10 +119,9 @@ type recordingProcessingRegistry interface {
 	RegisterActivityWithOptions(interface{}, activity.RegisterOptions)
 }
 
-func registerRecordingProcessing(registry recordingProcessingRegistry, store activities.NormalizingPipelineStore, resolver activities.LocalObjectPathResolver, objectStore storage.ObjectStore, probeRunner activities.AudioProbeRunner, normalizeRunner activities.AudioNormalizeRunner, transcriptionProvider activities.TranscriptionProvider, summaryProvider activities.SummaryProvider) {
+func registerRecordingProcessing(registry recordingProcessingRegistry, store activities.NormalizingPipelineStore, objectStore storage.ObjectStore, probeRunner activities.AudioProbeRunner, normalizeRunner activities.AudioNormalizeRunner, transcriptionProvider activities.TranscriptionProvider, summaryProvider activities.SummaryProvider) {
 	activitySet := activities.NewRecordingProcessingActivitiesWithNormalizedAudio(
 		store,
-		resolver,
 		objectStore,
 		probeRunner,
 		normalizeRunner,
@@ -163,12 +162,11 @@ func transcriptionProviderForConfig(cfg config.Config) (activities.Transcription
 			return nil, fmt.Errorf("TRANSCRIPTION_MODEL is required for external transcription provider %q", provider)
 		}
 		return activities.OpenAICompatibleASRProvider{
-			BaseURL:        cfg.TranscriptionBaseURL,
-			APIKey:         cfg.TranscriptionAPIKey,
-			Model:          cfg.TranscriptionModel,
-			AuthHeader:     cfg.TranscriptionAuthHeader,
-			Language:       cfg.TranscriptionLanguage,
-			MaxBase64Bytes: cfg.TranscriptionMaxBase64Bytes,
+			BaseURL:    cfg.TranscriptionBaseURL,
+			APIKey:     cfg.TranscriptionAPIKey,
+			Model:      cfg.TranscriptionModel,
+			AuthHeader: cfg.TranscriptionAuthHeader,
+			Language:   cfg.TranscriptionLanguage,
 		}, nil
 	case "dashscope_asr":
 		if !cfg.PrivacyAllowExternalModelProviders {
@@ -184,12 +182,11 @@ func transcriptionProviderForConfig(cfg config.Config) (activities.Transcription
 			return nil, fmt.Errorf("DASHSCOPE_ASR_MODEL is required for external transcription provider %q", provider)
 		}
 		return activities.DashScopeASRProvider{
-			BaseURL:        cfg.DashScopeBaseURL,
-			APIKey:         cfg.DashScopeAPIKey,
-			Model:          cfg.DashScopeASRModel,
-			Language:       cfg.TranscriptionLanguage,
-			Diarization:    true,
-			MaxBase64Bytes: cfg.TranscriptionMaxBase64Bytes,
+			BaseURL:     cfg.DashScopeBaseURL,
+			APIKey:      cfg.DashScopeAPIKey,
+			Model:       cfg.DashScopeASRModel,
+			Language:    cfg.TranscriptionLanguage,
+			Diarization: true,
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported transcription provider %q", provider)
@@ -227,7 +224,6 @@ func summaryProviderForConfig(cfg config.Config) (activities.SummaryProvider, er
 func buildObjectStore(ctx context.Context, cfg config.Config) (storage.ObjectStore, error) {
 	return storage.NewObjectStore(ctx, storage.ProviderConfig{
 		Provider:         cfg.StorageProvider,
-		LocalStoragePath: cfg.LocalStoragePath,
 		S3Endpoint:       cfg.S3Endpoint,
 		S3Region:         cfg.S3Region,
 		S3Bucket:         cfg.S3Bucket,

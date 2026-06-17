@@ -3,15 +3,11 @@ package activities
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"mime"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -21,22 +17,20 @@ const (
 	dashScopeASRProviderName = "dashscope_asr"
 	dashScopeASRDefaultURL   = "https://dashscope.aliyuncs.com/api/v1"
 	dashScopeASRDefaultModel = "paraformer-v2"
-	dashScopeASRDefaultLimit = int64(10 * 1024 * 1024)
 )
 
 // DashScopeASRProvider calls Aliyun DashScope native non-realtime ASR.
 type DashScopeASRProvider struct {
-	BaseURL        string
-	APIKey         string
-	Model          string
-	Language       string
-	LanguageHints  []string
-	Diarization    bool
-	MaxBase64Bytes int64
-	HTTPClient     *http.Client
-	PollInterval   time.Duration
-	PollTimeout    time.Duration
-	Now            func() time.Time
+	BaseURL       string
+	APIKey        string
+	Model         string
+	Language      string
+	LanguageHints []string
+	Diarization   bool
+	HTTPClient    *http.Client
+	PollInterval  time.Duration
+	PollTimeout   time.Duration
+	Now           func() time.Time
 }
 
 type dashScopeASRSubmitRequest struct {
@@ -95,8 +89,9 @@ type dashScopeASRSentenceJSON struct {
 }
 
 func (p DashScopeASRProvider) Transcribe(ctx context.Context, request TranscriptionRequest) (TranscriptionResult, error) {
-	if strings.TrimSpace(request.AudioURL) == "" && strings.TrimSpace(request.AudioPath) == "" {
-		return TranscriptionResult{}, errors.New("audio URL or path is required")
+	fileURL := strings.TrimSpace(request.AudioURL)
+	if fileURL == "" {
+		return TranscriptionResult{}, errors.New("audio URL is required")
 	}
 	baseURL := strings.TrimRight(strings.TrimSpace(p.BaseURL), "/")
 	if baseURL == "" {
@@ -109,23 +104,6 @@ func (p DashScopeASRProvider) Transcribe(ctx context.Context, request Transcript
 	language := strings.TrimSpace(p.Language)
 	if language == "" {
 		language = strings.TrimSpace(request.Language)
-	}
-	maxBase64Bytes := p.MaxBase64Bytes
-	if maxBase64Bytes <= 0 {
-		maxBase64Bytes = dashScopeASRDefaultLimit
-	}
-
-	fileURL := strings.TrimSpace(request.AudioURL)
-	if fileURL == "" {
-		dataURL, err := audioFileDataURL(request.AudioPath)
-		if err != nil {
-			return TranscriptionResult{}, err
-		}
-		encodedLen := len(dataURL[strings.Index(dataURL, ",")+1:])
-		if int64(encodedLen) > maxBase64Bytes {
-			return TranscriptionResult{}, fmt.Errorf("base64 audio payload size %d exceeds limit %d", encodedLen, maxBase64Bytes)
-		}
-		fileURL = dataURL
 	}
 
 	languageHints := p.LanguageHints
@@ -355,16 +333,4 @@ func rawJSONLabel(raw json.RawMessage) string {
 		return strconv.FormatFloat(number, 'f', -1, 64)
 	}
 	return ""
-}
-
-func audioFileDataURL(path string) (string, error) {
-	audio, err := os.ReadFile(path)
-	if err != nil {
-		return "", fmt.Errorf("read audio file: %w", err)
-	}
-	mediaType := mime.TypeByExtension(strings.ToLower(filepath.Ext(path)))
-	if mediaType == "" {
-		mediaType = "application/octet-stream"
-	}
-	return "data:" + mediaType + ";base64," + base64.StdEncoding.EncodeToString(audio), nil
 }
