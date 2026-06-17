@@ -233,17 +233,23 @@ soniq-migrate
 当前进展：
 
 - 已在 `compose.temporal.yml` 增加本地 MinIO 和一次性 `minio-init`
-  bucket 初始化服务，用于后续 S3-compatible provider 验证。
-- 已在 `.env.example` 记录本地 MinIO 对应的未来 S3-compatible 配置。
+  bucket 初始化服务，用于 S3-compatible provider 验证。
+- 已新增 `STORAGE_PROVIDER=s3_compatible` 配置读取和启动校验。
+- 已实现 S3-compatible object store：API upload 使用 `PutObject`，worker
+  processing 使用 `GetObject` 下载到临时文件并上传 normalized artifact，删除和
+  purge cleanup 使用 `DeleteObject`。
+- 已支持为 URL-capable ASR provider 生成 normalized audio presigned URL；
+  DashScope native ASR 优先使用 URL，避免大文件走 Base64 payload。
+- `/readyz` 在 S3-compatible 模式下会检查 bucket 可访问。
+- `STORAGE_PROVIDER=s3_compatible make smoke-postgres-temporal` 可用于本地
+  MinIO smoke 验证。
+- 文档已补充 Aliyun OSS 示例；当前 provider 使用 S3-compatible 协议配置，
+  MinIO 只是本地验证目标，不是唯一生产目标。
+- 已在 `.env.example` 记录本地 MinIO 对应的 S3-compatible 配置。
 
 范围：
 
-- 新增 `STORAGE_PROVIDER=s3_compatible`。
-- 支持 endpoint、region、bucket、access key、secret key、force path style。
-- 本地 MinIO smoke。
-- API upload 使用 S3-compatible PutObject。
-- Worker processing 使用 S3-compatible object fetch/local temp file。
-- Purge cleanup 使用 S3-compatible DeleteObject。
+- K2 当前实现范围已完成；后续可以继续扩展到更多云厂商兼容性验证。
 
 注意：
 

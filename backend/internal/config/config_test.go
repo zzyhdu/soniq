@@ -23,6 +23,12 @@ func clearConfigEnv(t *testing.T) {
 		"PURGE_ARTIFACT_CLEANUP_BATCH_SIZE",
 		"STORAGE_PROVIDER",
 		"LOCAL_STORAGE_PATH",
+		"S3_ENDPOINT",
+		"S3_REGION",
+		"S3_BUCKET",
+		"S3_ACCESS_KEY",
+		"S3_SECRET_KEY",
+		"S3_FORCE_PATH_STYLE",
 		"TRANSCRIPTION_PROVIDER",
 		"TRANSCRIPTION_BASE_URL",
 		"TRANSCRIPTION_API_KEY",
@@ -103,6 +109,24 @@ func TestLoadFromEnvUsesDevelopmentDefaults(t *testing.T) {
 	if cfg.LocalStoragePath != "var/uploads" {
 		t.Fatalf("LocalStoragePath = %q, want var/uploads", cfg.LocalStoragePath)
 	}
+	if cfg.S3Endpoint != "http://localhost:9000" {
+		t.Fatalf("S3Endpoint = %q, want local MinIO endpoint", cfg.S3Endpoint)
+	}
+	if cfg.S3Region != "us-east-1" {
+		t.Fatalf("S3Region = %q, want us-east-1", cfg.S3Region)
+	}
+	if cfg.S3Bucket != "soniq" {
+		t.Fatalf("S3Bucket = %q, want soniq", cfg.S3Bucket)
+	}
+	if cfg.S3AccessKey != "soniq_minio_user" {
+		t.Fatalf("S3AccessKey = %q, want local MinIO user", cfg.S3AccessKey)
+	}
+	if cfg.S3SecretKey != "soniq_minio_password" {
+		t.Fatal("S3SecretKey default was not loaded")
+	}
+	if !cfg.S3ForcePathStyle {
+		t.Fatal("S3ForcePathStyle = false, want true for local MinIO")
+	}
 	if cfg.TranscriptionProvider != "fake_transcription" {
 		t.Fatalf("TranscriptionProvider = %q, want fake_transcription", cfg.TranscriptionProvider)
 	}
@@ -166,6 +190,12 @@ func TestLoadFromEnvAppliesEnvironmentOverrides(t *testing.T) {
 	t.Setenv("PURGE_ARTIFACT_CLEANUP_BATCH_SIZE", "7")
 	t.Setenv("STORAGE_PROVIDER", "local_fs")
 	t.Setenv("LOCAL_STORAGE_PATH", "/tmp/soniq-uploads")
+	t.Setenv("S3_ENDPOINT", "https://s3.example.test")
+	t.Setenv("S3_REGION", "ap-southeast-1")
+	t.Setenv("S3_BUCKET", "custom-bucket")
+	t.Setenv("S3_ACCESS_KEY", "custom-access")
+	t.Setenv("S3_SECRET_KEY", "custom-secret")
+	t.Setenv("S3_FORCE_PATH_STYLE", "false")
 	t.Setenv("TRANSCRIPTION_PROVIDER", "openai_compatible_asr")
 	t.Setenv("TRANSCRIPTION_BASE_URL", "http://asr.example.test/v1")
 	t.Setenv("TRANSCRIPTION_API_KEY", "transcription-secret")
@@ -229,6 +259,24 @@ func TestLoadFromEnvAppliesEnvironmentOverrides(t *testing.T) {
 	}
 	if cfg.LocalStoragePath != "/tmp/soniq-uploads" {
 		t.Fatalf("LocalStoragePath = %q, want override", cfg.LocalStoragePath)
+	}
+	if cfg.S3Endpoint != "https://s3.example.test" {
+		t.Fatalf("S3Endpoint = %q, want override", cfg.S3Endpoint)
+	}
+	if cfg.S3Region != "ap-southeast-1" {
+		t.Fatalf("S3Region = %q, want override", cfg.S3Region)
+	}
+	if cfg.S3Bucket != "custom-bucket" {
+		t.Fatalf("S3Bucket = %q, want override", cfg.S3Bucket)
+	}
+	if cfg.S3AccessKey != "custom-access" {
+		t.Fatalf("S3AccessKey = %q, want override", cfg.S3AccessKey)
+	}
+	if cfg.S3SecretKey != "custom-secret" {
+		t.Fatal("S3SecretKey override was not loaded")
+	}
+	if cfg.S3ForcePathStyle {
+		t.Fatal("S3ForcePathStyle = true, want false override")
 	}
 	if cfg.TranscriptionProvider != "openai_compatible_asr" {
 		t.Fatalf("TranscriptionProvider = %q, want override", cfg.TranscriptionProvider)
@@ -315,6 +363,40 @@ func TestValidateForStartupRejectsEmptyLocalStoragePath(t *testing.T) {
 
 	if err := cfg.ValidateForStartup(); err == nil {
 		t.Fatal("ValidateForStartup() error = nil, want error for empty LocalStoragePath")
+	}
+}
+
+func TestValidateForStartupAllowsS3CompatibleStorageWithoutLocalStoragePath(t *testing.T) {
+	cfg := LoadFromEnv()
+	cfg.StorageProvider = "s3_compatible"
+	cfg.LocalStoragePath = ""
+	cfg.S3Endpoint = "http://localhost:9000"
+	cfg.S3Region = "us-east-1"
+	cfg.S3Bucket = "soniq"
+	cfg.S3AccessKey = "soniq_minio_user"
+	cfg.S3SecretKey = "soniq_minio_password"
+
+	if err := cfg.ValidateForStartup(); err != nil {
+		t.Fatalf("ValidateForStartup() error = %v, want nil", err)
+	}
+}
+
+func TestValidateForStartupRejectsIncompleteS3CompatibleStorage(t *testing.T) {
+	cfg := LoadFromEnv()
+	cfg.StorageProvider = "s3_compatible"
+	cfg.S3Bucket = ""
+
+	if err := cfg.ValidateForStartup(); err == nil {
+		t.Fatal("ValidateForStartup() error = nil, want missing S3_BUCKET error")
+	}
+}
+
+func TestValidateForStartupRejectsUnsupportedStorageProvider(t *testing.T) {
+	cfg := LoadFromEnv()
+	cfg.StorageProvider = "local_fs"
+
+	if err := cfg.ValidateForStartup(); err == nil {
+		t.Fatal("ValidateForStartup() error = nil, want unsupported storage provider error")
 	}
 }
 

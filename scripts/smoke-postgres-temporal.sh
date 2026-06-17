@@ -5,6 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="${COMPOSE_FILE:-compose.temporal.yml}"
 API_URL="${API_URL:-http://localhost:8080}"
 API_ADDRESS="${API_ADDRESS:-:8080}"
+LOG_FORMAT="${LOG_FORMAT:-text}"
+LOG_LEVEL="${LOG_LEVEL:-info}"
 AUTH_SESSION_TTL_HOURS="${AUTH_SESSION_TTL_HOURS:-720}"
 AUTH_COOKIE_SECURE="${AUTH_COOKIE_SECURE:-false}"
 TEMPORAL_NAMESPACE="${TEMPORAL_NAMESPACE:-default}"
@@ -19,6 +21,12 @@ SMOKE_DISPLAY_NAME="${SMOKE_DISPLAY_NAME:-Smoke Tester}"
 SMOKE_PASSWORD="${SMOKE_PASSWORD:-correct horse smoke}"
 STORAGE_PROVIDER="${STORAGE_PROVIDER:-local}"
 LOCAL_STORAGE_PATH="${LOCAL_STORAGE_PATH:-$ROOT_DIR/var/uploads/smoke}"
+S3_ENDPOINT="${S3_ENDPOINT:-http://localhost:9000}"
+S3_REGION="${S3_REGION:-us-east-1}"
+S3_BUCKET="${S3_BUCKET:-soniq}"
+S3_ACCESS_KEY="${S3_ACCESS_KEY:-soniq_minio_user}"
+S3_SECRET_KEY="${S3_SECRET_KEY:-soniq_minio_password}"
+S3_FORCE_PATH_STYLE="${S3_FORCE_PATH_STYLE:-true}"
 SMOKE_EXTERNAL_PROVIDERS="${SMOKE_EXTERNAL_PROVIDERS:-0}"
 TRANSCRIPTION_BASE_URL="${TRANSCRIPTION_BASE_URL:-https://api.xiaomimimo.com/v1}"
 TRANSCRIPTION_API_KEY="${TRANSCRIPTION_API_KEY:-}"
@@ -118,30 +126,36 @@ wait_for_api() {
 
 start_worker() {
   log "starting worker; log: $WORKER_LOG"
-  setsid bash -c '
-    cd "$1"
-    TEMPORAL_NAMESPACE="$2" \
-    TEMPORAL_TASK_QUEUE="$3" \
-    POSTGRES_DSN="$4" \
-    STORAGE_PROVIDER="$5" \
-    LOCAL_STORAGE_PATH="$6" \
-    TRANSCRIPTION_PROVIDER="$7" \
-    TRANSCRIPTION_BASE_URL="$8" \
-    TRANSCRIPTION_API_KEY="$9" \
-    MIMO_API_KEY="${10}" \
-    TRANSCRIPTION_MODEL="${11}" \
-    TRANSCRIPTION_AUTH_HEADER="${12}" \
-    TRANSCRIPTION_LANGUAGE="${13}" \
-    TRANSCRIPTION_MAX_BASE64_BYTES="${14}" \
-    DASHSCOPE_BASE_URL="${15}" \
-    DASHSCOPE_API_KEY="${16}" \
-    DASHSCOPE_ASR_MODEL="${17}" \
-    LLM_PROVIDER="${18}" \
-    LLM_BASE_URL="${19}" \
-    LLM_API_KEY="${20}" \
-    LLM_MODEL="${21}" \
-    make worker
-  ' _ "$ROOT_DIR" "$TEMPORAL_NAMESPACE" "$TEMPORAL_TASK_QUEUE" "$POSTGRES_DSN" "$STORAGE_PROVIDER" "$EFFECTIVE_LOCAL_STORAGE_PATH" "$TRANSCRIPTION_PROVIDER" "$TRANSCRIPTION_BASE_URL" "$TRANSCRIPTION_API_KEY" "$MIMO_API_KEY" "$TRANSCRIPTION_MODEL" "$TRANSCRIPTION_AUTH_HEADER" "$TRANSCRIPTION_LANGUAGE" "$TRANSCRIPTION_MAX_BASE64_BYTES" "$DASHSCOPE_BASE_URL" "$DASHSCOPE_API_KEY" "$DASHSCOPE_ASR_MODEL" "$LLM_PROVIDER" "$LLM_BASE_URL" "$LLM_API_KEY" "$LLM_MODEL" >"$WORKER_LOG" 2>&1 &
+  setsid env \
+    TEMPORAL_NAMESPACE="$TEMPORAL_NAMESPACE" \
+    TEMPORAL_TASK_QUEUE="$TEMPORAL_TASK_QUEUE" \
+    POSTGRES_DSN="$POSTGRES_DSN" \
+    LOG_FORMAT="$LOG_FORMAT" \
+    LOG_LEVEL="$LOG_LEVEL" \
+    STORAGE_PROVIDER="$STORAGE_PROVIDER" \
+    LOCAL_STORAGE_PATH="$EFFECTIVE_LOCAL_STORAGE_PATH" \
+    S3_ENDPOINT="$S3_ENDPOINT" \
+    S3_REGION="$S3_REGION" \
+    S3_BUCKET="$S3_BUCKET" \
+    S3_ACCESS_KEY="$S3_ACCESS_KEY" \
+    S3_SECRET_KEY="$S3_SECRET_KEY" \
+    S3_FORCE_PATH_STYLE="$S3_FORCE_PATH_STYLE" \
+    TRANSCRIPTION_PROVIDER="$TRANSCRIPTION_PROVIDER" \
+    TRANSCRIPTION_BASE_URL="$TRANSCRIPTION_BASE_URL" \
+    TRANSCRIPTION_API_KEY="$TRANSCRIPTION_API_KEY" \
+    MIMO_API_KEY="$MIMO_API_KEY" \
+    TRANSCRIPTION_MODEL="$TRANSCRIPTION_MODEL" \
+    TRANSCRIPTION_AUTH_HEADER="$TRANSCRIPTION_AUTH_HEADER" \
+    TRANSCRIPTION_LANGUAGE="$TRANSCRIPTION_LANGUAGE" \
+    TRANSCRIPTION_MAX_BASE64_BYTES="$TRANSCRIPTION_MAX_BASE64_BYTES" \
+    DASHSCOPE_BASE_URL="$DASHSCOPE_BASE_URL" \
+    DASHSCOPE_API_KEY="$DASHSCOPE_API_KEY" \
+    DASHSCOPE_ASR_MODEL="$DASHSCOPE_ASR_MODEL" \
+    LLM_PROVIDER="$LLM_PROVIDER" \
+    LLM_BASE_URL="$LLM_BASE_URL" \
+    LLM_API_KEY="$LLM_API_KEY" \
+    LLM_MODEL="$LLM_MODEL" \
+    make -C "$ROOT_DIR" worker >"$WORKER_LOG" 2>&1 &
   WORKER_PID=$!
   sleep 2
   if ! kill -0 "$WORKER_PID" 2>/dev/null; then
@@ -153,18 +167,24 @@ start_worker() {
 start_api() {
   log "starting API at $API_ADDRESS; log: $API_LOG"
   : >"$API_LOG"
-  setsid bash -c '
-    cd "$1"
-    API_ADDRESS="$2" \
-    POSTGRES_DSN="$3" \
-    TEMPORAL_NAMESPACE="$4" \
-    TEMPORAL_TASK_QUEUE="$5" \
-    STORAGE_PROVIDER="$6" \
-    LOCAL_STORAGE_PATH="$7" \
-    AUTH_SESSION_TTL_HOURS="$8" \
-    AUTH_COOKIE_SECURE="$9" \
-    make api
-  ' _ "$ROOT_DIR" "$API_ADDRESS" "$POSTGRES_DSN" "$TEMPORAL_NAMESPACE" "$TEMPORAL_TASK_QUEUE" "$STORAGE_PROVIDER" "$EFFECTIVE_LOCAL_STORAGE_PATH" "$AUTH_SESSION_TTL_HOURS" "$AUTH_COOKIE_SECURE" >>"$API_LOG" 2>&1 &
+  setsid env \
+    API_ADDRESS="$API_ADDRESS" \
+    POSTGRES_DSN="$POSTGRES_DSN" \
+    LOG_FORMAT="$LOG_FORMAT" \
+    LOG_LEVEL="$LOG_LEVEL" \
+    TEMPORAL_NAMESPACE="$TEMPORAL_NAMESPACE" \
+    TEMPORAL_TASK_QUEUE="$TEMPORAL_TASK_QUEUE" \
+    STORAGE_PROVIDER="$STORAGE_PROVIDER" \
+    LOCAL_STORAGE_PATH="$EFFECTIVE_LOCAL_STORAGE_PATH" \
+    S3_ENDPOINT="$S3_ENDPOINT" \
+    S3_REGION="$S3_REGION" \
+    S3_BUCKET="$S3_BUCKET" \
+    S3_ACCESS_KEY="$S3_ACCESS_KEY" \
+    S3_SECRET_KEY="$S3_SECRET_KEY" \
+    S3_FORCE_PATH_STYLE="$S3_FORCE_PATH_STYLE" \
+    AUTH_SESSION_TTL_HOURS="$AUTH_SESSION_TTL_HOURS" \
+    AUTH_COOKIE_SECURE="$AUTH_COOKIE_SECURE" \
+    make -C "$ROOT_DIR" api >>"$API_LOG" 2>&1 &
   API_PID=$!
   wait_for_api
 }
@@ -272,9 +292,35 @@ apply_application_migrations() {
   POSTGRES_DSN="$POSTGRES_DSN" make migrate
 }
 
-assert_uploaded_object() {
+run_minio_mc() {
+  docker compose -f "$COMPOSE_FILE" exec -T \
+    -e S3_BUCKET="$S3_BUCKET" \
+    -e S3_ACCESS_KEY="$S3_ACCESS_KEY" \
+    -e S3_SECRET_KEY="$S3_SECRET_KEY" \
+    minio sh -c '
+      mc alias set smoke http://127.0.0.1:9000 "$S3_ACCESS_KEY" "$S3_SECRET_KEY" >/dev/null
+      mc "$@"
+    ' sh "$@"
+}
+
+assert_s3_bucket_ready() {
+  run_minio_mc ls "smoke/$S3_BUCKET"
+}
+
+assert_object_exists() {
   local object_key="$1"
   local expected_size_bytes="$2"
+  if [[ "$STORAGE_PROVIDER" == "s3_compatible" ]]; then
+    local stat_json actual_size_bytes
+    stat_json="$(run_minio_mc stat --json "smoke/$S3_BUCKET/$object_key")"
+    actual_size_bytes="$(printf '%s\n' "$stat_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["size"])')"
+    if [[ "$actual_size_bytes" != "$expected_size_bytes" ]]; then
+      log "S3 object size mismatch for $object_key: $actual_size_bytes, want $expected_size_bytes"
+      return 1
+    fi
+    return 0
+  fi
+
   local object_path="$EFFECTIVE_LOCAL_STORAGE_PATH/$object_key"
   if [[ ! -f "$object_path" ]]; then
     log "uploaded object does not exist: $object_path"
@@ -286,6 +332,10 @@ assert_uploaded_object() {
     log "uploaded object size mismatch: $actual_size_bytes, want $expected_size_bytes"
     return 1
   fi
+}
+
+assert_uploaded_object() {
+  assert_object_exists "$1" "$2"
 }
 
 assert_recording_audio_metadata_in_db() {
@@ -350,7 +400,7 @@ assert_recording_audio_probe_in_db() {
 
 assert_recording_normalized_audio_in_db() {
   local recording_id="$1"
-  local row object_key content_type size_bytes format_name codec_name sample_rate channels normalized_at_set object_path actual_size_bytes
+  local row object_key content_type size_bytes format_name codec_name sample_rate channels normalized_at_set
   row="$(docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
     psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -AtF $'\t' -c "SELECT object_key, content_type, size_bytes, format_name, codec_name, sample_rate, channels, (normalized_at IS NOT NULL) FROM recording_normalized_audios WHERE recording_id = '$recording_id'")"
   if [[ -z "$row" ]]; then
@@ -364,16 +414,7 @@ assert_recording_normalized_audio_in_db() {
     return 1
   fi
 
-  object_path="$EFFECTIVE_LOCAL_STORAGE_PATH/$object_key"
-  if [[ ! -f "$object_path" ]]; then
-    log "normalized audio object does not exist: $object_path"
-    return 1
-  fi
-  actual_size_bytes="$(wc -c <"$object_path" | tr -d ' ')"
-  if [[ "$actual_size_bytes" != "$size_bytes" ]]; then
-    log "normalized audio object size mismatch: $actual_size_bytes, want $size_bytes"
-    return 1
-  fi
+  assert_object_exists "$object_key" "$size_bytes"
 }
 
 assert_recording_transcript_summary_mind_map_in_db() {
@@ -459,10 +500,16 @@ main() {
   wait_for_command "Temporal frontend" 60 \
     docker compose -f "$COMPOSE_FILE" exec -T temporal temporal --address temporal:7233 operator namespace list
 
+  if [[ "$STORAGE_PROVIDER" == "s3_compatible" ]]; then
+    wait_for_command "MinIO bucket $S3_BUCKET" 60 assert_s3_bucket_ready
+  fi
+
   apply_application_migrations
 
-  rm -rf "$EFFECTIVE_LOCAL_STORAGE_PATH"
-  mkdir -p "$EFFECTIVE_LOCAL_STORAGE_PATH"
+  if [[ "$STORAGE_PROVIDER" == "local" ]]; then
+    rm -rf "$EFFECTIVE_LOCAL_STORAGE_PATH"
+    mkdir -p "$EFFECTIVE_LOCAL_STORAGE_PATH"
+  fi
 
   start_worker
   start_api

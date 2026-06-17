@@ -274,6 +274,55 @@ func TestBuildHandlerReadyzChecksRuntimeDependencies(t *testing.T) {
 	}
 }
 
+func TestBuildHandlerReadyzChecksS3CompatibleStorage(t *testing.T) {
+	var sawHeadBucket bool
+	s3Server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodHead || r.URL.Path != "/soniq" {
+			t.Fatalf("s3 readiness request = %s %s, want HEAD /soniq", r.Method, r.URL.Path)
+		}
+		sawHeadBucket = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer s3Server.Close()
+
+	temporalClient := &temporalClientSpy{}
+	store := newBuildHandlerRecordingStoreSpy()
+	enableBuildHandlerPassword(t, store)
+	storeFactory := &appStoreFactorySpy{store: store}
+	cfg := config.Config{
+		PostgresDSN:       "postgres://custom_user:***@db:5432/custom?sslmode=disable",
+		TemporalAddress:   "temporal.example:7233",
+		TemporalNamespace: "default",
+		TemporalTaskQueue: "soniq-audio-pipeline",
+		StorageProvider:   "s3_compatible",
+		S3Endpoint:        s3Server.URL,
+		S3Region:          "us-east-1",
+		S3Bucket:          "soniq",
+		S3AccessKey:       "test-access",
+		S3SecretKey:       "test-secret",
+		S3ForcePathStyle:  true,
+	}
+
+	handler, cleanup, err := buildHandler(context.Background(), cfg, func(context.Context, config.Config) (temporalWorkflowClient, error) {
+		return temporalClient, nil
+	}, storeFactory.Open)
+	if err != nil {
+		t.Fatalf("buildHandler returned error: %v", err)
+	}
+	defer cleanup()
+
+	request := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("readyz status code = %d, want %d; body=%s", response.Code, http.StatusOK, response.Body.String())
+	}
+	if !sawHeadBucket {
+		t.Fatal("s3 HEAD bucket was not called")
+	}
+}
+
 func TestBuildHandlerReadyzReportsOutdatedMigrations(t *testing.T) {
 	temporalClient := &temporalClientSpy{}
 	store := newBuildHandlerRecordingStoreSpy()

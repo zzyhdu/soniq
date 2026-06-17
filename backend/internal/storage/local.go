@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // LocalStore stores objects under a local filesystem root.
@@ -64,6 +65,37 @@ func (s *LocalStore) PutObject(ctx context.Context, input PutObjectInput) (PutOb
 	}
 
 	return PutObjectResult{Key: key, SizeBytes: written}, nil
+}
+
+// GetObject opens an object from local storage.
+func (s *LocalStore) GetObject(ctx context.Context, key string) (GetObjectResult, error) {
+	path, err := s.LocalPathForObject(key)
+	if err != nil {
+		return GetObjectResult{}, err
+	}
+	select {
+	case <-ctx.Done():
+		return GetObjectResult{}, ctx.Err()
+	default:
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return GetObjectResult{}, fmt.Errorf("open object file: %w", err)
+	}
+	stat, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return GetObjectResult{}, fmt.Errorf("stat object file: %w", err)
+	}
+	return GetObjectResult{Key: key, Body: file, SizeBytes: stat.Size()}, nil
+}
+
+// PresignGetObject is unsupported for local filesystem storage.
+func (s *LocalStore) PresignGetObject(ctx context.Context, key string, ttl time.Duration) (string, error) {
+	if _, err := cleanObjectKey(key); err != nil {
+		return "", err
+	}
+	return "", fmt.Errorf("presigned object URLs are not supported by local storage")
 }
 
 // DeleteObject removes an object from local storage.

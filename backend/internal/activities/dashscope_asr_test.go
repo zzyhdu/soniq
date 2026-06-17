@@ -121,6 +121,57 @@ func TestDashScopeASRProviderSubmitsPollsDownloadsAndMapsSegments(t *testing.T) 
 	}
 }
 
+func TestDashScopeASRProviderPrefersAudioURL(t *testing.T) {
+	var submittedFileURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/services/audio/asr/transcription":
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode submit body: %v", err)
+			}
+			input := body["input"].(map[string]any)
+			submittedFileURL = input["file_urls"].([]any)[0].(string)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"output":{"task_id":"task_123"}}`))
+		case "/api/v1/tasks/task_123":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"output":{"task_status":"SUCCEEDED","results":[{"subtask_status":"SUCCEEDED","transcription_url":"` + serverResultURL(t, r, "/result.json") + `"}]}}`))
+		case "/result.json":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"transcripts":[{"text":"URL 输入识别成功。","sentences":[{"begin_time":0,"end_time":1000,"text":"URL 输入识别成功。"}]}]}`))
+		default:
+			t.Fatalf("unexpected request path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	provider := DashScopeASRProvider{
+		BaseURL:        server.URL + "/api/v1",
+		APIKey:         "dashscope-test-key",
+		Model:          "paraformer-v2",
+		MaxBase64Bytes: 1,
+		HTTPClient:     server.Client(),
+		PollInterval:   time.Millisecond,
+	}
+
+	result, err := provider.Transcribe(context.Background(), TranscriptionRequest{
+		RecordingID: "rec_dashscope",
+		AudioPath:   "/tmp/local-fallback-should-not-be-read.wav",
+		AudioURL:    "https://objects.example.test/audio/normalized.wav?signature=redacted",
+		Language:    "zh",
+	})
+	if err != nil {
+		t.Fatalf("Transcribe returned error: %v", err)
+	}
+	if submittedFileURL != "https://objects.example.test/audio/normalized.wav?signature=redacted" {
+		t.Fatalf("submitted file URL = %q, want request AudioURL", submittedFileURL)
+	}
+	if result.Text != "URL 输入识别成功。" {
+		t.Fatalf("result text = %q, want URL transcription result", result.Text)
+	}
+}
+
 func TestDashScopeASRProviderRejectsOversizedPayloadBeforeRequest(t *testing.T) {
 	audioPath := writeDashScopeASRTestAudio(t, []byte("1234567890"))
 	requests := 0

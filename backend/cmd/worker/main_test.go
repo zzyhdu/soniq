@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"io"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/zzyhdu/soniq/backend/internal/activities"
 	"github.com/zzyhdu/soniq/backend/internal/config"
@@ -31,8 +33,7 @@ func TestRegisterRecordingProcessingRegistersWorkflowAndActivities(t *testing.T)
 	wantActivityNames := []string{
 		activities.ValidateRecordingActivityName,
 		activities.MarkRecordingProcessingActivityName,
-		activities.ProbeRecordingAudioActivityName,
-		activities.NormalizeRecordingAudioActivityName,
+		activities.PrepareRecordingAudioActivityName,
 		activities.MarkRecordingTranscribingActivityName,
 		activities.TranscribeRecordingAudioActivityName,
 		activities.MarkRecordingSummarizingActivityName,
@@ -205,6 +206,14 @@ type objectStoreTestStub struct{}
 
 func (objectStoreTestStub) PutObject(ctx context.Context, input storage.PutObjectInput) (storage.PutObjectResult, error) {
 	return storage.PutObjectResult{Key: input.Key}, nil
+}
+
+func (objectStoreTestStub) GetObject(ctx context.Context, key string) (storage.GetObjectResult, error) {
+	return storage.GetObjectResult{Key: key, Body: io.NopCloser(strings.NewReader(""))}, nil
+}
+
+func (objectStoreTestStub) PresignGetObject(ctx context.Context, key string, ttl time.Duration) (string, error) {
+	return "", nil
 }
 
 func (objectStoreTestStub) DeleteObject(ctx context.Context, key string) error {

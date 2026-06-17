@@ -8,12 +8,12 @@ Completed foundation milestones:
 
 - Go backend skeleton with `GET /healthz`.
 - Postgres-backed workspace-scoped recording API: `POST /workspaces/{workspace_id}/recordings`, `POST /workspaces/{workspace_id}/recordings/upload`, `GET /workspaces/{workspace_id}/recordings/{recording_id}`, `GET /workspaces/{workspace_id}/recordings/{recording_id}/status`, and `POST /workspaces/{workspace_id}/recordings/{recording_id}/retry`.
-- Local filesystem object storage for uploaded recording audio.
+- Local filesystem and S3-compatible object storage for uploaded recording audio and normalized artifacts.
 - Temporal workflow with Postgres-backed recording status, audio-probe, audio-normalization, fake transcription, fake summarization, and fake mind map activities.
 - Temporal worker registration with Soniq Postgres-backed activities.
 - API-to-Temporal workflow start: successful audio uploads start `RecordingProcessingWorkflow` asynchronously; metadata-only recording creation does not enqueue processing.
 - Local Temporal development environment: Docker Compose services, Makefile targets, docs, and a full smoke helper.
-- Verified local smoke path: API -> local object store -> Soniq Postgres -> Temporal -> worker -> `ffprobe` -> `recording_audio_probes` -> `ffmpeg` -> `recording_normalized_audios` + local `normalized.wav` -> fake transcription -> `recording_transcripts`/segments -> fake summary -> `recording_summaries` -> fake mind map -> `recording_mind_maps` -> `recordings.status=completed`. This is a real pipeline/infrastructure smoke; only the model providers are deterministic fakes by default.
+- Verified local smoke path: API -> object store -> Soniq Postgres -> Temporal -> worker -> `ffprobe` -> `recording_audio_probes` -> `ffmpeg` -> `recording_normalized_audios` + normalized audio artifact -> fake transcription -> `recording_transcripts`/segments -> fake summary -> `recording_summaries` -> fake mind map -> `recording_mind_maps` -> `recordings.status=completed`. This is a real pipeline/infrastructure smoke; only the model providers are deterministic fakes by default.
 - Backend-owned OpenAPI + Scalar API Console served at `/openapi.yaml` and `/api-console`, with same-origin browser "Try it" support for upload, status, and details endpoints.
 - Basic product Web UI foundation under `apps/web`: pnpm workspace, typed `@soniq/api-client`, Vite React app shell, Tailwind/shadcn primitives, upload form, bookmarkable recording hash routes, processing status polling, failed-recording retry, and completed transcript/summary/mind-map display.
 
@@ -87,13 +87,14 @@ Status: complete.
 
 - Audio upload endpoint and original audio metadata persistence.
 - Local filesystem object storage for development.
+- S3-compatible object storage provider for MinIO and compatible services, including worker-side object download, normalized artifact upload, deletion/purge cleanup, and presigned normalized-audio read URLs.
 - `recording_audio_probes` table for original-audio ffprobe metadata.
-- Worker `ProbeRecordingAudio` activity that resolves the local object path, runs `ffprobe`, and upserts probe metadata before completion.
+- Worker audio preparation activity that resolves the original audio once, runs `ffprobe`, and upserts probe metadata before normalization.
 
 Remaining future scope:
 
-- S3-compatible storage provider with MinIO local setup.
-- Storage download/presigned-input support for worker-side probing when the object is not local.
+- Broader cloud-provider compatibility verification beyond the local MinIO and generic S3-compatible path.
+- Presigned browser upload URLs, if the product later needs direct-to-object-store uploads.
 
 ### 1F — First transcription, normalization, and summarization activities
 
@@ -104,14 +105,13 @@ Completed scope:
 - `recording_transcripts`, `recording_transcript_segments`, `recording_summaries`, `recording_mind_maps`, and `recording_normalized_audios` persistence.
 - Workflow status transitions through `processing`, `transcribing`, `summarizing`, and `completed`.
 - Original-audio probe plus ffmpeg normalization to WAV/PCM (`pcm_s16le`, 16 kHz, mono).
-- Deterministic local fake transcription, summary, and mind map providers wired into worker registration; transcription requires normalized audio metadata and reads the normalized local path.
+- Deterministic local fake transcription, summary, and mind map providers wired into worker registration; transcription requires normalized audio metadata and reads the normalized artifact through a staged local path.
 - Full local smoke verifies probe metadata, normalized audio metadata and artifact, transcript rows, segment rows, summary rows, mind map rows, Temporal `COMPLETED`, and `recordings.status=completed`.
 
 Remaining future scope:
 
-- Real ASR provider integration.
-- Real LLM provider integration.
-- Provider configuration, credentials, retries, and webhook/polling support.
+- Additional provider integrations beyond the current fake, OpenAI-compatible ASR, DashScope ASR, and OpenAI-compatible LLM adapters.
+- Production provider configuration UI, credential management, retries, and webhook/polling support.
 
 ### 1G — API Console developer UI
 
@@ -136,13 +136,13 @@ Completed scope:
 - Local Web UI documentation covering pnpm workspace paths, backend startup, sample audio upload, and expected completed results.
 - End-to-end manual verification against the real local backend pipeline.
 
-## Phase 2 — Provider expansion
+## Phase 2 — Provider Expansion
 
 - Local faster-whisper worker.
-- OpenAI-compatible LLM provider.
+- Additional OpenAI-compatible LLM provider verification across target vendors.
 - Ollama provider.
 - AssemblyAI or Deepgram provider.
-- Domestic provider experiments: Qwen/DeepSeek/Kimi and one domestic ASR.
+- Domestic provider expansion beyond current DashScope-compatible paths, such as DeepSeek/Kimi and additional domestic ASR providers.
 
 ## Phase 3 — Workflow robustness
 

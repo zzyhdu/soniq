@@ -113,7 +113,7 @@ func buildHandler(ctx context.Context, cfg config.Config, temporalFactory tempor
 		TaskQueue:                             cfg.TemporalTaskQueue,
 		DeleteOriginalAudioAfterTranscription: cfg.PrivacyDeleteOriginalAudioAfterTranscription,
 	})
-	objectStore, err := buildObjectStore(cfg)
+	objectStore, err := buildObjectStore(ctx, cfg)
 	if err != nil {
 		appStore.Close()
 		temporalClient.Close()
@@ -128,6 +128,7 @@ func buildHandler(ctx context.Context, cfg config.Config, temporalFactory tempor
 	readinessChecker := apiReadinessChecker{
 		appStore:                       appStore,
 		temporalClient:                 temporalClient,
+		objectStore:                    objectStore,
 		storageProvider:                cfg.StorageProvider,
 		localStoragePath:               cfg.LocalStoragePath,
 		requiredSchemaMigrationVersion: requiredSchemaMigrationVersion,
@@ -144,6 +145,7 @@ func buildHandler(ctx context.Context, cfg config.Config, temporalFactory tempor
 type apiReadinessChecker struct {
 	appStore                       appStoreClient
 	temporalClient                 temporalWorkflowClient
+	objectStore                    storage.ObjectStore
 	storageProvider                string
 	localStoragePath               string
 	requiredSchemaMigrationVersion int
@@ -157,7 +159,7 @@ func (c apiReadinessChecker) CheckReadiness(ctx context.Context) api.ReadinessRe
 		"postgres":       c.checkPostgres(checkCtx),
 		"migrations":     c.checkMigrations(checkCtx),
 		"temporal":       c.checkTemporal(checkCtx),
-		"object_storage": c.checkObjectStorage(),
+		"object_storage": c.checkObjectStorage(checkCtx),
 	}}
 }
 
@@ -199,11 +201,22 @@ func (c apiReadinessChecker) checkTemporal(ctx context.Context) api.ReadinessChe
 	return api.ReadinessCheckOK()
 }
 
-func (c apiReadinessChecker) checkObjectStorage() api.ReadinessCheck {
+func (c apiReadinessChecker) checkObjectStorage(ctx context.Context) api.ReadinessCheck {
 	switch strings.ToLower(strings.TrimSpace(c.storageProvider)) {
 	case "", "local":
 		if err := checkLocalObjectStorageRoot(c.localStoragePath); err != nil {
 			return api.ReadinessCheckFailed(err.Error())
+		}
+		return api.ReadinessCheckOK()
+	case "s3_compatible":
+		checker, ok := c.objectStore.(interface {
+			Check(context.Context) error
+		})
+		if !ok {
+			return api.ReadinessCheckFailed("object storage readiness check is not configured")
+		}
+		if err := checker.Check(ctx); err != nil {
+			return api.ReadinessCheckFailed("object storage unavailable")
 		}
 		return api.ReadinessCheckOK()
 	default:
@@ -252,13 +265,17 @@ func buildAuthDependencies(cfg config.Config, appStore appStoreClient) (api.Auth
 	}, nil
 }
 
-func buildObjectStore(cfg config.Config) (storage.ObjectStore, error) {
-	switch strings.ToLower(strings.TrimSpace(cfg.StorageProvider)) {
-	case "local":
-		return storage.NewLocalStore(cfg.LocalStoragePath), nil
-	default:
-		return nil, fmt.Errorf("unsupported storage provider %q", cfg.StorageProvider)
-	}
+func buildObjectStore(ctx context.Context, cfg config.Config) (storage.ObjectStore, error) {
+	return storage.NewObjectStore(ctx, storage.ProviderConfig{
+		Provider:         cfg.StorageProvider,
+		LocalStoragePath: cfg.LocalStoragePath,
+		S3Endpoint:       cfg.S3Endpoint,
+		S3Region:         cfg.S3Region,
+		S3Bucket:         cfg.S3Bucket,
+		S3AccessKey:      cfg.S3AccessKey,
+		S3SecretKey:      cfg.S3SecretKey,
+		S3ForcePathStyle: cfg.S3ForcePathStyle,
+	})
 }
 
 func dialTemporalClient(ctx context.Context, cfg config.Config) (temporalWorkflowClient, error) {

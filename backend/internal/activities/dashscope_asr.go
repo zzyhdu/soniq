@@ -95,8 +95,8 @@ type dashScopeASRSentenceJSON struct {
 }
 
 func (p DashScopeASRProvider) Transcribe(ctx context.Context, request TranscriptionRequest) (TranscriptionResult, error) {
-	if strings.TrimSpace(request.AudioPath) == "" {
-		return TranscriptionResult{}, errors.New("audio path is required")
+	if strings.TrimSpace(request.AudioURL) == "" && strings.TrimSpace(request.AudioPath) == "" {
+		return TranscriptionResult{}, errors.New("audio URL or path is required")
 	}
 	baseURL := strings.TrimRight(strings.TrimSpace(p.BaseURL), "/")
 	if baseURL == "" {
@@ -115,13 +115,17 @@ func (p DashScopeASRProvider) Transcribe(ctx context.Context, request Transcript
 		maxBase64Bytes = dashScopeASRDefaultLimit
 	}
 
-	dataURL, err := audioFileDataURL(request.AudioPath)
-	if err != nil {
-		return TranscriptionResult{}, err
-	}
-	encodedLen := len(dataURL[strings.Index(dataURL, ",")+1:])
-	if int64(encodedLen) > maxBase64Bytes {
-		return TranscriptionResult{}, fmt.Errorf("base64 audio payload size %d exceeds limit %d", encodedLen, maxBase64Bytes)
+	fileURL := strings.TrimSpace(request.AudioURL)
+	if fileURL == "" {
+		dataURL, err := audioFileDataURL(request.AudioPath)
+		if err != nil {
+			return TranscriptionResult{}, err
+		}
+		encodedLen := len(dataURL[strings.Index(dataURL, ",")+1:])
+		if int64(encodedLen) > maxBase64Bytes {
+			return TranscriptionResult{}, fmt.Errorf("base64 audio payload size %d exceeds limit %d", encodedLen, maxBase64Bytes)
+		}
+		fileURL = dataURL
 	}
 
 	languageHints := p.LanguageHints
@@ -133,7 +137,7 @@ func (p DashScopeASRProvider) Transcribe(ctx context.Context, request Transcript
 	}
 	body := dashScopeASRSubmitRequest{
 		Model: model,
-		Input: dashScopeASRInput{FileURLs: []string{dataURL}},
+		Input: dashScopeASRInput{FileURLs: []string{fileURL}},
 		Parameters: dashScopeASRRequestParams{
 			ChannelID:                 []int{0},
 			LanguageHints:             languageHints,

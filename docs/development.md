@@ -11,11 +11,11 @@ Soniq is currently in the password-session identity, workspace-scoped recording,
 - the production API command uses Soniq Postgres for user, workspace, membership, and recording metadata persistence;
 - `POST /workspaces/{workspace_id}/recordings` creates metadata-only recordings without starting processing; `POST /workspaces/{workspace_id}/recordings/upload` accepts multipart audio, writes the original audio through an object-store seam, persists audio metadata, and then invokes the same injectable recording processor seam;
 - the production API command wires the recording processor seam to Temporal and starts `RecordingProcessingWorkflow` asynchronously; failed audio-backed recordings can be reset and re-enqueued through the retry endpoint;
-- the worker starts a real Temporal SDK worker, registers the recording processing workflow and Soniq Postgres-backed recording status/audio-probe/normalized-audio/transcript/summary/mind-map activities, polls the configured task queue, and runs a lightweight retry loop for pending/failed recording purge artifact cleanup rows;
-- local filesystem object storage is implemented for development; the worker resolves local object keys, runs `ffprobe` against uploaded original audio to persist probe metadata, and runs `ffmpeg` to write a deterministic normalized WAV/PCM artifact;
-- deterministic fake transcription, summarization, and mind map providers are wired for local development verification; transcription reads the normalized audio artifact and persists transcript, transcript segment, summary, and mind map rows without external credentials;
+- the worker starts a real Temporal SDK worker, registers the recording processing workflow and Soniq Postgres-backed recording status/audio-preparation/transcript/summary/mind-map activities, polls the configured task queue, and runs a lightweight retry loop for pending/failed recording purge artifact cleanup rows;
+- object storage supports local filesystem and S3-compatible providers; the worker stages audio objects to temporary local files when needed, runs `ffprobe` and `ffmpeg`, and writes the deterministic normalized WAV/PCM artifact back through object storage;
+- deterministic fake transcription, summarization, and mind map providers are wired for local development verification; opt-in external ASR/LLM providers are available for manual runs; transcription reads the normalized audio artifact and persists transcript, transcript segment, summary, and mind map rows;
 - the product Web UI in `apps/web` loads the current user, shows sign in/sign up forms when the API returns `401`, selects a workspace, lists recording history, uploads audio through the Go API, exposes bookmarkable recording hash routes, polls processing status, displays failure reasons with retry, and displays completed transcript/summary/mind-map results;
-- S3-compatible storage, real ASR providers, real LLM providers, multi-user account management, invitations, password reset, and production RBAC are not implemented in this milestone.
+- provider webhooks, multi-user account management, invitations, password reset, and production RBAC are not implemented in this milestone.
 
 ## Prerequisites
 
@@ -156,9 +156,9 @@ curl -i http://localhost:8080/readyz
 ```
 
 The current container path still defaults to local object storage under
-`/tmp/soniq/uploads`. That is acceptable for image verification, but production
-Kubernetes deployment should wait for the planned S3-compatible storage
-provider so API and worker pods do not depend on shared local disk.
+`/tmp/soniq/uploads`. That is acceptable for image verification. For
+multi-pod Kubernetes deployment, use `STORAGE_PROVIDER=s3_compatible` so API
+and worker pods do not depend on shared local disk.
 
 ## Full local smoke verification
 
@@ -168,9 +168,29 @@ To avoid opening several terminals manually, run the full smoke target from the 
 make smoke-postgres-temporal
 ```
 
-This target runs `scripts/smoke-postgres-temporal.sh`. The script starts the Compose infrastructure, applies missing Soniq application migrations through `make migrate`, starts the API and worker as temporary local background processes, signs up or signs in a smoke user, uploads a small valid WAV file through that user's workspace, verifies the workspace-scoped local object file and Postgres audio metadata, verifies the recording can be read from Postgres before and after an API restart, confirms the Temporal workflow reaches `COMPLETED`, verifies `recordings.status=completed`, verifies a `recording_audio_probes` row was persisted from real `ffprobe` output, verifies a `recording_normalized_audios` row and local `normalized.wav` artifact were persisted from real `ffmpeg` normalization, verifies deterministic fake transcription/summary/mind-map rows were persisted, and then stops the API/worker processes it started.
+This target runs `scripts/smoke-postgres-temporal.sh`. The script starts the Compose infrastructure, applies missing Soniq application migrations through `make migrate`, starts the API and worker as temporary local background processes, signs up or signs in a smoke user, uploads a small valid WAV file through that user's workspace, verifies the workspace-scoped object and Postgres audio metadata, verifies the recording can be read from Postgres before and after an API restart, confirms the Temporal workflow reaches `COMPLETED`, verifies `recordings.status=completed`, verifies a `recording_audio_probes` row was persisted from real `ffprobe` output, verifies a `recording_normalized_audios` row and normalized audio artifact were persisted from real `ffmpeg` normalization, verifies deterministic fake transcription/summary/mind-map rows were persisted, and then stops the API/worker processes it started.
 
 By default this smoke target forces `TRANSCRIPTION_PROVIDER=fake_transcription` and `LLM_PROVIDER=fake_llm`, even if `.env` selects real external providers. This keeps the baseline smoke deterministic and independent of provider credentials, network availability, quota, and model behavior.
+
+To run the same smoke against local MinIO/S3-compatible object storage instead
+of local filesystem storage:
+
+```bash
+STORAGE_PROVIDER=s3_compatible \
+API_URL=http://localhost:18080 \
+API_ADDRESS=:18080 \
+SMOKE_DOWN=1 \
+make smoke-postgres-temporal
+```
+
+In S3-compatible mode, the script verifies uploaded and normalized audio objects
+with MinIO `mc stat` instead of checking `LOCAL_STORAGE_PATH`.
+
+URL-capable ASR providers can receive a presigned normalized audio URL when
+`STORAGE_PROVIDER=s3_compatible` is enabled. For real external providers such as
+DashScope, make sure `S3_ENDPOINT` resolves to an object-storage endpoint the
+provider can reach; `http://localhost:9000` is only suitable for local MinIO
+development and fake-provider verification.
 
 The script intentionally leaves the Compose infrastructure running by default so local Postgres and Temporal state remain available for follow-up debugging. To stop Compose services after the smoke run, set:
 
@@ -213,16 +233,17 @@ The local Temporal frontend listens on `localhost:7233`, and the Temporal Web UI
 http://localhost:8233
 ```
 
-The same Compose stack also starts a local MinIO service for upcoming
-S3-compatible storage work. MinIO's S3 API listens on `localhost:9000`, the
-console listens on `localhost:9001`, and a one-shot `minio-init` service creates
-the `soniq` bucket. Local credentials are:
+The same Compose stack also starts a local MinIO service for S3-compatible
+storage verification. MinIO's S3 API listens on `localhost:9000`, the console
+listens on `localhost:9001`, and a one-shot `minio-init` service creates the
+`soniq` bucket. Local credentials are:
 
 - access key: `soniq_minio_user`
 - secret key: `soniq_minio_password`
 
-The backend still defaults to `STORAGE_PROVIDER=local`; MinIO is available for
-manual verification and the planned S3-compatible provider path.
+The backend still defaults to `STORAGE_PROVIDER=local`. Set
+`STORAGE_PROVIDER=s3_compatible` to run API upload, worker processing, and purge
+cleanup through MinIO/S3-compatible object storage.
 
 Then start the API server:
 
@@ -387,7 +408,14 @@ docker compose -f compose.temporal.yml exec -T soniq-postgresql \
   -c "SELECT recording_id, duration_seconds, format_name, codec_name, sample_rate, channels, bit_rate, probed_at FROM recording_audio_probes WHERE recording_id = '<id>'"
 ```
 
-The probe, normalization, and fake transcription steps currently support local object storage only because the worker resolves object keys to `<LOCAL_STORAGE_PATH>/<object_key>` before invoking `ffprobe`, `ffmpeg`, or the local fake transcription provider. Fake transcription now reads the normalized object key from `recording_normalized_audios`; it does not silently fall back to the original upload.
+The probe, normalization, and fake transcription steps can run against either
+local object storage or S3-compatible storage. For S3-compatible storage, the
+worker downloads object keys to temporary local files before invoking
+`ffprobe`, `ffmpeg`, or the configured transcription provider, uploads the
+normalized artifact back through object storage, and removes temporary files on
+best effort cleanup. Fake transcription reads the normalized object key from
+`recording_normalized_audios`; it does not silently fall back to the original
+upload.
 
 ### Create a metadata-only recording
 
@@ -743,11 +771,14 @@ The current Temporal implementation is intentionally narrow but no longer statel
 
 - The workflow is implemented with the real Temporal Go SDK and covered by the Temporal SDK testsuite.
 - Workflow code stays deterministic and delegates Soniq Postgres writes to activities.
-- Worker-registered activities validate that the recording exists, persist `processing`, probe original audio with `ffprobe`, persist one `recording_audio_probes` row, normalize audio with `ffmpeg`, persist one `recording_normalized_audios` row, persist `transcribing`, persist configured transcription provider transcript and segment rows from the normalized audio path, optionally delete the original uploaded audio object when `PRIVACY_DELETE_ORIGINAL_AUDIO_AFTER_TRANSCRIPTION=true`, persist `summarizing`, persist fake-provider summary and mind map rows, persist `completed`, and can persist `failed` on probe/normalization/transcription/original-audio-deletion/summarization/mind-map generation/completion failure paths.
+- Worker-registered activities validate that the recording exists, persist `processing`, prepare audio by staging the original object once, probe original audio with `ffprobe`, persist one `recording_audio_probes` row, normalize audio with `ffmpeg`, persist one `recording_normalized_audios` row, persist `transcribing`, persist configured transcription provider transcript and segment rows from the normalized audio artifact, optionally delete the original uploaded audio object when `PRIVACY_DELETE_ORIGINAL_AUDIO_AFTER_TRANSCRIPTION=true`, persist `summarizing`, persist configured summary and mind map rows, persist `completed`, and can persist `failed` on audio-preparation/transcription/original-audio-deletion/summarization/mind-map generation/completion failure paths.
 - The API calls an injectable recording processor seam after `POST /workspaces/{workspace_id}/recordings/upload`; the production API command wires that seam to a Temporal client and starts `RecordingProcessingWorkflow` asynchronously. `POST /workspaces/{workspace_id}/recordings` only creates metadata and does not enqueue workflow processing.
 - Worker startup is the boundary where the code leaves in-process tests and requires a real Temporal server plus Soniq application Postgres.
 
-The default transcription provider remains local-safe `fake_transcription`. `openai_compatible_asr` can be enabled manually for Xiaomi MiMo ASR or a compatible endpoint. Real LLM summarization providers, provider webhooks, and S3-compatible object storage remain future milestones. Those integrations should be added separately with explicit local service configuration.
+The default transcription and LLM providers remain local-safe
+`fake_transcription` and `fake_llm`. `openai_compatible_asr`, `dashscope_asr`,
+and `openai_compatible` LLM can be enabled manually for real external-provider
+runs. Provider webhooks remain future milestones.
 
 ## Configuration
 
@@ -772,15 +803,15 @@ The current backend reads environment variables directly. Important local settin
 | `TEMPORAL_ADDRESS` | `localhost:7233` | Temporal server address used by `make api` and `make worker`. |
 | `TEMPORAL_NAMESPACE` | `default` | Temporal namespace used by `make api` and `make worker`. |
 | `TEMPORAL_TASK_QUEUE` | `soniq-audio-pipeline` | Task queue used when the API starts workflows and the worker polls work. |
-| `STORAGE_PROVIDER` | `local` | Object storage provider selector. The implemented local development provider is `local`; the local Compose stack includes MinIO for upcoming S3-compatible storage work. |
+| `STORAGE_PROVIDER` | `local` | Object storage provider selector. Supported values are `local` and `s3_compatible`. |
 | `LOCAL_STORAGE_PATH` | `var/uploads` | Local object storage root used when `STORAGE_PROVIDER=local`. |
-| `S3_ENDPOINT` | `http://localhost:9000` | Future S3-compatible endpoint; points at local MinIO in the Compose stack. |
-| `S3_REGION` | `us-east-1` | Future S3-compatible region value. |
-| `S3_BUCKET` | `soniq` | Future S3-compatible bucket; created by the local `minio-init` service. |
-| `S3_ACCESS_KEY` | `soniq_minio_user` | Future S3-compatible access key for local MinIO. |
-| `S3_SECRET_KEY` | `soniq_minio_password` | Future S3-compatible secret key for local MinIO. |
-| `S3_FORCE_PATH_STYLE` | `true` | Future S3-compatible path-style setting required by local MinIO. |
-| `TRANSCRIPTION_PROVIDER` | `fake_transcription` | Transcription provider selector. Use `openai_compatible_asr` for Xiaomi MiMo/OpenAI-compatible ASR. |
+| `S3_ENDPOINT` | `http://localhost:9000` | S3-compatible endpoint used when `STORAGE_PROVIDER=s3_compatible`; points at local MinIO in the Compose stack. |
+| `S3_REGION` | `us-east-1` | S3-compatible region value. |
+| `S3_BUCKET` | `soniq` | S3-compatible bucket; created by the local `minio-init` service. |
+| `S3_ACCESS_KEY` | `soniq_minio_user` | S3-compatible access key for local MinIO. |
+| `S3_SECRET_KEY` | `soniq_minio_password` | S3-compatible secret key for local MinIO. |
+| `S3_FORCE_PATH_STYLE` | `true` | S3-compatible path-style setting required by local MinIO. |
+| `TRANSCRIPTION_PROVIDER` | `fake_transcription` | Transcription provider selector. Use `openai_compatible_asr` for Xiaomi MiMo/OpenAI-compatible ASR or `dashscope_asr` for native DashScope ASR. |
 | `TRANSCRIPTION_BASE_URL` | `https://api.xiaomimimo.com/v1` | OpenAI-compatible ASR base URL. |
 | `TRANSCRIPTION_API_KEY` | empty | External ASR API key loaded from local `.env`; never commit real values. |
 | `MIMO_API_KEY` | empty | Optional Xiaomi MiMo API key alias; `TRANSCRIPTION_API_KEY` takes precedence. |
@@ -788,13 +819,32 @@ The current backend reads environment variables directly. Important local settin
 | `TRANSCRIPTION_AUTH_HEADER` | `api-key` | ASR auth mode: `api-key` for Xiaomi MiMo or `bearer` for Bearer-compatible providers. |
 | `TRANSCRIPTION_LANGUAGE` | `auto` | ASR language hint: `auto`, `zh`, or `en` for Xiaomi MiMo. |
 | `TRANSCRIPTION_MAX_BASE64_BYTES` | `10485760` | Maximum Base64 audio payload size for chat-completions audio-input ASR. |
-| `LLM_PROVIDER` | `openai_compatible` | Future LLM provider selector. |
-| `LLM_BASE_URL` | `https://api.openai.com/v1` | Future OpenAI-compatible endpoint. |
-| `LLM_MODEL` | `gpt-4o-mini` | Future default LLM model name. |
+| `LLM_PROVIDER` | `fake_llm` | LLM provider selector. Use `openai_compatible` for manual external-provider summary and mind-map runs. |
+| `LLM_BASE_URL` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI-compatible LLM endpoint used when `LLM_PROVIDER=openai_compatible`. |
+| `LLM_API_KEY` | empty | External LLM API key loaded from local `.env`; falls back to `DASHSCOPE_API_KEY` when empty. |
+| `LLM_MODEL` | `qwen3.7-plus` | External LLM model name used when `LLM_PROVIDER=openai_compatible`. |
 | `PRIVACY_DELETE_ORIGINAL_AUDIO_AFTER_TRANSCRIPTION` | `false` | When `true`, the worker deletes the original uploaded audio object after transcription succeeds; normalized audio remains for later pipeline steps. |
 | `PRIVACY_ALLOW_EXTERNAL_MODEL_PROVIDERS` | `true` | Allows configured external ASR/LLM providers; set `false` to force local-safe provider choices. |
 
 Do not commit real secrets. Keep real API keys and credentials in local environment files only.
+
+For Aliyun OSS, keep the same `s3_compatible` storage provider and point the S3
+endpoint at the OSS S3-compatible endpoint. Example:
+
+```env
+STORAGE_PROVIDER=s3_compatible
+S3_ENDPOINT=https://s3.oss-cn-hangzhou.aliyuncs.com
+S3_REGION=cn-hangzhou
+S3_BUCKET=<your-oss-bucket>
+S3_ACCESS_KEY=<your-ram-access-key-id>
+S3_SECRET_KEY=<your-ram-access-key-secret>
+S3_FORCE_PATH_STYLE=false
+```
+
+The backend uses the AWS SDK as a generic S3 protocol client. This does not mean
+objects are stored in AWS; the configured `S3_ENDPOINT` decides whether requests
+go to local MinIO, Aliyun OSS, AWS S3, R2, COS, OBS, or another compatible
+service.
 
 ## Password Auth
 
@@ -861,7 +911,7 @@ The current backend foundation provides:
 - completed-recording details lookup for transcript segments, summary, and mind map results;
 - embedded SQL migrations for `users`, `workspaces`, `workspace_members`, `user_sessions`, the `recordings` table, failure metadata, audio object metadata columns, `recording_audio_probes`, `recording_normalized_audios`, `recording_transcripts`, `recording_transcript_segments`, `recording_summaries`, `recording_mind_maps`, and purge artifact cleanup rows;
 - a container-ready Go migration command under `backend/cmd/migrate`;
-- a local filesystem object-store provider selected with `STORAGE_PROVIDER=local` and rooted at `LOCAL_STORAGE_PATH`;
+- object storage providers selected with `STORAGE_PROVIDER=local` or `STORAGE_PROVIDER=s3_compatible`;
 - API and Temporal worker command entrypoints;
 - a Temporal-backed recording processor that starts `RecordingProcessingWorkflow` after successful audio upload requests;
 - a Temporal SDK recording processing workflow;
@@ -871,7 +921,6 @@ The current backend foundation provides:
 
 It does not yet provide:
 
-- MinIO/S3 storage integration;
-- real ASR or LLM provider calls;
+- provider webhooks or asynchronous provider callbacks;
 - multi-user account management, invitations, password reset, and production RBAC;
 - recording management actions beyond listing, selecting, uploading, and viewing completed results.

@@ -89,8 +89,11 @@ func run(ctx context.Context, cfg config.Config) error {
 	}
 
 	worker := temporalworker.New(temporalClient, cfg.TemporalTaskQueue, temporalworker.Options{})
-	objectStore := storage.NewLocalStore(cfg.LocalStoragePath)
-	registerRecordingProcessing(worker, recordingStore, objectStore, objectStore, activities.FFProbeRunner{}, activities.FFmpegNormalizeRunner{}, transcriptionProvider, summaryProvider)
+	objectStore, err := buildObjectStore(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	registerRecordingProcessing(worker, recordingStore, nil, objectStore, activities.FFProbeRunner{}, activities.FFmpegNormalizeRunner{}, transcriptionProvider, summaryProvider)
 	cleanupCtx, cancelCleanup := context.WithCancel(ctx)
 	defer cancelCleanup()
 	cleanupRunner := cleanup.NewRecordingPurgeArtifactCleaner(recordingStore, objectStore, cleanup.RecordingPurgeArtifactCleanerOptions{
@@ -130,8 +133,7 @@ func registerRecordingProcessing(registry recordingProcessingRegistry, store act
 	registry.RegisterWorkflow(workflows.RecordingProcessingWorkflow)
 	registry.RegisterActivityWithOptions(activitySet.ValidateRecording, activity.RegisterOptions{Name: activities.ValidateRecordingActivityName})
 	registry.RegisterActivityWithOptions(activitySet.MarkRecordingProcessing, activity.RegisterOptions{Name: activities.MarkRecordingProcessingActivityName})
-	registry.RegisterActivityWithOptions(activitySet.ProbeRecordingAudio, activity.RegisterOptions{Name: activities.ProbeRecordingAudioActivityName})
-	registry.RegisterActivityWithOptions(activitySet.NormalizeRecordingAudio, activity.RegisterOptions{Name: activities.NormalizeRecordingAudioActivityName})
+	registry.RegisterActivityWithOptions(activitySet.PrepareRecordingAudio, activity.RegisterOptions{Name: activities.PrepareRecordingAudioActivityName})
 	registry.RegisterActivityWithOptions(activitySet.MarkRecordingTranscribing, activity.RegisterOptions{Name: activities.MarkRecordingTranscribingActivityName})
 	registry.RegisterActivityWithOptions(activitySet.TranscribeRecordingAudio, activity.RegisterOptions{Name: activities.TranscribeRecordingAudioActivityName})
 	registry.RegisterActivityWithOptions(activitySet.MarkRecordingSummarizing, activity.RegisterOptions{Name: activities.MarkRecordingSummarizingActivityName})
@@ -220,6 +222,19 @@ func summaryProviderForConfig(cfg config.Config) (activities.SummaryProvider, er
 	default:
 		return nil, fmt.Errorf("unsupported LLM provider %q", provider)
 	}
+}
+
+func buildObjectStore(ctx context.Context, cfg config.Config) (storage.ObjectStore, error) {
+	return storage.NewObjectStore(ctx, storage.ProviderConfig{
+		Provider:         cfg.StorageProvider,
+		LocalStoragePath: cfg.LocalStoragePath,
+		S3Endpoint:       cfg.S3Endpoint,
+		S3Region:         cfg.S3Region,
+		S3Bucket:         cfg.S3Bucket,
+		S3AccessKey:      cfg.S3AccessKey,
+		S3SecretKey:      cfg.S3SecretKey,
+		S3ForcePathStyle: cfg.S3ForcePathStyle,
+	})
 }
 
 type recordingStoreClient interface {

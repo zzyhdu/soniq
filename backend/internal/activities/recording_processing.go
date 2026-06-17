@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -49,8 +50,7 @@ type RecordingProcessingResult struct {
 const (
 	ValidateRecordingActivityName            = "ValidateRecordingActivity"
 	MarkRecordingProcessingActivityName      = "MarkRecordingProcessingActivity"
-	ProbeRecordingAudioActivityName          = "ProbeRecordingAudioActivity"
-	NormalizeRecordingAudioActivityName      = "NormalizeRecordingAudioActivity"
+	PrepareRecordingAudioActivityName        = "PrepareRecordingAudioActivity"
 	MarkRecordingTranscribingActivityName    = "MarkRecordingTranscribingActivity"
 	TranscribeRecordingAudioActivityName     = "TranscribeRecordingAudioActivity"
 	MarkRecordingSummarizingActivityName     = "MarkRecordingSummarizingActivity"
@@ -61,7 +61,7 @@ const (
 	FailRecordingProcessingActivityName      = "FailRecordingProcessingActivity"
 )
 
-// RecordingStore is the persistence seam used by validation, status, and audio probe activities.
+// RecordingStore is the persistence seam used by validation, status, and audio preparation activities.
 type RecordingStore interface {
 	Get(id string) (domain.Recording, bool, error)
 	GetForWorkspace(input recordings.GetRecordingInput) (domain.Recording, bool, error)
@@ -133,10 +133,11 @@ type TranscriptionProvider interface {
 	Transcribe(ctx context.Context, request TranscriptionRequest) (TranscriptionResult, error)
 }
 
-// TranscriptionRequest contains local audio metadata for transcription.
+// TranscriptionRequest contains audio inputs for transcription providers.
 type TranscriptionRequest struct {
 	RecordingID string
 	AudioPath   string
+	AudioURL    string
 	Language    string
 }
 
@@ -244,11 +245,6 @@ func NewRecordingProcessingActivities(store RecordingStore) *RecordingProcessing
 	return &RecordingProcessingActivities{store: store}
 }
 
-// NewRecordingProcessingActivitiesWithAudioProbe creates recording processing activities with audio probe dependencies.
-func NewRecordingProcessingActivitiesWithAudioProbe(store RecordingStore, resolver LocalObjectPathResolver, runner AudioProbeRunner) *RecordingProcessingActivities {
-	return &RecordingProcessingActivities{store: store, pathResolver: resolver, probeRunner: runner}
-}
-
 // NewRecordingProcessingActivitiesWithNormalizedAudio creates recording processing activities with normalization dependencies.
 func NewRecordingProcessingActivitiesWithNormalizedAudio(store NormalizingPipelineStore, resolver LocalObjectPathResolver, objectStore storage.ObjectStore, probeRunner AudioProbeRunner, normalizeRunner AudioNormalizeRunner, transcriptionProvider TranscriptionProvider, summaryProvider SummaryProvider) *RecordingProcessingActivities {
 	mindMapProvider, _ := summaryProvider.(MindMapProvider)
@@ -266,6 +262,89 @@ func NewRecordingProcessingActivitiesWithNormalizedAudio(store NormalizingPipeli
 		summaryProvider:       summaryProvider,
 		mindMapProvider:       mindMapProvider,
 	}
+}
+
+func (a *RecordingProcessingActivities) localInputPathForObject(ctx context.Context, key string) (string, func(), error) {
+	if a != nil && a.objectStore != nil {
+		return stageObjectToTempFile(ctx, a.objectStore, key)
+	}
+	if a != nil && a.pathResolver != nil {
+		path, err := a.pathResolver.LocalPathForObject(key)
+		if err != nil {
+			return "", nil, err
+		}
+		return path, func() {}, nil
+	}
+	return "", nil, errors.New("audio object reader or path resolver is required")
+}
+
+func (a *RecordingProcessingActivities) localOutputPathForObject(key string) (string, func(), bool, error) {
+	if a != nil && a.objectStore != nil {
+		path, cleanup, err := newTempObjectPath(key)
+		return path, cleanup, true, err
+	}
+	if a != nil && a.pathResolver != nil {
+		path, err := a.pathResolver.LocalPathForObject(key)
+		if err != nil {
+			return "", nil, false, err
+		}
+		return path, func() {}, false, nil
+	}
+	return "", nil, false, errors.New("audio object writer or path resolver is required")
+}
+
+func (a *RecordingProcessingActivities) presignedURLForObject(ctx context.Context, key string) string {
+	if a == nil || a.objectStore == nil {
+		return ""
+	}
+	url, err := a.objectStore.PresignGetObject(ctx, key, time.Hour)
+	if err != nil {
+		return ""
+	}
+	return url
+}
+
+func stageObjectToTempFile(ctx context.Context, store storage.ObjectStore, key string) (string, func(), error) {
+	result, err := store.GetObject(ctx, key)
+	if err != nil {
+		return "", nil, err
+	}
+	defer result.Body.Close()
+
+	path, cleanup, err := newTempObjectPath(key)
+	if err != nil {
+		return "", nil, err
+	}
+	file, err := os.Create(path)
+	if err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("create temporary object file: %w", err)
+	}
+	if _, err := io.Copy(file, result.Body); err != nil {
+		_ = file.Close()
+		cleanup()
+		return "", nil, fmt.Errorf("write temporary object file: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("close temporary object file: %w", err)
+	}
+	return path, cleanup, nil
+}
+
+func newTempObjectPath(key string) (string, func(), error) {
+	dir, err := os.MkdirTemp("", "soniq-object-*")
+	if err != nil {
+		return "", nil, fmt.Errorf("create temporary object directory: %w", err)
+	}
+	cleanup := func() {
+		_ = os.RemoveAll(dir)
+	}
+	base := filepath.Base(filepath.FromSlash(strings.TrimSpace(key)))
+	if base == "." || base == string(filepath.Separator) || base == "" {
+		base = "object"
+	}
+	return filepath.Join(dir, base), cleanup, nil
 }
 
 // ValidateRecording validates processing input and confirms the recording exists.
@@ -335,19 +414,25 @@ func (a *RecordingProcessingActivities) FailRecordingProcessing(ctx context.Cont
 	return err
 }
 
-// ProbeRecordingAudio probes the original uploaded audio and persists ffprobe metadata.
-func (a *RecordingProcessingActivities) ProbeRecordingAudio(ctx context.Context, recordingID string) error {
+// PrepareRecordingAudio probes and normalizes the original recording audio using one staged local input.
+func (a *RecordingProcessingActivities) PrepareRecordingAudio(ctx context.Context, recordingID string) error {
 	if recordingID == "" {
 		return errors.New("recording id is required")
 	}
 	if a == nil || a.store == nil {
 		return errors.New("recording store is required")
 	}
-	if a.pathResolver == nil {
-		return errors.New("audio object path resolver is required")
+	if a.normalizedAudioStore == nil {
+		return errors.New("normalized audio store is required")
+	}
+	if a.pathResolver == nil && a.objectStore == nil {
+		return errors.New("audio object reader or path resolver is required")
 	}
 	if a.probeRunner == nil {
 		return errors.New("audio probe runner is required")
+	}
+	if a.normalizeRunner == nil {
+		return errors.New("audio normalize runner is required")
 	}
 
 	recording, ok, err := a.store.Get(recordingID)
@@ -361,11 +446,12 @@ func (a *RecordingProcessingActivities) ProbeRecordingAudio(ctx context.Context,
 		return fmt.Errorf("recording audio object key is required: %s", recordingID)
 	}
 
-	path, err := a.pathResolver.LocalPathForObject(recording.AudioObjectKey)
+	inputPath, cleanupInput, err := a.localInputPathForObject(ctx, recording.AudioObjectKey)
 	if err != nil {
 		return fmt.Errorf("resolve recording audio object path: %w", err)
 	}
-	probe, err := a.probeRunner.Probe(ctx, path)
+	defer cleanupInput()
+	probe, err := a.probeRunner.Probe(ctx, inputPath)
 	if err != nil {
 		return fmt.Errorf("probe recording audio: %w", err)
 	}
@@ -383,49 +469,19 @@ func (a *RecordingProcessingActivities) ProbeRecordingAudio(ctx context.Context,
 	if err != nil {
 		return fmt.Errorf("persist recording audio probe: %w", err)
 	}
-	return nil
+	return a.normalizeRecordingAudioFromPath(ctx, recordingID, recording.AudioObjectKey, inputPath)
 }
 
-// NormalizeRecordingAudio normalizes the original recording audio and persists normalized artifact metadata.
-func (a *RecordingProcessingActivities) NormalizeRecordingAudio(ctx context.Context, recordingID string) error {
-	if recordingID == "" {
-		return errors.New("recording id is required")
-	}
-	if a == nil || a.store == nil {
-		return errors.New("recording store is required")
-	}
-	if a.normalizedAudioStore == nil {
-		return errors.New("normalized audio store is required")
-	}
-	if a.pathResolver == nil {
-		return errors.New("audio object path resolver is required")
-	}
-	if a.normalizeRunner == nil {
-		return errors.New("audio normalize runner is required")
-	}
-
-	recording, ok, err := a.store.Get(recordingID)
-	if err != nil {
-		return fmt.Errorf("get recording: %w", err)
-	}
-	if !ok {
-		return fmt.Errorf("recording not found: %s", recordingID)
-	}
-	if strings.TrimSpace(recording.AudioObjectKey) == "" {
-		return fmt.Errorf("recording audio object key is required: %s", recordingID)
-	}
-	inputPath, err := a.pathResolver.LocalPathForObject(recording.AudioObjectKey)
-	if err != nil {
-		return fmt.Errorf("resolve recording audio object path: %w", err)
-	}
-	normalizedObjectKey, err := storage.NormalizedAudioObjectKey(recording.AudioObjectKey)
+func (a *RecordingProcessingActivities) normalizeRecordingAudioFromPath(ctx context.Context, recordingID string, originalObjectKey string, inputPath string) error {
+	normalizedObjectKey, err := storage.NormalizedAudioObjectKey(originalObjectKey)
 	if err != nil {
 		return fmt.Errorf("build normalized audio object key: %w", err)
 	}
-	outputPath, err := a.pathResolver.LocalPathForObject(normalizedObjectKey)
+	outputPath, cleanupOutput, uploadOutput, err := a.localOutputPathForObject(normalizedObjectKey)
 	if err != nil {
 		return fmt.Errorf("resolve normalized audio object path: %w", err)
 	}
+	defer cleanupOutput()
 	result, err := a.normalizeRunner.Normalize(ctx, AudioNormalizeRequest{InputPath: inputPath, OutputPath: outputPath})
 	if err != nil {
 		return fmt.Errorf("normalize recording audio: %w", err)
@@ -434,11 +490,31 @@ func (a *RecordingProcessingActivities) NormalizeRecordingAudio(ctx context.Cont
 	if err != nil {
 		return fmt.Errorf("stat normalized audio: %w", err)
 	}
+	sizeBytes := stat.Size()
+	if uploadOutput {
+		file, err := os.Open(result.OutputPath)
+		if err != nil {
+			return fmt.Errorf("open normalized audio for upload: %w", err)
+		}
+		putResult, putErr := a.objectStore.PutObject(ctx, storage.PutObjectInput{
+			Key:         normalizedObjectKey,
+			Body:        file,
+			ContentType: result.ContentType,
+		})
+		closeErr := file.Close()
+		if putErr != nil {
+			return fmt.Errorf("upload normalized audio: %w", putErr)
+		}
+		if closeErr != nil {
+			return fmt.Errorf("close normalized audio after upload: %w", closeErr)
+		}
+		sizeBytes = putResult.SizeBytes
+	}
 	_, err = a.normalizedAudioStore.UpsertNormalizedAudio(recordings.UpsertNormalizedAudioInput{
 		RecordingID:  recordingID,
 		ObjectKey:    normalizedObjectKey,
 		ContentType:  result.ContentType,
-		SizeBytes:    stat.Size(),
+		SizeBytes:    sizeBytes,
 		FormatName:   result.FormatName,
 		CodecName:    result.CodecName,
 		SampleRate:   result.SampleRate,
@@ -465,8 +541,8 @@ func (a *RecordingProcessingActivities) TranscribeRecordingAudio(ctx context.Con
 	if a.transcriptStore == nil {
 		return errors.New("transcript store is required")
 	}
-	if a.pathResolver == nil {
-		return errors.New("audio object path resolver is required")
+	if a.pathResolver == nil && a.objectStore == nil {
+		return errors.New("audio object reader or path resolver is required")
 	}
 	if a.transcriptionProvider == nil {
 		return errors.New("transcription provider is required")
@@ -488,13 +564,15 @@ func (a *RecordingProcessingActivities) TranscribeRecordingAudio(ctx context.Con
 	if strings.TrimSpace(normalizedAudio.ObjectKey) == "" {
 		return fmt.Errorf("recording normalized audio object key is required: %s", recordingID)
 	}
-	path, err := a.pathResolver.LocalPathForObject(normalizedAudio.ObjectKey)
+	path, cleanup, err := a.localInputPathForObject(ctx, normalizedAudio.ObjectKey)
 	if err != nil {
 		return fmt.Errorf("resolve normalized audio object path: %w", err)
 	}
+	defer cleanup()
 	result, err := a.transcriptionProvider.Transcribe(ctx, TranscriptionRequest{
 		RecordingID: recordingID,
 		AudioPath:   path,
+		AudioURL:    a.presignedURLForObject(ctx, normalizedAudio.ObjectKey),
 		Language:    recording.Language,
 	})
 	if err != nil {

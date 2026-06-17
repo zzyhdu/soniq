@@ -120,6 +120,38 @@ func TestLocalStoreDeleteObjectRemovesStoredFile(t *testing.T) {
 	}
 }
 
+func TestLocalStoreGetObjectReadsStoredFile(t *testing.T) {
+	store := NewLocalStore(t.TempDir())
+	key := "recordings/rec_123/original.wav"
+	if _, err := store.PutObject(context.Background(), PutObjectInput{Key: key, Body: strings.NewReader("audio")}); err != nil {
+		t.Fatalf("PutObject returned error: %v", err)
+	}
+
+	result, err := store.GetObject(context.Background(), key)
+	if err != nil {
+		t.Fatalf("GetObject returned error: %v", err)
+	}
+	defer result.Body.Close()
+	body, err := io.ReadAll(result.Body)
+	if err != nil {
+		t.Fatalf("read object body: %v", err)
+	}
+	if string(body) != "audio" {
+		t.Fatalf("GetObject body = %q, want audio", string(body))
+	}
+	if result.Key != key || result.SizeBytes != int64(len("audio")) {
+		t.Fatalf("GetObject result = %+v, want key and size", result)
+	}
+}
+
+func TestLocalStorePresignGetObjectIsUnsupported(t *testing.T) {
+	store := NewLocalStore(t.TempDir())
+
+	if _, err := store.PresignGetObject(context.Background(), "recordings/rec_123/original.wav", 0); err == nil {
+		t.Fatal("PresignGetObject returned nil error, want unsupported error")
+	}
+}
+
 func TestLocalStoreDeleteObjectIgnoresMissingFile(t *testing.T) {
 	store := NewLocalStore(t.TempDir())
 

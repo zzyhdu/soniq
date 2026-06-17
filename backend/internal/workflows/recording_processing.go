@@ -46,12 +46,8 @@ func RecordingProcessingWorkflow(ctx workflow.Context, input RecordingProcessing
 	if err := workflow.ExecuteActivity(shortActivityCtx, activities.MarkRecordingProcessingActivityName, recording).Get(shortActivityCtx, nil); err != nil {
 		return RecordingProcessingResult{}, err
 	}
-	if err := workflow.ExecuteActivity(shortActivityCtx, activities.ProbeRecordingAudioActivityName, input.RecordingID).Get(shortActivityCtx, nil); err != nil {
-		_ = failRecording(shortActivityCtx, recording, "probe audio", err)
-		return RecordingProcessingResult{}, err
-	}
-	if err := workflow.ExecuteActivity(shortActivityCtx, activities.NormalizeRecordingAudioActivityName, input.RecordingID).Get(shortActivityCtx, nil); err != nil {
-		_ = failRecording(shortActivityCtx, recording, "normalize audio", err)
+	if err := workflow.ExecuteActivity(longRunningActivityCtx, activities.PrepareRecordingAudioActivityName, input.RecordingID).Get(longRunningActivityCtx, nil); err != nil {
+		_ = failRecording(shortActivityCtx, recording, "prepare audio", err)
 		return RecordingProcessingResult{}, err
 	}
 	if err := workflow.ExecuteActivity(shortActivityCtx, activities.MarkRecordingTranscribingActivityName, recording).Get(shortActivityCtx, nil); err != nil {

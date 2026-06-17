@@ -3,6 +3,8 @@ package activities
 import (
 	"context"
 	"errors"
+	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -151,6 +153,27 @@ type transcriptionProviderSpy struct {
 	err      error
 }
 
+type readingTranscriptionProviderSpy struct {
+	requests []TranscriptionRequest
+	body     string
+}
+
+func (p *readingTranscriptionProviderSpy) Transcribe(ctx context.Context, request TranscriptionRequest) (TranscriptionResult, error) {
+	p.requests = append(p.requests, request)
+	body, err := os.ReadFile(request.AudioPath)
+	if err != nil {
+		return TranscriptionResult{}, err
+	}
+	p.body = string(body)
+	return TranscriptionResult{
+		Provider:      "fake_transcription",
+		Model:         "fake-whisper-v1",
+		Language:      request.Language,
+		Text:          "transcribed from object store",
+		TranscribedAt: time.Date(2026, 6, 6, 4, 5, 6, 0, time.UTC),
+	}, nil
+}
+
 func (p *transcriptionProviderSpy) Transcribe(ctx context.Context, request TranscriptionRequest) (TranscriptionResult, error) {
 	p.requests = append(p.requests, request)
 	if p.err != nil {
@@ -190,11 +213,24 @@ func (p *mindMapProviderSpy) GenerateMindMap(ctx context.Context, request MindMa
 
 type objectStoreSpy struct {
 	deleted []string
+	objects map[string]string
+	urls    map[string]string
 	err     error
 }
 
 func (s *objectStoreSpy) PutObject(ctx context.Context, input storage.PutObjectInput) (storage.PutObjectResult, error) {
 	return storage.PutObjectResult{Key: input.Key}, nil
+}
+
+func (s *objectStoreSpy) GetObject(ctx context.Context, key string) (storage.GetObjectResult, error) {
+	return storage.GetObjectResult{Key: key, Body: io.NopCloser(strings.NewReader(s.objects[key])), SizeBytes: int64(len(s.objects[key]))}, nil
+}
+
+func (s *objectStoreSpy) PresignGetObject(ctx context.Context, key string, ttl time.Duration) (string, error) {
+	if s.urls != nil {
+		return s.urls[key], nil
+	}
+	return "", nil
 }
 
 func (s *objectStoreSpy) DeleteObject(ctx context.Context, key string) error {
@@ -203,6 +239,38 @@ func (s *objectStoreSpy) DeleteObject(ctx context.Context, key string) error {
 	}
 	s.deleted = append(s.deleted, key)
 	return nil
+}
+
+func TestRecordingProcessingActivitiesTranscribeRecordingAudioUsesObjectStoreStaging(t *testing.T) {
+	store := &transcriptionSummaryStoreSpy{
+		recordings: map[string]domain.Recording{
+			"rec_transcribe": {ID: "rec_transcribe", Language: "en", AudioObjectKey: "recordings/rec_transcribe/original.wav"},
+		},
+		normalizedAudio: recordings.RecordingNormalizedAudio{RecordingID: "rec_transcribe", ObjectKey: "recordings/rec_transcribe/normalized.wav"},
+	}
+	objectStore := &objectStoreSpy{objects: map[string]string{
+		"recordings/rec_transcribe/normalized.wav": "normalized-audio",
+	}, urls: map[string]string{
+		"recordings/rec_transcribe/normalized.wav": "https://objects.example.test/recordings/rec_transcribe/normalized.wav",
+	}}
+	provider := &readingTranscriptionProviderSpy{}
+	activities := NewRecordingProcessingActivitiesWithNormalizedAudio(store, nil, objectStore, &audioProbeRunnerSpy{}, &audioNormalizeRunnerSpy{}, provider, &summaryProviderSpy{})
+
+	if err := activities.TranscribeRecordingAudio(context.Background(), "rec_transcribe"); err != nil {
+		t.Fatalf("TranscribeRecordingAudio returned error: %v", err)
+	}
+	if provider.body != "normalized-audio" {
+		t.Fatalf("provider read body = %q, want normalized-audio", provider.body)
+	}
+	if len(provider.requests) != 1 || provider.requests[0].AudioPath == "" || strings.Contains(provider.requests[0].AudioPath, "recordings/rec_transcribe") {
+		t.Fatalf("provider requests = %+v, want temporary local audio path", provider.requests)
+	}
+	if provider.requests[0].AudioURL != "https://objects.example.test/recordings/rec_transcribe/normalized.wav" {
+		t.Fatalf("provider AudioURL = %q, want presigned object URL", provider.requests[0].AudioURL)
+	}
+	if len(store.transcripts) != 1 || store.transcripts[0].Text != "transcribed from object store" {
+		t.Fatalf("stored transcripts = %+v, want provider transcript", store.transcripts)
+	}
 }
 
 func newRecordingProcessingActivitiesForTest(store NormalizingPipelineStore, resolver LocalObjectPathResolver, runner AudioProbeRunner, transcriptionProvider TranscriptionProvider, summaryProvider SummaryProvider) *RecordingProcessingActivities {

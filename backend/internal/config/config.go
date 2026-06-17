@@ -23,6 +23,12 @@ type Config struct {
 	PurgeArtifactCleanupBatchSize                int64
 	StorageProvider                              string
 	LocalStoragePath                             string
+	S3Endpoint                                   string
+	S3Region                                     string
+	S3Bucket                                     string
+	S3AccessKey                                  string
+	S3SecretKey                                  string
+	S3ForcePathStyle                             bool
 	TranscriptionProvider                        string
 	TranscriptionBaseURL                         string
 	TranscriptionAPIKey                          string
@@ -59,6 +65,12 @@ func LoadFromEnv() Config {
 		PurgeArtifactCleanupBatchSize:       envInt64("PURGE_ARTIFACT_CLEANUP_BATCH_SIZE", 25),
 		StorageProvider:                     envString("STORAGE_PROVIDER", "local"),
 		LocalStoragePath:                    envString("LOCAL_STORAGE_PATH", "var/uploads"),
+		S3Endpoint:                          envString("S3_ENDPOINT", "http://localhost:9000"),
+		S3Region:                            envString("S3_REGION", "us-east-1"),
+		S3Bucket:                            envString("S3_BUCKET", "soniq"),
+		S3AccessKey:                         envString("S3_ACCESS_KEY", "soniq_minio_user"),
+		S3SecretKey:                         envString("S3_SECRET_KEY", "soniq_minio_password"),
+		S3ForcePathStyle:                    envBool("S3_FORCE_PATH_STYLE", true),
 		TranscriptionProvider:               envString("TRANSCRIPTION_PROVIDER", "fake_transcription"),
 		TranscriptionBaseURL:                envString("TRANSCRIPTION_BASE_URL", "https://api.xiaomimimo.com/v1"),
 		TranscriptionAPIKey:                 envStringWithFallback("TRANSCRIPTION_API_KEY", "MIMO_API_KEY", ""),
@@ -104,8 +116,29 @@ func (c Config) ValidateForStartup() error {
 	if strings.TrimSpace(c.StorageProvider) == "" {
 		return fmt.Errorf("STORAGE_PROVIDER is required")
 	}
-	if strings.TrimSpace(c.LocalStoragePath) == "" {
-		return fmt.Errorf("LOCAL_STORAGE_PATH is required")
+	switch strings.ToLower(strings.TrimSpace(c.StorageProvider)) {
+	case "local":
+		if strings.TrimSpace(c.LocalStoragePath) == "" {
+			return fmt.Errorf("LOCAL_STORAGE_PATH is required")
+		}
+	case "s3_compatible":
+		if strings.TrimSpace(c.S3Endpoint) == "" {
+			return fmt.Errorf("S3_ENDPOINT is required for s3_compatible storage")
+		}
+		if strings.TrimSpace(c.S3Region) == "" {
+			return fmt.Errorf("S3_REGION is required for s3_compatible storage")
+		}
+		if strings.TrimSpace(c.S3Bucket) == "" {
+			return fmt.Errorf("S3_BUCKET is required for s3_compatible storage")
+		}
+		if strings.TrimSpace(c.S3AccessKey) == "" {
+			return fmt.Errorf("S3_ACCESS_KEY is required for s3_compatible storage")
+		}
+		if strings.TrimSpace(c.S3SecretKey) == "" {
+			return fmt.Errorf("S3_SECRET_KEY is required for s3_compatible storage")
+		}
+	default:
+		return fmt.Errorf("unsupported STORAGE_PROVIDER %q", c.StorageProvider)
 	}
 	if strings.TrimSpace(c.TranscriptionProvider) == "" {
 		return fmt.Errorf("TRANSCRIPTION_PROVIDER is required")

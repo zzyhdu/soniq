@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"strings"
 	"testing"
@@ -47,6 +48,14 @@ type purgeObjectStoreSpy struct {
 
 func (s *purgeObjectStoreSpy) PutObject(ctx context.Context, input storage.PutObjectInput) (storage.PutObjectResult, error) {
 	return storage.PutObjectResult{Key: input.Key}, nil
+}
+
+func (s *purgeObjectStoreSpy) GetObject(ctx context.Context, key string) (storage.GetObjectResult, error) {
+	return storage.GetObjectResult{Key: key, Body: io.NopCloser(strings.NewReader(""))}, nil
+}
+
+func (s *purgeObjectStoreSpy) PresignGetObject(ctx context.Context, key string, ttl time.Duration) (string, error) {
+	return "", nil
 }
 
 func (s *purgeObjectStoreSpy) DeleteObject(ctx context.Context, key string) error {

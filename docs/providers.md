@@ -5,30 +5,31 @@ Soniq must run across global, domestic, self-hosted, and offline environments. P
 ## StorageProvider
 
 ```go
-type StorageProvider interface {
-    PutObject(ctx context.Context, key string, body io.Reader, contentType string) error
-    GetObject(ctx context.Context, key string) (io.ReadCloser, error)
+type ObjectStore interface {
+    PutObject(ctx context.Context, input PutObjectInput) (PutObjectResult, error)
+    GetObject(ctx context.Context, key string) (GetObjectResult, error)
+    PresignGetObject(ctx context.Context, key string, ttl time.Duration) (string, error)
     DeleteObject(ctx context.Context, key string) error
-    PresignGet(ctx context.Context, key string, ttl time.Duration) (string, error)
-    PresignPut(ctx context.Context, key string, ttl time.Duration, contentType string) (string, error)
 }
 ```
 
 Current implementation:
 
 - `local` filesystem provider for development. Original uploads and derived normalized audio artifacts are stored under `LOCAL_STORAGE_PATH`; normalized audio uses a deterministic sibling object key ending in `/normalized.wav`.
+- `s3_compatible` provider for MinIO, AWS S3, Cloudflare R2, Aliyun OSS, Tencent COS, Huawei OBS, and other S3-compatible services. The implementation uses the AWS SDK as a generic S3 protocol client; it is not an AWS cloud-service dependency. API upload uses `PutObject`, worker processing downloads objects to temporary local files for `ffprobe` and `ffmpeg`, normalized audio is uploaded back through object storage, URL-capable ASR providers can receive a presigned normalized audio URL, and deletion/purge cleanup use `DeleteObject`.
 
-Planned implementations:
-
-- `s3_compatible`
-
-Later implementations:
+S3-compatible target examples:
 
 - AWS S3
 - Cloudflare R2
 - Aliyun OSS
 - Tencent COS
 - Huawei OBS
+
+Provider-specific notes:
+
+- MinIO local development normally uses path-style addressing, so set `S3_FORCE_PATH_STYLE=true`.
+- Aliyun OSS documents AWS SDK access through its S3-compatible endpoint, such as `https://s3.oss-cn-hangzhou.aliyuncs.com`; use virtual-host style addressing for OSS by setting `S3_FORCE_PATH_STYLE=false`.
 
 ## TranscriptionProvider
 
@@ -55,6 +56,7 @@ Verification boundary:
 - Automated smoke (`make smoke-postgres-temporal`) should keep deterministic fake model providers by default. It validates the real processing pipeline and persistence boundary without network, credentials, provider cost, or privacy risk.
 - Automated provider-shape smoke should use local fake servers such as `scripts/smoke-openai-compatible-asr-fake.sh`; this verifies request/response wiring without calling external model providers.
 - Real external ASR verification is manual/opt-in. Set provider-specific credentials in a local ignored environment and run `scripts/smoke-postgres-temporal.sh` explicitly. Do not make real provider calls part of the default smoke path.
+- For URL-capable ASR providers, prefer object-storage URLs over Base64 payloads. DashScope native non-realtime ASR uses `file_urls` and receives a presigned normalized audio URL when S3-compatible storage is configured; it falls back to local file Base64 only when no URL is available. This allows large audio files to avoid the local `TRANSCRIPTION_MAX_BASE64_BYTES` payload limit.
 
 Initial real target providers:
 

@@ -28,8 +28,7 @@ func TestRecordingProcessingWorkflowCompletesTranscriptionSummaryPipeline(t *tes
 
 	env.OnActivity(activities.ValidateRecordingActivityName, mock.Anything, input).Return(nil).Once()
 	env.OnActivity(activities.MarkRecordingProcessingActivityName, mock.Anything, recording).Return(nil).Once()
-	env.OnActivity(activities.ProbeRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
-	env.OnActivity(activities.NormalizeRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.PrepareRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
 	env.OnActivity(activities.MarkRecordingTranscribingActivityName, mock.Anything, recording).Return(nil).Once()
 	env.OnActivity(activities.TranscribeRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
 	env.OnActivity(activities.MarkRecordingSummarizingActivityName, mock.Anything, recording).Return(nil).Once()
@@ -81,8 +80,7 @@ func TestRecordingProcessingWorkflowDeletesOriginalAudioWhenConfigured(t *testin
 
 	env.OnActivity(activities.ValidateRecordingActivityName, mock.Anything, input).Return(nil).Once()
 	env.OnActivity(activities.MarkRecordingProcessingActivityName, mock.Anything, recording).Return(nil).Once()
-	env.OnActivity(activities.ProbeRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
-	env.OnActivity(activities.NormalizeRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.PrepareRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
 	env.OnActivity(activities.MarkRecordingTranscribingActivityName, mock.Anything, recording).Return(nil).Once()
 	env.OnActivity(activities.TranscribeRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
 	env.OnActivity(activities.DeleteOriginalRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
@@ -122,8 +120,7 @@ func TestRecordingProcessingWorkflowMarksFailedWhenCompletionFails(t *testing.T)
 
 	env.OnActivity(activities.ValidateRecordingActivityName, mock.Anything, input).Return(nil).Once()
 	env.OnActivity(activities.MarkRecordingProcessingActivityName, mock.Anything, recording).Return(nil).Once()
-	env.OnActivity(activities.ProbeRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
-	env.OnActivity(activities.NormalizeRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.PrepareRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
 	env.OnActivity(activities.MarkRecordingTranscribingActivityName, mock.Anything, recording).Return(nil).Once()
 	env.OnActivity(activities.TranscribeRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
 	env.OnActivity(activities.MarkRecordingSummarizingActivityName, mock.Anything, recording).Return(nil).Once()
@@ -163,8 +160,7 @@ func TestRecordingProcessingWorkflowMarksFailedWhenMindMapGenerationFails(t *tes
 
 	env.OnActivity(activities.ValidateRecordingActivityName, mock.Anything, input).Return(nil).Once()
 	env.OnActivity(activities.MarkRecordingProcessingActivityName, mock.Anything, recording).Return(nil).Once()
-	env.OnActivity(activities.ProbeRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
-	env.OnActivity(activities.NormalizeRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.PrepareRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
 	env.OnActivity(activities.MarkRecordingTranscribingActivityName, mock.Anything, recording).Return(nil).Once()
 	env.OnActivity(activities.TranscribeRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
 	env.OnActivity(activities.MarkRecordingSummarizingActivityName, mock.Anything, recording).Return(nil).Once()
@@ -187,7 +183,7 @@ func TestRecordingProcessingWorkflowMarksFailedWhenMindMapGenerationFails(t *tes
 	env.AssertExpectations(t)
 }
 
-func TestRecordingProcessingWorkflowMarksFailedWhenProbeFails(t *testing.T) {
+func TestRecordingProcessingWorkflowMarksFailedWhenPrepareAudioFails(t *testing.T) {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
 	registerRecordingProcessingActivityNames(env)
@@ -199,12 +195,12 @@ func TestRecordingProcessingWorkflowMarksFailedWhenProbeFails(t *testing.T) {
 		Language:     "en",
 	}
 	recording := recordingReference(input)
-	probeErr := errors.New("probe failed")
+	prepareErr := errors.New("prepare failed")
 
 	env.OnActivity(activities.ValidateRecordingActivityName, mock.Anything, input).Return(nil).Once()
 	env.OnActivity(activities.MarkRecordingProcessingActivityName, mock.Anything, recording).Return(nil).Once()
-	env.OnActivity(activities.ProbeRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(probeErr).Once()
-	env.OnActivity(activities.FailRecordingProcessingActivityName, mock.Anything, recordingFailure(recording, "probe audio", probeErr)).Return(nil).Once()
+	env.OnActivity(activities.PrepareRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(prepareErr).Once()
+	env.OnActivity(activities.FailRecordingProcessingActivityName, mock.Anything, recordingFailure(recording, "prepare audio", prepareErr)).Return(nil).Once()
 
 	env.ExecuteWorkflow(RecordingProcessingWorkflow, input)
 
@@ -213,45 +209,10 @@ func TestRecordingProcessingWorkflowMarksFailedWhenProbeFails(t *testing.T) {
 	}
 	err := env.GetWorkflowError()
 	if err == nil {
-		t.Fatalf("workflow error = nil, want probe error")
+		t.Fatalf("workflow error = nil, want prepare error")
 	}
-	if !strings.Contains(err.Error(), "probe failed") {
-		t.Fatalf("workflow error = %v, want original probe error", err)
-	}
-	env.AssertExpectations(t)
-}
-
-func TestRecordingProcessingWorkflowMarksFailedWhenNormalizationFails(t *testing.T) {
-	var suite testsuite.WorkflowTestSuite
-	env := suite.NewTestWorkflowEnvironment()
-	registerRecordingProcessingActivityNames(env)
-
-	input := RecordingProcessingInput{
-		WorkspaceID:  "wsp_test",
-		RecordingID:  "rec_test",
-		WorkflowType: "meeting",
-		Language:     "en",
-	}
-	recording := recordingReference(input)
-	normalizeErr := errors.New("normalize failed")
-
-	env.OnActivity(activities.ValidateRecordingActivityName, mock.Anything, input).Return(nil).Once()
-	env.OnActivity(activities.MarkRecordingProcessingActivityName, mock.Anything, recording).Return(nil).Once()
-	env.OnActivity(activities.ProbeRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
-	env.OnActivity(activities.NormalizeRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(normalizeErr).Once()
-	env.OnActivity(activities.FailRecordingProcessingActivityName, mock.Anything, recordingFailure(recording, "normalize audio", normalizeErr)).Return(nil).Once()
-
-	env.ExecuteWorkflow(RecordingProcessingWorkflow, input)
-
-	if !env.IsWorkflowCompleted() {
-		t.Fatalf("workflow did not complete")
-	}
-	err := env.GetWorkflowError()
-	if err == nil {
-		t.Fatalf("workflow error = nil, want normalization error")
-	}
-	if !strings.Contains(err.Error(), "normalize failed") {
-		t.Fatalf("workflow error = %v, want original normalization error", err)
+	if !strings.Contains(err.Error(), "prepare failed") {
+		t.Fatalf("workflow error = %v, want original prepare error", err)
 	}
 	env.AssertExpectations(t)
 }
@@ -272,8 +233,7 @@ func TestRecordingProcessingWorkflowMarksFailedWhenTranscriptionFails(t *testing
 
 	env.OnActivity(activities.ValidateRecordingActivityName, mock.Anything, input).Return(nil).Once()
 	env.OnActivity(activities.MarkRecordingProcessingActivityName, mock.Anything, recording).Return(nil).Once()
-	env.OnActivity(activities.ProbeRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
-	env.OnActivity(activities.NormalizeRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.PrepareRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
 	env.OnActivity(activities.MarkRecordingTranscribingActivityName, mock.Anything, recording).Return(nil).Once()
 	env.OnActivity(activities.TranscribeRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(transcriptionErr).Once()
 	env.OnActivity(activities.FailRecordingProcessingActivityName, mock.Anything, recordingFailure(recording, "transcribe audio", transcriptionErr)).Return(nil).Once()
@@ -309,8 +269,7 @@ func TestRecordingProcessingWorkflowMarksFailedWhenSummarizationFails(t *testing
 
 	env.OnActivity(activities.ValidateRecordingActivityName, mock.Anything, input).Return(nil).Once()
 	env.OnActivity(activities.MarkRecordingProcessingActivityName, mock.Anything, recording).Return(nil).Once()
-	env.OnActivity(activities.ProbeRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
-	env.OnActivity(activities.NormalizeRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
+	env.OnActivity(activities.PrepareRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
 	env.OnActivity(activities.MarkRecordingTranscribingActivityName, mock.Anything, recording).Return(nil).Once()
 	env.OnActivity(activities.TranscribeRecordingAudioActivityName, mock.Anything, input.RecordingID).Return(nil).Once()
 	env.OnActivity(activities.MarkRecordingSummarizingActivityName, mock.Anything, recording).Return(nil).Once()
@@ -359,8 +318,7 @@ func recordingFailure(recording activities.RecordingReference, step string, err 
 func registerRecordingProcessingActivityNames(env *testsuite.TestWorkflowEnvironment) {
 	env.RegisterActivityWithOptions(func(context.Context, activities.RecordingProcessingInput) error { return nil }, activity.RegisterOptions{Name: activities.ValidateRecordingActivityName})
 	env.RegisterActivityWithOptions(func(context.Context, activities.RecordingReference) error { return nil }, activity.RegisterOptions{Name: activities.MarkRecordingProcessingActivityName})
-	env.RegisterActivityWithOptions(func(context.Context, string) error { return nil }, activity.RegisterOptions{Name: activities.ProbeRecordingAudioActivityName})
-	env.RegisterActivityWithOptions(func(context.Context, string) error { return nil }, activity.RegisterOptions{Name: activities.NormalizeRecordingAudioActivityName})
+	env.RegisterActivityWithOptions(func(context.Context, string) error { return nil }, activity.RegisterOptions{Name: activities.PrepareRecordingAudioActivityName})
 	env.RegisterActivityWithOptions(func(context.Context, activities.RecordingReference) error { return nil }, activity.RegisterOptions{Name: activities.MarkRecordingTranscribingActivityName})
 	env.RegisterActivityWithOptions(func(context.Context, string) error { return nil }, activity.RegisterOptions{Name: activities.TranscribeRecordingAudioActivityName})
 	env.RegisterActivityWithOptions(func(context.Context, activities.RecordingReference) error { return nil }, activity.RegisterOptions{Name: activities.MarkRecordingSummarizingActivityName})

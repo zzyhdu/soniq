@@ -446,6 +446,24 @@ func (s *objectStoreSpy) PutObject(ctx context.Context, input storage.PutObjectI
 	return storage.PutObjectResult{Key: input.Key, SizeBytes: int64(len(body))}, nil
 }
 
+func (s *objectStoreSpy) GetObject(_ context.Context, key string) (storage.GetObjectResult, error) {
+	for _, put := range s.puts {
+		if put.key == key {
+			return storage.GetObjectResult{
+				Key:         key,
+				Body:        io.NopCloser(strings.NewReader(put.body)),
+				ContentType: put.contentType,
+				SizeBytes:   int64(len(put.body)),
+			}, nil
+		}
+	}
+	return storage.GetObjectResult{Key: key, Body: io.NopCloser(strings.NewReader(""))}, nil
+}
+
+func (s *objectStoreSpy) PresignGetObject(_ context.Context, key string, ttl time.Duration) (string, error) {
+	return "", nil
+}
+
 func (s *objectStoreSpy) DeleteObject(_ context.Context, key string) error {
 	s.deletes = append(s.deletes, key)
 	return s.deleteErr
