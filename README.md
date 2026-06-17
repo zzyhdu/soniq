@@ -76,9 +76,8 @@ soniq/
 │       ├── config/           # Configuration loading/validation
 │       └── domain/           # Core domain types
 ├── web/                      # Frontend app
-├── deployments/
-│   ├── docker-compose/       # Local dev stack
-│   └── helm/                 # Future production deployment
+├── deploy/
+│   └── kubernetes/base/      # Raw Kubernetes deployment foundation
 ├── docs/
 │   ├── architecture.md
 │   ├── workflows.md

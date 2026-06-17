@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: soniq-config
+  namespace: soniq
+  labels:
+    app.kubernetes.io/name: soniq
+    app.kubernetes.io/part-of: soniq
+data:
+  APP_ENV: production
+  APP_PUBLIC_URL: https://soniq.example.com
+  LOG_FORMAT: json
+  LOG_LEVEL: info
+  AUTH_SESSION_TTL_HOURS: "720"
+  AUTH_COOKIE_SECURE: "true"
+  API_ADDRESS: :8080
+  TEMPORAL_ADDRESS: temporal-frontend.temporal.svc.cluster.local:7233
+  TEMPORAL_NAMESPACE: default
+  TEMPORAL_TASK_QUEUE: soniq-audio-pipeline
+  PURGE_ARTIFACT_CLEANUP_INTERVAL_SECONDS: "300"
+  PURGE_ARTIFACT_CLEANUP_BATCH_SIZE: "25"
+  STORAGE_PROVIDER: s3_compatible
+  S3_ENDPOINT: https://s3.example.com
+  S3_REGION: us-east-1
+  S3_BUCKET: soniq
+  S3_FORCE_PATH_STYLE: "false"
+  TRANSCRIPTION_PROVIDER: fake_transcription
+  TRANSCRIPTION_BASE_URL: https://api.xiaomimimo.com/v1
+  TRANSCRIPTION_MODEL: mimo-v2.5-asr
+  TRANSCRIPTION_AUTH_HEADER: api-key
+  TRANSCRIPTION_LANGUAGE: auto
+  DASHSCOPE_BASE_URL: https://dashscope.aliyuncs.com/api/v1
+  DASHSCOPE_ASR_MODEL: paraformer-v2
+  LLM_PROVIDER: fake_llm
+  LLM_BASE_URL: https://dashscope.aliyuncs.com/compatible-mode/v1
+  LLM_MODEL: qwen3.7-plus
+  PRIVACY_ALLOW_EXTERNAL_MODEL_PROVIDERS: "false"
+  PRIVACY_DELETE_ORIGINAL_AUDIO_AFTER_TRANSCRIPTION: "false"

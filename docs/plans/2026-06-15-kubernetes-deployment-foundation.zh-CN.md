@@ -22,16 +22,22 @@ chart 只会把问题搬进集群。
 - 基础 `/healthz`。
 - 正在计划中的企业级 observability foundation。
 
-但 Kubernetes 前还缺：
+Kubernetes 前置条件已经补齐一部分：
 
-- API/worker production Docker image。
+- API/worker/migrate production Docker image。
 - S3-compatible object storage provider。
 - `/readyz`。
-- migration Job 策略。
-- ConfigMap/Secret contract。
-- resource requests/limits。
+- migration command。
+- raw Kubernetes manifests。
+- Deployment contract 文档。
+
+后续还缺：
+
+- Helm values schema 和 chart。
+- Kubernetes smoke。
+- 更完整的 resource requests/limits 调优。
 - graceful shutdown 明确化。
-- Helm values schema 和部署文档。
+- HPA/PDB/NetworkPolicy/topology spread 等生产硬化。
 
 ## 核心原则
 
@@ -223,6 +229,7 @@ soniq-migrate
 - 已新增根 `Dockerfile`，使用多阶段构建产出 `api`、`worker`、`migrate` 三个 target。
 - 已新增 `.dockerignore`，排除 `.env`、依赖目录、本地上传数据、本地服务卷和测试素材。
 - API/migrate 使用 distroless nonroot runtime；worker 使用 slim Debian nonroot runtime，并包含 `ffmpeg`/`ffprobe`。
+- API/worker runtime image 不再设置已移除的 `LOCAL_STORAGE_PATH`。
 - `make docker-build-api`、`make docker-build-worker`、`make docker-build-migrate`、`make docker-build` 已作为本地验证入口。
 - `soniq-api`、`soniq-worker`、`soniq-migrate` 支持 `--version`，Docker build 可通过 `APP_VERSION`、`VCS_REF`、`BUILD_DATE` 注入 release metadata。
 
@@ -300,6 +307,10 @@ DASHSCOPE_API_KEY, optional
 SENTRY_DSN, optional
 ```
 
+当前代码没有独立的 session signing secret；登录 session 使用 Postgres 中的
+opaque session token hash，CSRF token 绑定到 session token。后续如果改成 JWT
+或签名 session，再把对应 secret 加进 Secret contract。
+
 必需 Config：
 
 ```txt
@@ -323,9 +334,41 @@ LOG_LEVEL
 - 一个运维人员能根据文档准备外部 Postgres、Temporal、object storage。
 - 文档明确哪些数据需要备份。
 
+当前进展：
+
+- 已新增 `docs/deployment.md`，记录进程、外部依赖、migration、ConfigMap/Secret、
+  storage、backup 和 readiness 契约。
+- 已新增 `docs/kubernetes.md`，记录 raw manifests 的配置、dry-run、apply、
+  migrate Job、API/worker 启动和排查方式。
+
+## Phase K3.5 — Raw Kubernetes manifests
+
+目标：先用最小 raw manifests 验证 Kubernetes 资源边界，再抽象成 Helm。
+
+新增目录：
+
+```txt
+deploy/kubernetes/base/
+```
+
+当前资源：
+
+- `Namespace`：`soniq`。
+- `ConfigMap`：非敏感运行时配置。
+- `Secret` 示例：敏感配置占位值。
+- `Job`：`soniq-migrate`。
+- `Deployment`：`soniq-api`。
+- `Service`：`soniq-api` ClusterIP。
+- `Deployment`：`soniq-worker`。
+- `kustomization.yaml`：用于 render base。
+
+- `make k8s-render` 可渲染 raw manifests。
+- 有可用集群时，`make k8s-dry-run` 可执行 server-side dry-run。
+- 资源不包含 Postgres、Temporal、MinIO、Ingress、TLS、Prometheus/Grafana。
+
 ## Phase K4 — Helm chart v0
 
-目标：部署 Soniq API、worker、migration Job。
+目标：在 raw manifests 稳定后，把 API、worker、migration Job 抽象成 chart。
 
 建议目录：
 

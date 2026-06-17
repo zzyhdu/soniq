@@ -213,7 +213,7 @@ make smoke-postgres-temporal
 
 ## Run the API skeleton
 
-`make api` now builds the HTTP router with a Postgres-backed recording store, a local object store, and a Temporal-backed recording processor. At startup it opens Soniq Postgres and dials the configured Temporal server, so both services must be reachable before serving requests.
+`make api` now builds the HTTP router with a Postgres-backed recording store, S3-compatible object storage, and a Temporal-backed recording processor. At startup it opens Soniq Postgres and dials the configured Temporal server, so both services must be reachable before serving requests.
 
 For local development, start the local services first:
 

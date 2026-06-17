@@ -1,0 +1,44 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: soniq-migrate
+  namespace: soniq
+  labels:
+    app.kubernetes.io/name: soniq-migrate
+    app.kubernetes.io/component: migrate
+    app.kubernetes.io/part-of: soniq
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: soniq-migrate
+        app.kubernetes.io/component: migrate
+        app.kubernetes.io/part-of: soniq
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: soniq-migrate:dev
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: soniq-config
+            - secretRef:
+                name: soniq-secret
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL

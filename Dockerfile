@@ -38,8 +38,7 @@ LABEL org.opencontainers.image.title="Soniq API" \
 	org.opencontainers.image.source="https://github.com/zzyhdu/soniq"
 
 ENV APP_VERSION="${APP_VERSION}" \
-	LOG_FORMAT=json \
-	LOCAL_STORAGE_PATH=/tmp/soniq/uploads
+	LOG_FORMAT=json
 
 WORKDIR /tmp
 COPY --from=backend-build /out/soniq-api /soniq-api
@@ -68,8 +67,7 @@ LABEL org.opencontainers.image.title="Soniq Worker" \
 	org.opencontainers.image.source="https://github.com/zzyhdu/soniq"
 
 ENV APP_VERSION="${APP_VERSION}" \
-	LOG_FORMAT=json \
-	LOCAL_STORAGE_PATH=/tmp/soniq/uploads
+	LOG_FORMAT=json
 
 WORKDIR /home/soniq
 COPY --from=backend-build /out/soniq-worker /usr/local/bin/soniq-worker
