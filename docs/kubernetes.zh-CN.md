@@ -76,7 +76,17 @@ Provider-specific Secret keys：
 make k8s-render
 ```
 
-这个 target 会执行 `kubectl kustomize deploy/kubernetes/base`。
+这个 target 会执行 `kubectl kustomize deploy/kubernetes/base`。如果本机没有
+安装 `kubectl`，Makefile 会 fallback 到 Docker 里的 kubectl 镜像。
+
+运行本地 manifest smoke：
+
+```bash
+make k8s-smoke
+```
+
+这个脚本会渲染 base manifests，并检查预期的 Kubernetes resource contract。
+这个 smoke 需要 `python3` 和 PyYAML，不需要 Kubernetes API server。
 
 当有可用集群时，运行 server-side dry-run：
 
@@ -166,5 +176,5 @@ kubectl -n soniq logs job/soniq-migrate
 - 还没有 Helm chart。
 - 还没有 Ingress 或 TLS manifest。
 - 还没有 HPA、PDB、NetworkPolicy 或 topology spread constraints。
-- 还没有 Kubernetes smoke script。
+- 还没有完整集群级 Kubernetes smoke script。
 - Worker 还没有暴露 HTTP health endpoint，所以 worker health 当前主要依赖进程状态和日志。

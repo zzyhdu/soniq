@@ -82,7 +82,19 @@ Render the base manifests locally:
 make k8s-render
 ```
 
-This target runs `kubectl kustomize deploy/kubernetes/base`.
+This target runs `kubectl kustomize deploy/kubernetes/base`. When local
+`kubectl` is unavailable, the Makefile falls back to a Dockerized kubectl
+image.
+
+Run the local manifest smoke:
+
+```bash
+make k8s-smoke
+```
+
+This renders the base manifests and checks the expected resource contract. This
+smoke requires `python3` with PyYAML and does not require a Kubernetes API
+server.
 
 Run server-side dry-run when a cluster is available:
 
@@ -177,6 +189,6 @@ kubectl -n soniq logs job/soniq-migrate
 - No Helm chart yet.
 - No Ingress or TLS manifest.
 - No HPA, PDB, NetworkPolicy, or topology spread constraints.
-- No Kubernetes smoke script yet.
+- No full cluster smoke script yet.
 - Worker exposes no HTTP health endpoint, so worker health is currently based
   on process status and logs.

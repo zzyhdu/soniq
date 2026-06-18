@@ -364,6 +364,9 @@ deploy/kubernetes/base/
 
 - `make k8s-render` 可渲染 raw manifests。
 - 有可用集群时，`make k8s-dry-run` 可执行 server-side dry-run。
+- `make k8s-smoke` 可执行本地 manifest smoke：渲染 base manifests，并断言
+  资源集合、ConfigMap/Secret keys、Deployment/Job 基础运行约束、API probes 和
+  Service selector。
 - 资源不包含 Postgres、Temporal、MinIO、Ingress、TLS、Prometheus/Grafana。
 
 ## Phase K4 — Helm chart v0
@@ -423,6 +426,11 @@ deploy/helm/soniq/
 ## Phase K5 — Kubernetes smoke
 
 目标：验证 K8s 环境下真实路径可用。
+
+当前进展：
+
+- 已新增 manifest 级 smoke，用于在没有集群时验证 raw manifests 的结构和资源契约。
+- 尚未实现真正部署到 kind/minikube 或 dev cluster 后的完整 workflow smoke。
 
 Smoke 流程：
 
