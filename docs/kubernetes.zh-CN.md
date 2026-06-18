@@ -94,7 +94,9 @@ make k8s-smoke
 make k8s-dry-run
 ```
 
-Server-side dry-run 会请求 Kubernetes API server 校验 resource kinds 和 schemas，但不会真的持久化这些对象。
+Server-side dry-run 会请求 Kubernetes API server 校验 resource kinds 和 schemas，
+但不会真的持久化这些应用对象。如果 `soniq` namespace 不存在，带
+`K8S_SMOKE_SERVER_DRY_RUN=1` 的 `make k8s-smoke` 会为了校验临时创建它，并在结束后删除。
 
 ## Apply
 

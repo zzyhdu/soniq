@@ -103,7 +103,9 @@ make k8s-dry-run
 ```
 
 Server-side dry-run asks the Kubernetes API server to validate resource kinds
-and schemas without persisting the objects.
+and schemas without persisting the application objects. If the `soniq`
+namespace does not exist, `make k8s-smoke` with `K8S_SMOKE_SERVER_DRY_RUN=1`
+creates it temporarily for validation and deletes it afterward.
 
 ## Apply
 

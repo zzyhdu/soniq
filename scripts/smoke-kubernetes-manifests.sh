@@ -5,9 +5,14 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 KUSTOMIZE_DIR="${KUSTOMIZE_DIR:-deploy/kubernetes/base}"
 KUBECTL_IMAGE="${KUBECTL_IMAGE:-bitnami/kubectl:latest}"
 K8S_SMOKE_SERVER_DRY_RUN="${K8S_SMOKE_SERVER_DRY_RUN:-0}"
+K8S_SMOKE_NAMESPACE="${K8S_SMOKE_NAMESPACE:-soniq}"
+SERVER_DRY_RUN_NAMESPACE_CREATED=0
 RENDERED_MANIFEST="$(mktemp "${TMPDIR:-/tmp}/soniq-k8s-render.XXXXXX.yaml")"
 
 cleanup() {
+  if [[ "${SERVER_DRY_RUN_NAMESPACE_CREATED:-0}" == "1" ]]; then
+    run_kubectl delete namespace "$K8S_SMOKE_NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
+  fi
   rm -f "$RENDERED_MANIFEST"
 }
 trap cleanup EXIT
@@ -181,6 +186,11 @@ PY
 
 if [[ "$K8S_SMOKE_SERVER_DRY_RUN" == "1" ]]; then
   log "running server-side dry-run"
+  if ! run_kubectl get namespace "$K8S_SMOKE_NAMESPACE" >/dev/null 2>&1; then
+    log "creating temporary namespace $K8S_SMOKE_NAMESPACE for server-side dry-run"
+    run_kubectl create namespace "$K8S_SMOKE_NAMESPACE" >/dev/null
+    SERVER_DRY_RUN_NAMESPACE_CREATED=1
+  fi
   run_kubectl apply --dry-run=server -k "$KUSTOMIZE_DIR"
 else
   log "skipping server-side dry-run; set K8S_SMOKE_SERVER_DRY_RUN=1 when a cluster is available"
