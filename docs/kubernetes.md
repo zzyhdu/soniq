@@ -86,6 +86,16 @@ This target runs `kubectl kustomize deploy/kubernetes/base`. When local
 `kubectl` is unavailable, the Makefile falls back to a Dockerized kubectl
 image.
 
+Helm chart work uses the same local-or-Docker tooling pattern. Check the Helm
+CLI with:
+
+```bash
+make helm-version
+```
+
+When local `helm` is unavailable, the Makefile falls back to a Dockerized Helm
+image.
+
 Run the local manifest smoke:
 
 ```bash

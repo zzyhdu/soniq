@@ -6,6 +6,8 @@ POSTGRES_DSN ?= postgres://soniq_user:soniq_password@localhost:5432/soniq?sslmod
 DOCKER ?= docker
 KUBECTL_IMAGE ?= bitnami/kubectl:latest
 KUBECTL ?= $(if $(shell command -v kubectl 2>/dev/null),kubectl,$(DOCKER) run --rm -v $(CURDIR):/work -w /work $(KUBECTL_IMAGE))
+HELM_IMAGE ?= alpine/helm:latest
+HELM ?= $(if $(shell command -v helm 2>/dev/null),helm,$(DOCKER) run --rm -v $(CURDIR):/work -w /work $(HELM_IMAGE))
 APP_VERSION ?= dev
 DEFAULT_VCS_REF := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 DEFAULT_BUILD_DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -61,7 +63,7 @@ endif
 
 $(foreach key,$(CONFIG_ENV_KEYS),$(if $(filter environment command line,$(__ENV_ORIGIN_$(key))),$(eval override $(key) := $(__ENV_VALUE_$(key)))))
 
-.PHONY: fmt lint test api worker env-check migrate debug-purge-artifacts temporal-up temporal-down temporal-logs temporal-ps smoke-postgres-temporal docker-build docker-build-api docker-build-worker docker-build-migrate k8s-render k8s-dry-run k8s-smoke k8s-smoke-kind
+.PHONY: fmt lint test api worker env-check migrate debug-purge-artifacts temporal-up temporal-down temporal-logs temporal-ps smoke-postgres-temporal docker-build docker-build-api docker-build-worker docker-build-migrate k8s-render k8s-dry-run k8s-smoke k8s-smoke-kind helm-version
 
 $(foreach key,$(CONFIG_ENV_KEYS),$(eval api worker env-check migrate debug-purge-artifacts smoke-postgres-temporal: export $(key) := $($(key))))
 
@@ -132,6 +134,9 @@ k8s-smoke:
 
 k8s-smoke-kind:
 	./scripts/smoke-kind-kubernetes.sh
+
+helm-version:
+	$(HELM) version --short
 
 debug-purge-artifacts: export ENV_FILE := $(ENV_FILE)
 debug-purge-artifacts: export LIMIT := $(LIMIT)

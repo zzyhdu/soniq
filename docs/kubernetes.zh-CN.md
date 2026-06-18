@@ -79,6 +79,14 @@ make k8s-render
 这个 target 会执行 `kubectl kustomize deploy/kubernetes/base`。如果本机没有
 安装 `kubectl`，Makefile 会 fallback 到 Docker 里的 kubectl 镜像。
 
+Helm chart 相关工作也使用同样的“本机工具优先，否则 Docker fallback”模式。可以用下面命令检查 Helm CLI：
+
+```bash
+make helm-version
+```
+
+如果本机没有安装 `helm`，Makefile 会 fallback 到 Docker 里的 Helm 镜像。
+
 运行本地 manifest smoke：
 
 ```bash
