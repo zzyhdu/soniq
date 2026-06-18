@@ -433,8 +433,10 @@ deploy/helm/soniq/
 - 已新增 kind 部署 smoke 入口：Soniq API、worker 和 migrate 运行在 kind 中，
   Compose 管理的 Postgres、Temporal 和 MinIO 通过 Kubernetes Service/EndpointSlice
   暴露给 Pod。
-- kind smoke 当前覆盖 migrate Job、API/worker rollout、`/healthz` 和 `/readyz`。
-- 尚未实现 upload -> workflow -> results -> delete/restore/purge 的完整 K8s workflow smoke。
+- kind smoke 当前覆盖 migrate Job、API/worker rollout、`/healthz`、`/readyz`、
+  signup/signin、upload、Temporal workflow completion、transcript/summary/mind map
+  持久化校验。
+- 尚未实现 delete/restore/purge 的完整 K8s workflow smoke。
 
 Smoke 流程：
 

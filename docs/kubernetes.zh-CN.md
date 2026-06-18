@@ -116,6 +116,11 @@ Kubernetes 里，但 Compose 依赖会通过 Kubernetes `Service` 和 `EndpointS
 这样 Pod 不需要使用 `localhost`。在 Pod 里，`localhost` 指的是 Pod 自己，
 不是开发机，也不是 Compose 容器。
 
+默认情况下，kind smoke 还会注册或登录一个 smoke 用户，通过 port-forward 后的
+API 上传一个生成的 WAV 文件，等待 Temporal workflow 完成，并校验 transcript、
+summary 和 mind map 已经持久化。如果只想跑部署 readiness 部分，可以设置
+`KIND_SMOKE_WORKFLOW=0`。
+
 ## Apply
 
 先应用 config 和 secret：

@@ -127,6 +127,12 @@ but exposes the Compose dependencies through Kubernetes `Service` and
 This avoids using `localhost` from inside pods. In a pod, `localhost` means the
 pod itself, not the developer machine or the Compose containers.
 
+By default the kind smoke also signs up or signs in a smoke user, uploads a
+generated WAV file through the port-forwarded API, waits for the Temporal
+workflow to complete, and verifies the persisted transcript, summary, and mind
+map rows. Set `KIND_SMOKE_WORKFLOW=0` to run only the deployment readiness
+portion.
+
 ## Apply
 
 Apply config and secret first:

@@ -15,11 +15,20 @@ S3_SECRET_KEY="${S3_SECRET_KEY:-soniq_minio_password}"
 KIND_SMOKE_BUILD_IMAGES="${KIND_SMOKE_BUILD_IMAGES:-1}"
 KIND_SMOKE_CLEAN_NAMESPACE="${KIND_SMOKE_CLEAN_NAMESPACE:-1}"
 KIND_SMOKE_API_PORT="${KIND_SMOKE_API_PORT:-18080}"
+KIND_SMOKE_WORKFLOW="${KIND_SMOKE_WORKFLOW:-1}"
+SMOKE_EMAIL="${SMOKE_EMAIL:-kind-smoke@local.soniq}"
+SMOKE_DISPLAY_NAME="${SMOKE_DISPLAY_NAME:-Kind Smoke Tester}"
+SMOKE_PASSWORD="${SMOKE_PASSWORD:-correct horse kind smoke}"
+SMOKE_WORKSPACE_ID="${SMOKE_WORKSPACE_ID:-}"
+SMOKE_TITLE="${SMOKE_TITLE:-Kind smoke upload}"
+SMOKE_LANGUAGE="${SMOKE_LANGUAGE:-en}"
+EXPECTED_TRANSCRIPT_LANGUAGE="${EXPECTED_TRANSCRIPT_LANGUAGE:-$SMOKE_LANGUAGE}"
 
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/soniq-kind-smoke.XXXXXX")"
 BASE_MANIFEST="$TMP_DIR/base.yaml"
 SMOKE_MANIFEST="$TMP_DIR/smoke.yaml"
 PORT_FORWARD_LOG="$TMP_DIR/port-forward.log"
+COOKIE_JAR="$TMP_DIR/cookies.txt"
 PORT_FORWARD_PID=""
 
 cleanup() {
@@ -116,6 +125,291 @@ run_minio_mc() {
 
 assert_s3_bucket_ready() {
   run_minio_mc ls "smoke/$S3_BUCKET"
+}
+
+assert_object_exists() {
+  local object_key="$1"
+  local expected_size_bytes="$2"
+  local stat_json actual_size_bytes
+  stat_json="$(run_minio_mc stat --json "smoke/$S3_BUCKET/$object_key")"
+  actual_size_bytes="$(printf '%s\n' "$stat_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["size"])')"
+  if [[ "$actual_size_bytes" != "$expected_size_bytes" ]]; then
+    log "S3 object size mismatch for $object_key: $actual_size_bytes, want $expected_size_bytes"
+    return 1
+  fi
+}
+
+psql_query() {
+  docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
+    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" "$@"
+}
+
+extract_recording_id() {
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["recording"]["id"])'
+}
+
+extract_json_field() {
+  local field="$1"
+  python3 -c 'import json,sys
+value = json.load(sys.stdin)
+for part in sys.argv[1].split("."):
+    value = value[part]
+print(value)' "$field"
+}
+
+extract_first_workspace_id() {
+  python3 -c 'import json,sys
+data = json.load(sys.stdin)
+workspaces = data.get("workspaces") or []
+if not workspaces:
+    raise SystemExit("no workspaces returned for authenticated smoke user")
+print(workspaces[0]["id"])'
+}
+
+csrf_token() {
+  awk '$0 !~ /^#/ && $6 == "soniq_csrf" { token = $7 } END { if (token == "") exit 1; print token }' "$COOKIE_JAR"
+}
+
+auth_json() {
+  python3 -c 'import json,sys
+payload = {"email": sys.argv[1], "password": sys.argv[2]}
+if sys.argv[3]:
+    payload["display_name"] = sys.argv[3]
+print(json.dumps(payload))' "$SMOKE_EMAIL" "$SMOKE_PASSWORD" "$SMOKE_DISPLAY_NAME"
+}
+
+assert_json_field_equals() {
+  local json="$1"
+  local field="$2"
+  local expected="$3"
+  local actual
+  actual="$(printf '%s\n' "$json" | extract_json_field "$field")"
+  if [[ "$actual" != "$expected" ]]; then
+    log "expected JSON field $field=$expected, got $actual"
+    return 1
+  fi
+}
+
+authenticate_api() {
+  local api_url="$1"
+  local response_file status workspaces_response
+  response_file="$TMP_DIR/auth-response.json"
+
+  log "creating or signing in smoke user $SMOKE_EMAIL"
+  status="$(auth_json | curl -sS -o "$response_file" -w "%{http_code}" -c "$COOKIE_JAR" \
+    -H 'Content-Type: application/json' \
+    -X POST "$api_url/auth/signup" \
+    --data-binary @-)"
+  if [[ "$status" == "201" ]]; then
+    log "created smoke user"
+  elif [[ "$status" == "409" ]]; then
+    status="$(auth_json | curl -sS -o "$response_file" -w "%{http_code}" -c "$COOKIE_JAR" \
+      -H 'Content-Type: application/json' \
+      -X POST "$api_url/auth/signin" \
+      --data-binary @-)"
+    if [[ "$status" != "200" ]]; then
+      log "sign in failed with HTTP $status"
+      cat "$response_file"
+      return 1
+    fi
+    log "signed in existing smoke user"
+  else
+    log "signup failed with HTTP $status"
+    cat "$response_file"
+    return 1
+  fi
+
+  workspaces_response="$(curl -fsS -b "$COOKIE_JAR" "$api_url/workspaces")"
+  if [[ -z "$SMOKE_WORKSPACE_ID" ]]; then
+    SMOKE_WORKSPACE_ID="$(printf '%s\n' "$workspaces_response" | extract_first_workspace_id)"
+  fi
+  log "using smoke workspace $SMOKE_WORKSPACE_ID"
+}
+
+generate_smoke_audio() {
+  local audio_file="$1"
+  ffmpeg -hide_banner -loglevel error -f lavfi -i sine=frequency=1000:duration=1 \
+    -ac 1 -ar 16000 -c:a pcm_s16le "$audio_file"
+}
+
+assert_recording_audio_metadata_in_db() {
+  local recording_id="$1"
+  local expected_object_key="$2"
+  local expected_content_type="$3"
+  local expected_size_bytes="$4"
+  local row
+  row="$(psql_query -AtF $'\t' -c "SELECT audio_object_key, audio_content_type, audio_size_bytes FROM recordings WHERE id = '$recording_id'")"
+  if [[ "$row" != "$expected_object_key"$'\t'"$expected_content_type"$'\t'"$expected_size_bytes" ]]; then
+    log "unexpected DB audio metadata row: $row"
+    return 1
+  fi
+}
+
+assert_recording_status_in_db() {
+  local recording_id="$1"
+  local expected_status="$2"
+  local row actual_status completed_at_set failure_reason
+  row="$(psql_query -AtF $'\t' -c "SELECT status, (completed_at IS NOT NULL), failure_reason FROM recordings WHERE id = '$recording_id'")"
+  IFS=$'\t' read -r actual_status completed_at_set failure_reason <<<"$row"
+  if [[ "$actual_status" != "$expected_status" ]]; then
+    log "unexpected DB recording status: $actual_status, want $expected_status"
+    return 1
+  fi
+  if [[ "$expected_status" == "completed" && ( "$completed_at_set" != "t" || -n "$failure_reason" ) ]]; then
+    log "unexpected DB completion metadata: completed_at_set=$completed_at_set failure_reason=$failure_reason"
+    return 1
+  fi
+}
+
+assert_recording_audio_probe_in_db() {
+  local recording_id="$1"
+  local row format_name codec_name sample_rate channels has_duration raw_json_type
+  row="$(psql_query -AtF $'\t' -c "SELECT format_name, codec_name, sample_rate, channels, (duration_seconds > 0), jsonb_typeof(raw_probe_json) FROM recording_audio_probes WHERE recording_id = '$recording_id'")"
+  if [[ -z "$row" ]]; then
+    log "recording audio probe row missing for $recording_id"
+    return 1
+  fi
+
+  IFS=$'\t' read -r format_name codec_name sample_rate channels has_duration raw_json_type <<<"$row"
+  if [[ -z "$format_name" || -z "$codec_name" || "$sample_rate" -le 0 || "$channels" -le 0 || "$has_duration" != "t" || "$raw_json_type" != "object" ]]; then
+    log "unexpected DB audio probe row: $row"
+    return 1
+  fi
+}
+
+assert_recording_normalized_audio_in_db() {
+  local recording_id="$1"
+  local row object_key content_type size_bytes format_name codec_name sample_rate channels normalized_at_set
+  row="$(psql_query -AtF $'\t' -c "SELECT object_key, content_type, size_bytes, format_name, codec_name, sample_rate, channels, (normalized_at IS NOT NULL) FROM recording_normalized_audios WHERE recording_id = '$recording_id'")"
+  if [[ -z "$row" ]]; then
+    log "recording normalized audio row missing for $recording_id"
+    return 1
+  fi
+
+  IFS=$'\t' read -r object_key content_type size_bytes format_name codec_name sample_rate channels normalized_at_set <<<"$row"
+  if [[ -z "$object_key" || "$object_key" != */normalized.wav || "$content_type" != "audio/wav" || "$size_bytes" -le 0 || "$format_name" != "wav" || "$codec_name" != "pcm_s16le" || "$sample_rate" != "16000" || "$channels" != "1" || "$normalized_at_set" != "t" ]]; then
+    log "unexpected DB normalized audio row: $row"
+    return 1
+  fi
+
+  assert_object_exists "$object_key" "$size_bytes"
+}
+
+assert_recording_transcript_summary_mind_map_in_db() {
+  local recording_id="$1"
+  local transcript_row segment_count summary_row mind_map_row
+  transcript_row="$(psql_query -AtF $'\t' -c "SELECT provider, model, language, (length(text) > 0), jsonb_typeof(raw_result_json) FROM recording_transcripts WHERE recording_id = '$recording_id'")"
+  if [[ -z "$transcript_row" ]]; then
+    log "recording transcript row missing for $recording_id"
+    return 1
+  fi
+
+  IFS=$'\t' read -r transcript_provider transcript_model transcript_language transcript_has_text transcript_raw_json_type <<<"$transcript_row"
+  if [[ -z "$transcript_provider" || -z "$transcript_model" || "$transcript_has_text" != "t" || "$transcript_raw_json_type" != "object" ]]; then
+    log "unexpected DB transcript row: $transcript_row"
+    return 1
+  fi
+  if [[ -n "$EXPECTED_TRANSCRIPT_LANGUAGE" && "$transcript_language" != "$EXPECTED_TRANSCRIPT_LANGUAGE" ]]; then
+    log "unexpected DB transcript language: $transcript_language, want $EXPECTED_TRANSCRIPT_LANGUAGE"
+    return 1
+  fi
+
+  segment_count="$(psql_query -Atc "SELECT count(*) FROM recording_transcript_segments WHERE recording_id = '$recording_id'")"
+  if [[ "$segment_count" -lt 1 ]]; then
+    log "recording transcript segments missing for $recording_id"
+    return 1
+  fi
+
+  summary_row="$(psql_query -AtF $'\t' -c "SELECT provider, model, type, (length(overview) > 0 OR length(content_markdown) > 0), jsonb_typeof(raw_result_json) FROM recording_summaries WHERE recording_id = '$recording_id'")"
+  if [[ -z "$summary_row" ]]; then
+    log "recording summary row missing for $recording_id"
+    return 1
+  fi
+
+  IFS=$'\t' read -r summary_provider summary_model summary_type summary_has_content summary_raw_json_type <<<"$summary_row"
+  if [[ -z "$summary_provider" || -z "$summary_model" || "$summary_type" != "meeting" || "$summary_has_content" != "t" || "$summary_raw_json_type" != "object" ]]; then
+    log "unexpected DB summary row: $summary_row"
+    return 1
+  fi
+
+  mind_map_row="$(psql_query -AtF $'\t' -c "SELECT provider, model, (length(title) > 0), jsonb_typeof(root_json), (length(content_markdown) > 0), jsonb_typeof(raw_result_json) FROM recording_mind_maps WHERE recording_id = '$recording_id'")"
+  if [[ -z "$mind_map_row" ]]; then
+    log "recording mind map row missing for $recording_id"
+    return 1
+  fi
+
+  IFS=$'\t' read -r mind_map_provider mind_map_model mind_map_has_title mind_map_root_json_type mind_map_has_content mind_map_raw_json_type <<<"$mind_map_row"
+  if [[ -z "$mind_map_provider" || -z "$mind_map_model" || "$mind_map_has_title" != "t" || "$mind_map_root_json_type" != "object" || "$mind_map_has_content" != "t" || "$mind_map_raw_json_type" != "object" ]]; then
+    log "unexpected DB mind map row: $mind_map_row"
+    return 1
+  fi
+}
+
+run_workflow_smoke() {
+  local api_url="$1"
+  local response recording_id workflow_id audio_object_key audio_size audio_file csrf_token_value
+  local upload_content_type="audio/wav"
+
+  require_command ffmpeg
+  authenticate_api "$api_url"
+
+  audio_file="$TMP_DIR/kind-smoke.wav"
+  log "generating smoke WAV"
+  generate_smoke_audio "$audio_file"
+  audio_size="$(wc -c <"$audio_file" | tr -d ' ')"
+  csrf_token_value="$(csrf_token)"
+
+  log "uploading recording audio via POST /workspaces/$SMOKE_WORKSPACE_ID/recordings/upload"
+  response="$(curl -fsS -b "$COOKIE_JAR" -X POST "$api_url/workspaces/$SMOKE_WORKSPACE_ID/recordings/upload" \
+    -H "X-CSRF-Token: $csrf_token_value" \
+    -F "title=$SMOKE_TITLE" \
+    -F 'workflow_type=meeting' \
+    -F "language=$SMOKE_LANGUAGE" \
+    -F "audio=@$audio_file;filename=kind-smoke.wav;type=$upload_content_type")"
+  printf '%s\n' "$response"
+
+  recording_id="$(printf '%s\n' "$response" | extract_recording_id)"
+  audio_object_key="$(printf '%s\n' "$response" | extract_json_field recording.audio_object_key)"
+  workflow_id="recording-processing-$recording_id"
+  log "expected Temporal workflow ID: $workflow_id"
+
+  assert_json_field_equals "$response" processing_enqueued True
+  assert_json_field_equals "$response" recording.workspace_id "$SMOKE_WORKSPACE_ID"
+  assert_json_field_equals "$response" recording.audio_content_type "$upload_content_type"
+  assert_json_field_equals "$response" recording.audio_size_bytes "$audio_size"
+  if [[ "$audio_object_key" != "workspaces/$SMOKE_WORKSPACE_ID/recordings/"* ]]; then
+    log "unexpected uploaded object key prefix: $audio_object_key"
+    return 1
+  fi
+  assert_object_exists "$audio_object_key" "$audio_size"
+  assert_recording_audio_metadata_in_db "$recording_id" "$audio_object_key" "$upload_content_type" "$audio_size"
+
+  log "waiting for Temporal workflow completion"
+  local describe_output=""
+  local i
+  for ((i = 1; i <= 90; i++)); do
+    describe_output="$(docker compose -f "$COMPOSE_FILE" exec -T temporal \
+      temporal --address temporal:7233 workflow describe \
+      --namespace default \
+      --workflow-id "$workflow_id" 2>/dev/null || true)"
+    if grep -q 'Status.*COMPLETED' <<<"$describe_output"; then
+      printf '%s\n' "$describe_output"
+      log "Temporal workflow completed: $workflow_id"
+      assert_recording_status_in_db "$recording_id" completed
+      assert_recording_audio_probe_in_db "$recording_id"
+      assert_recording_normalized_audio_in_db "$recording_id"
+      assert_recording_transcript_summary_mind_map_in_db "$recording_id"
+      curl -fsS -b "$COOKIE_JAR" "$api_url/workspaces/$SMOKE_WORKSPACE_ID/recordings/$recording_id/details" >/dev/null
+      log "recording workflow result verified: $recording_id"
+      return 0
+    fi
+    sleep 1
+  done
+
+  log "Temporal workflow did not reach COMPLETED"
+  printf '%s\n' "$describe_output"
+  show_debug_context
+  return 1
 }
 
 render_smoke_manifest() {
@@ -344,6 +638,11 @@ main() {
   PORT_FORWARD_PID=$!
   wait_for_command "API /healthz" 30 curl -fsS "http://localhost:$KIND_SMOKE_API_PORT/healthz"
   wait_for_command "API /readyz" 30 curl -fsS "http://localhost:$KIND_SMOKE_API_PORT/readyz"
+  if [[ "$KIND_SMOKE_WORKFLOW" == "1" ]]; then
+    run_workflow_smoke "http://localhost:$KIND_SMOKE_API_PORT"
+  else
+    log "skipping workflow smoke; set KIND_SMOKE_WORKFLOW=1 to enable it"
+  fi
 
   log "passed"
 }
