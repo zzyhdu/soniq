@@ -98,6 +98,24 @@ Server-side dry-run 会请求 Kubernetes API server 校验 resource kinds 和 sc
 但不会真的持久化这些应用对象。如果 `soniq` namespace 不存在，带
 `K8S_SMOKE_SERVER_DRY_RUN=1` 的 `make k8s-smoke` 会为了校验临时创建它，并在结束后删除。
 
+运行本地 kind 部署 smoke：
+
+```bash
+make k8s-smoke-kind
+```
+
+这个脚本会启动 Compose 管理的 Postgres、Temporal 和 MinIO，创建或复用
+`soniq` kind 集群，把 kind control-plane 容器连接到 Compose Docker network，
+然后应用一份临时 smoke manifest。Soniq API、worker 和 migrate 仍然运行在
+Kubernetes 里，但 Compose 依赖会通过 Kubernetes `Service` 和 `EndpointSlice` 暴露给 Pod：
+
+- `soniq-postgresql:5432`
+- `temporal:7233`
+- `minio:9000`
+
+这样 Pod 不需要使用 `localhost`。在 Pod 里，`localhost` 指的是 Pod 自己，
+不是开发机，也不是 Compose 容器。
+
 ## Apply
 
 先应用 config 和 secret：

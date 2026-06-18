@@ -107,6 +107,26 @@ and schemas without persisting the application objects. If the `soniq`
 namespace does not exist, `make k8s-smoke` with `K8S_SMOKE_SERVER_DRY_RUN=1`
 creates it temporarily for validation and deletes it afterward.
 
+Run the local kind deployment smoke:
+
+```bash
+make k8s-smoke-kind
+```
+
+This starts the Compose-managed Postgres, Temporal, and MinIO dependencies,
+creates or reuses the `soniq` kind cluster, connects the kind control-plane
+container to the Compose Docker network, and applies a temporary smoke manifest.
+The smoke manifest keeps Soniq API, worker, and migrate resources in Kubernetes,
+but exposes the Compose dependencies through Kubernetes `Service` and
+`EndpointSlice` objects:
+
+- `soniq-postgresql:5432`
+- `temporal:7233`
+- `minio:9000`
+
+This avoids using `localhost` from inside pods. In a pod, `localhost` means the
+pod itself, not the developer machine or the Compose containers.
+
 ## Apply
 
 Apply config and secret first:

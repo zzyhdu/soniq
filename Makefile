@@ -61,7 +61,7 @@ endif
 
 $(foreach key,$(CONFIG_ENV_KEYS),$(if $(filter environment command line,$(__ENV_ORIGIN_$(key))),$(eval override $(key) := $(__ENV_VALUE_$(key)))))
 
-.PHONY: fmt lint test api worker env-check migrate debug-purge-artifacts temporal-up temporal-down temporal-logs temporal-ps smoke-postgres-temporal docker-build docker-build-api docker-build-worker docker-build-migrate k8s-render k8s-dry-run k8s-smoke
+.PHONY: fmt lint test api worker env-check migrate debug-purge-artifacts temporal-up temporal-down temporal-logs temporal-ps smoke-postgres-temporal docker-build docker-build-api docker-build-worker docker-build-migrate k8s-render k8s-dry-run k8s-smoke k8s-smoke-kind
 
 $(foreach key,$(CONFIG_ENV_KEYS),$(eval api worker env-check migrate debug-purge-artifacts smoke-postgres-temporal: export $(key) := $($(key))))
 
@@ -125,10 +125,13 @@ k8s-render:
 	$(KUBECTL) kustomize deploy/kubernetes/base
 
 k8s-dry-run:
-	$(KUBECTL) apply --dry-run=server -k deploy/kubernetes/base
+	K8S_SMOKE_SERVER_DRY_RUN=1 ./scripts/smoke-kubernetes-manifests.sh
 
 k8s-smoke:
 	./scripts/smoke-kubernetes-manifests.sh
+
+k8s-smoke-kind:
+	./scripts/smoke-kind-kubernetes.sh
 
 debug-purge-artifacts: export ENV_FILE := $(ENV_FILE)
 debug-purge-artifacts: export LIMIT := $(LIMIT)

@@ -110,6 +110,11 @@ api = by_id[("Deployment", "soniq-api", "soniq")]
 worker = by_id[("Deployment", "soniq-worker", "soniq")]
 migrate = by_id[("Job", "soniq-migrate", "soniq")]
 service = by_id[("Service", "soniq-api", "soniq")]
+expected_pod_users = {
+    ("Deployment", "soniq-api", "soniq"): (65532, 65532),
+    ("Deployment", "soniq-worker", "soniq"): (10001, 10001),
+    ("Job", "soniq-migrate", "soniq"): (65532, 65532),
+}
 
 
 def pod_spec(resource):
@@ -152,6 +157,16 @@ for resource in [api, worker, migrate]:
     if not container.get("image"):
         raise SystemExit(f"{resource_id(resource)} is missing container image")
     require_env_from(resource)
+    pod_security_context = pod_spec(resource).get("securityContext") or {}
+    expected_uid, expected_gid = expected_pod_users[resource_id(resource)]
+    if pod_security_context.get("runAsNonRoot") is not True:
+        raise SystemExit(f"{resource_id(resource)} must require runAsNonRoot")
+    if pod_security_context.get("runAsUser") != expected_uid:
+        raise SystemExit(f"{resource_id(resource)} must run as UID {expected_uid}")
+    if pod_security_context.get("runAsGroup") != expected_gid:
+        raise SystemExit(f"{resource_id(resource)} must run as GID {expected_gid}")
+    if (pod_security_context.get("seccompProfile") or {}).get("type") != "RuntimeDefault":
+        raise SystemExit(f"{resource_id(resource)} must use RuntimeDefault seccomp")
     security_context = container.get("securityContext") or {}
     if security_context.get("allowPrivilegeEscalation") is not False:
         raise SystemExit(f"{resource_id(resource)} must disable privilege escalation")

@@ -430,7 +430,11 @@ deploy/helm/soniq/
 当前进展：
 
 - 已新增 manifest 级 smoke，用于在没有集群时验证 raw manifests 的结构和资源契约。
-- 尚未实现真正部署到 kind/minikube 或 dev cluster 后的完整 workflow smoke。
+- 已新增 kind 部署 smoke 入口：Soniq API、worker 和 migrate 运行在 kind 中，
+  Compose 管理的 Postgres、Temporal 和 MinIO 通过 Kubernetes Service/EndpointSlice
+  暴露给 Pod。
+- kind smoke 当前覆盖 migrate Job、API/worker rollout、`/healthz` 和 `/readyz`。
+- 尚未实现 upload -> workflow -> results -> delete/restore/purge 的完整 K8s workflow smoke。
 
 Smoke 流程：
 
