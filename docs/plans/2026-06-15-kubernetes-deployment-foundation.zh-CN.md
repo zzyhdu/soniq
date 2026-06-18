@@ -435,8 +435,8 @@ deploy/helm/soniq/
   暴露给 Pod。
 - kind smoke 当前覆盖 migrate Job、API/worker rollout、`/healthz`、`/readyz`、
   signup/signin、upload、Temporal workflow completion、transcript/summary/mind map
-  持久化校验。
-- 尚未实现 delete/restore/purge 的完整 K8s workflow smoke。
+  持久化校验，以及 soft delete、Trash restore、active purge 保护、永久 purge、
+  purge artifact cleanup rows 和 S3 object 删除校验。
 
 Smoke 流程：
 

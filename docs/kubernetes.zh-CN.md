@@ -117,9 +117,10 @@ Kubernetes 里，但 Compose 依赖会通过 Kubernetes `Service` 和 `EndpointS
 不是开发机，也不是 Compose 容器。
 
 默认情况下，kind smoke 还会注册或登录一个 smoke 用户，通过 port-forward 后的
-API 上传一个生成的 WAV 文件，等待 Temporal workflow 完成，并校验 transcript、
-summary 和 mind map 已经持久化。如果只想跑部署 readiness 部分，可以设置
-`KIND_SMOKE_WORKFLOW=0`。
+API 上传一个生成的 WAV 文件，等待 Temporal workflow 完成，校验 transcript、
+summary 和 mind map 已经持久化，然后继续验证 recording 生命周期：soft delete、
+Trash restore、再次 soft delete、永久 purge、purge artifact cleanup rows，以及
+S3 object 删除。如果只想跑部署 readiness 部分，可以设置 `KIND_SMOKE_WORKFLOW=0`。
 
 ## Apply
 
@@ -201,5 +202,6 @@ kubectl -n soniq logs job/soniq-migrate
 - 还没有 Helm chart。
 - 还没有 Ingress 或 TLS manifest。
 - 还没有 HPA、PDB、NetworkPolicy 或 topology spread constraints。
-- 还没有完整集群级 Kubernetes smoke script。
+- 还没有 Helm 级 cluster smoke script；当前 kind smoke 覆盖的是 raw-manifest
+  部署路径。
 - Worker 还没有暴露 HTTP health endpoint，所以 worker health 当前主要依赖进程状态和日志。

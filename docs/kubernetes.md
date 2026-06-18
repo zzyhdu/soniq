@@ -129,8 +129,10 @@ pod itself, not the developer machine or the Compose containers.
 
 By default the kind smoke also signs up or signs in a smoke user, uploads a
 generated WAV file through the port-forwarded API, waits for the Temporal
-workflow to complete, and verifies the persisted transcript, summary, and mind
-map rows. Set `KIND_SMOKE_WORKFLOW=0` to run only the deployment readiness
+workflow to complete, verifies the persisted transcript, summary, and mind map
+rows, then verifies the recording lifecycle path: soft delete, Trash restore,
+soft delete again, permanent purge, purge artifact cleanup rows, and S3 object
+deletion. Set `KIND_SMOKE_WORKFLOW=0` to run only the deployment readiness
 portion.
 
 ## Apply
@@ -217,6 +219,7 @@ kubectl -n soniq logs job/soniq-migrate
 - No Helm chart yet.
 - No Ingress or TLS manifest.
 - No HPA, PDB, NetworkPolicy, or topology spread constraints.
-- No full cluster smoke script yet.
+- No Helm-based cluster smoke script yet; the current kind smoke validates the
+  raw-manifest deployment path.
 - Worker exposes no HTTP health endpoint, so worker health is currently based
   on process status and logs.

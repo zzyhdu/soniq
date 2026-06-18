@@ -139,6 +139,14 @@ assert_object_exists() {
   fi
 }
 
+assert_object_missing() {
+  local object_key="$1"
+  if run_minio_mc stat "smoke/$S3_BUCKET/$object_key" >/dev/null 2>&1; then
+    log "S3 object still exists after purge: $object_key"
+    return 1
+  fi
+}
+
 psql_query() {
   docker compose -f "$COMPOSE_FILE" exec -T soniq-postgresql \
     psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" "$@"
@@ -186,6 +194,61 @@ assert_json_field_equals() {
   actual="$(printf '%s\n' "$json" | extract_json_field "$field")"
   if [[ "$actual" != "$expected" ]]; then
     log "expected JSON field $field=$expected, got $actual"
+    return 1
+  fi
+}
+
+assert_recording_in_list() {
+  local json="$1"
+  local recording_id="$2"
+  local expected_deleted="$3"
+  printf '%s\n' "$json" | python3 -c '
+import json
+import sys
+
+recording_id = sys.argv[1]
+expected_deleted = sys.argv[2] == "true"
+data = json.load(sys.stdin)
+recording = next((item for item in data.get("recordings", []) if item.get("id") == recording_id), None)
+if recording is None:
+    raise SystemExit(f"recording {recording_id} not found in list")
+actual_deleted = recording.get("deleted_at") not in (None, "")
+if actual_deleted != expected_deleted:
+    raise SystemExit(
+        f"recording {recording_id} deleted state = {actual_deleted}, want {expected_deleted}"
+    )
+' "$recording_id" "$expected_deleted"
+}
+
+assert_recording_not_in_list() {
+  local json="$1"
+  local recording_id="$2"
+  printf '%s\n' "$json" | python3 -c '
+import json
+import sys
+
+recording_id = sys.argv[1]
+data = json.load(sys.stdin)
+if any(item.get("id") == recording_id for item in data.get("recordings", [])):
+    raise SystemExit(f"recording {recording_id} unexpectedly found in list")
+' "$recording_id"
+}
+
+expect_api_status() {
+  local method="$1"
+  local expected_status="$2"
+  local url="$3"
+  local csrf_token_value="${4:-}"
+  local response_file status
+  response_file="$TMP_DIR/api-response-$method-$expected_status-$RANDOM.txt"
+  local curl_args=(-sS -o "$response_file" -w "%{http_code}" -b "$COOKIE_JAR" -X "$method")
+  if [[ -n "$csrf_token_value" ]]; then
+    curl_args+=(-H "X-CSRF-Token: $csrf_token_value")
+  fi
+  status="$(curl "${curl_args[@]}" "$url")"
+  if [[ "$status" != "$expected_status" ]]; then
+    log "$method $url returned HTTP $status, want $expected_status"
+    cat "$response_file"
     return 1
   fi
 }
@@ -261,6 +324,31 @@ assert_recording_status_in_db() {
   fi
 }
 
+assert_recording_deleted_state_in_db() {
+  local recording_id="$1"
+  local expected_deleted="$2"
+  local row actual_deleted deleted_by_user_id
+  row="$(psql_query -AtF $'\t' -c "SELECT (deleted_at IS NOT NULL), COALESCE(deleted_by_user_id, '') FROM recordings WHERE id = '$recording_id'")"
+  if [[ -z "$row" ]]; then
+    log "recording row missing for deleted-state check: $recording_id"
+    return 1
+  fi
+
+  IFS=$'\t' read -r actual_deleted deleted_by_user_id <<<"$row"
+  if [[ "$actual_deleted" != "$expected_deleted" ]]; then
+    log "unexpected DB deleted state for $recording_id: $actual_deleted, want $expected_deleted"
+    return 1
+  fi
+  if [[ "$expected_deleted" == "t" && -z "$deleted_by_user_id" ]]; then
+    log "recording $recording_id is deleted but deleted_by_user_id is empty"
+    return 1
+  fi
+  if [[ "$expected_deleted" == "f" && -n "$deleted_by_user_id" ]]; then
+    log "recording $recording_id is active but deleted_by_user_id is set: $deleted_by_user_id"
+    return 1
+  fi
+}
+
 assert_recording_audio_probe_in_db() {
   local recording_id="$1"
   local row format_name codec_name sample_rate channels has_duration raw_json_type
@@ -293,6 +381,17 @@ assert_recording_normalized_audio_in_db() {
   fi
 
   assert_object_exists "$object_key" "$size_bytes"
+}
+
+normalized_audio_object_key_from_db() {
+  local recording_id="$1"
+  local object_key
+  object_key="$(psql_query -Atc "SELECT object_key FROM recording_normalized_audios WHERE recording_id = '$recording_id'")"
+  if [[ -z "$object_key" ]]; then
+    log "normalized audio object key missing for $recording_id"
+    return 1
+  fi
+  printf '%s\n' "$object_key"
 }
 
 assert_recording_transcript_summary_mind_map_in_db() {
@@ -345,9 +444,96 @@ assert_recording_transcript_summary_mind_map_in_db() {
   fi
 }
 
+assert_recording_purged_from_db() {
+  local recording_id="$1"
+  local count child_count
+  count="$(psql_query -Atc "SELECT count(*) FROM recordings WHERE id = '$recording_id'")"
+  if [[ "$count" != "0" ]]; then
+    log "recording row still exists after purge: $recording_id"
+    return 1
+  fi
+
+  child_count="$(psql_query -Atc "SELECT
+    (SELECT count(*) FROM recording_mind_maps WHERE recording_id = '$recording_id') +
+    (SELECT count(*) FROM recording_transcript_segments WHERE recording_id = '$recording_id') +
+    (SELECT count(*) FROM recording_summaries WHERE recording_id = '$recording_id') +
+    (SELECT count(*) FROM recording_transcripts WHERE recording_id = '$recording_id') +
+    (SELECT count(*) FROM recording_audio_probes WHERE recording_id = '$recording_id') +
+    (SELECT count(*) FROM recording_normalized_audios WHERE recording_id = '$recording_id')")"
+  if [[ "$child_count" != "0" ]]; then
+    log "recording child rows still exist after purge: count=$child_count"
+    return 1
+  fi
+}
+
+assert_purge_artifacts_deleted_in_db() {
+  local recording_id="$1"
+  local expected_count="$2"
+  local row artifact_count deleted_count
+  row="$(psql_query -AtF $'\t' -c "SELECT count(*), count(*) FILTER (WHERE status = 'deleted' AND deleted_at IS NOT NULL) FROM recording_purge_artifacts WHERE recording_id = '$recording_id'")"
+  IFS=$'\t' read -r artifact_count deleted_count <<<"$row"
+  if [[ "$artifact_count" != "$expected_count" || "$deleted_count" != "$expected_count" ]]; then
+    log "unexpected purge artifact cleanup rows for $recording_id: total=$artifact_count deleted=$deleted_count, want $expected_count"
+    return 1
+  fi
+}
+
+run_recording_lifecycle_smoke() {
+  local api_url="$1"
+  local recording_id="$2"
+  local original_object_key="$3"
+  local normalized_object_key="$4"
+  local csrf_token_value active_response trash_response
+
+  csrf_token_value="$(csrf_token)"
+
+  log "verifying recording is active before delete"
+  active_response="$(curl -fsS -b "$COOKIE_JAR" "$api_url/workspaces/$SMOKE_WORKSPACE_ID/recordings?limit=100")"
+  trash_response="$(curl -fsS -b "$COOKIE_JAR" "$api_url/workspaces/$SMOKE_WORKSPACE_ID/recordings/trash?limit=100")"
+  assert_recording_in_list "$active_response" "$recording_id" false
+  assert_recording_not_in_list "$trash_response" "$recording_id"
+  assert_recording_deleted_state_in_db "$recording_id" f
+
+  log "soft deleting recording"
+  expect_api_status DELETE 204 "$api_url/workspaces/$SMOKE_WORKSPACE_ID/recordings/$recording_id" "$csrf_token_value"
+  active_response="$(curl -fsS -b "$COOKIE_JAR" "$api_url/workspaces/$SMOKE_WORKSPACE_ID/recordings?limit=100")"
+  trash_response="$(curl -fsS -b "$COOKIE_JAR" "$api_url/workspaces/$SMOKE_WORKSPACE_ID/recordings/trash?limit=100")"
+  assert_recording_not_in_list "$active_response" "$recording_id"
+  assert_recording_in_list "$trash_response" "$recording_id" true
+  assert_recording_deleted_state_in_db "$recording_id" t
+
+  log "restoring recording from Trash"
+  expect_api_status POST 200 "$api_url/workspaces/$SMOKE_WORKSPACE_ID/recordings/$recording_id/restore" "$csrf_token_value"
+  active_response="$(curl -fsS -b "$COOKIE_JAR" "$api_url/workspaces/$SMOKE_WORKSPACE_ID/recordings?limit=100")"
+  trash_response="$(curl -fsS -b "$COOKIE_JAR" "$api_url/workspaces/$SMOKE_WORKSPACE_ID/recordings/trash?limit=100")"
+  assert_recording_in_list "$active_response" "$recording_id" false
+  assert_recording_not_in_list "$trash_response" "$recording_id"
+  assert_recording_deleted_state_in_db "$recording_id" f
+  curl -fsS -b "$COOKIE_JAR" "$api_url/workspaces/$SMOKE_WORKSPACE_ID/recordings/$recording_id/details" >/dev/null
+
+  log "verifying active recordings cannot be purged directly"
+  expect_api_status DELETE 404 "$api_url/workspaces/$SMOKE_WORKSPACE_ID/recordings/$recording_id/purge" "$csrf_token_value"
+
+  log "soft deleting and permanently purging recording"
+  expect_api_status DELETE 204 "$api_url/workspaces/$SMOKE_WORKSPACE_ID/recordings/$recording_id" "$csrf_token_value"
+  expect_api_status DELETE 204 "$api_url/workspaces/$SMOKE_WORKSPACE_ID/recordings/$recording_id/purge" "$csrf_token_value"
+  expect_api_status GET 404 "$api_url/workspaces/$SMOKE_WORKSPACE_ID/recordings/$recording_id/details"
+
+  active_response="$(curl -fsS -b "$COOKIE_JAR" "$api_url/workspaces/$SMOKE_WORKSPACE_ID/recordings?limit=100")"
+  trash_response="$(curl -fsS -b "$COOKIE_JAR" "$api_url/workspaces/$SMOKE_WORKSPACE_ID/recordings/trash?limit=100")"
+  assert_recording_not_in_list "$active_response" "$recording_id"
+  assert_recording_not_in_list "$trash_response" "$recording_id"
+  assert_recording_purged_from_db "$recording_id"
+  assert_purge_artifacts_deleted_in_db "$recording_id" 2
+  assert_object_missing "$original_object_key"
+  assert_object_missing "$normalized_object_key"
+  log "recording lifecycle delete/restore/purge verified: $recording_id"
+}
+
 run_workflow_smoke() {
   local api_url="$1"
   local response recording_id workflow_id audio_object_key audio_size audio_file csrf_token_value
+  local normalized_object_key
   local upload_content_type="audio/wav"
 
   require_command ffmpeg
@@ -398,9 +584,11 @@ run_workflow_smoke() {
       assert_recording_status_in_db "$recording_id" completed
       assert_recording_audio_probe_in_db "$recording_id"
       assert_recording_normalized_audio_in_db "$recording_id"
+      normalized_object_key="$(normalized_audio_object_key_from_db "$recording_id")"
       assert_recording_transcript_summary_mind_map_in_db "$recording_id"
       curl -fsS -b "$COOKIE_JAR" "$api_url/workspaces/$SMOKE_WORKSPACE_ID/recordings/$recording_id/details" >/dev/null
       log "recording workflow result verified: $recording_id"
+      run_recording_lifecycle_smoke "$api_url" "$recording_id" "$audio_object_key" "$normalized_object_key"
       return 0
     fi
     sleep 1
