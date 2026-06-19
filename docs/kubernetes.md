@@ -285,6 +285,17 @@ Both default to `minAvailable: 1`. With the default 2 API replicas and 2 worker
 replicas, Kubernetes can voluntarily evict one pod during node maintenance or
 cluster upgrades while keeping at least one API pod and one worker pod running.
 
+## Pod Placement
+
+The raw manifests and Helm chart add topology spread constraints to API and
+worker pods. The default constraint spreads replicas by
+`kubernetes.io/hostname`, uses `maxSkew: 1`, and sets
+`whenUnsatisfiable: ScheduleAnyway`.
+
+`ScheduleAnyway` means Kubernetes tries to distribute pods across nodes, but it
+can still schedule pods when a cluster has only one usable node. Production
+values can switch this to `DoNotSchedule` when strict spreading is required.
+
 ## Autoscaling
 
 The raw manifests create an API HorizontalPodAutoscaler. It targets the
@@ -351,7 +362,6 @@ kubectl -n soniq logs job/soniq-migrate
 ## Current Limitations
 
 - No Ingress or TLS manifest.
-- No topology spread constraints.
 - Worker autoscaling is CPU-based when enabled; backlog-based worker scaling is
   not implemented yet.
 - No remote-cluster release smoke yet; current cluster smoke coverage is local

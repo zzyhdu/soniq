@@ -34,7 +34,7 @@ Kubernetes 前置条件已经补齐一部分：
 后续还缺：
 
 - 更完整的 resource requests/limits 调优。
-- topology spread、worker backlog-based autoscaling 等生产硬化。
+- worker backlog-based autoscaling 等生产硬化。
 - 远程集群 release smoke 和回滚 runbook。
 
 ## 核心原则
@@ -520,6 +520,7 @@ verify purge artifact rows deleted status
 - raw manifests 和 Helm chart 已为 API/worker 设置 PodDisruptionBudget；API 和 worker 默认各 2 个副本，PDB 默认 `minAvailable: 1`。
 - raw manifests 和 Helm chart 已为 API、worker、migration pods 设置基础 NetworkPolicy；默认允许 DNS、HTTP/HTTPS、MinIO/S3-compatible、Postgres 和 Temporal 出站。
 - raw manifests 已为 API 设置基础 HorizontalPodAutoscaler；Helm chart 已提供 API/worker autoscaling values，默认关闭，生产环境可按 metrics-server 和容量策略开启。
+- raw manifests 和 Helm chart 已为 API/worker 设置 topology spread constraints；默认按节点 hostname 尽量分散副本，同时保留单节点 kind 的调度能力。
 
 ## 推荐执行顺序
 

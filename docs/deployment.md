@@ -161,6 +161,18 @@ replicas to 2 by default, with PodDisruptionBudgets requiring at least one API
 pod and one worker pod to remain available during voluntary disruptions such as
 node drains and cluster upgrades.
 
+## Pod Placement
+
+Soniq's Kubernetes manifests and Helm chart set baseline topology spread
+constraints for API and worker pods. They use `kubernetes.io/hostname` with
+`maxSkew: 1`, which asks the scheduler to spread replicas across nodes when
+capacity is available.
+
+The default `whenUnsatisfiable: ScheduleAnyway` keeps local single-node and
+small-cluster installs working. In larger production clusters, operators can
+change this to `DoNotSchedule` through Helm values when strict node spreading is
+preferred over scheduling flexibility.
+
 ## Autoscaling
 
 Soniq's raw Kubernetes manifests include a baseline API

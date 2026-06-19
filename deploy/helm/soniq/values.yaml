@@ -76,6 +76,11 @@ api:
     minReplicas: 2
     maxReplicas: 6
     targetCPUUtilizationPercentage: 70
+  topologySpreadConstraints:
+    enabled: true
+    maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
   pdb:
     enabled: true
     minAvailable: 1
@@ -133,6 +138,11 @@ worker:
     minReplicas: 2
     maxReplicas: 6
     targetCPUUtilizationPercentage: 70
+  topologySpreadConstraints:
+    enabled: true
+    maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
   pdb:
     enabled: true
     minAvailable: 1

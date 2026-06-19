@@ -21,6 +21,14 @@ spec:
         app.kubernetes.io/part-of: soniq
     spec:
       terminationGracePeriodSeconds: 30
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: soniq-api
+              app.kubernetes.io/component: api
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532

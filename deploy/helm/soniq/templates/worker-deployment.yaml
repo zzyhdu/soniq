@@ -32,6 +32,16 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- if .Values.worker.topologySpreadConstraints.enabled }}
+      topologySpreadConstraints:
+        - maxSkew: {{ .Values.worker.topologySpreadConstraints.maxSkew }}
+          topologyKey: {{ .Values.worker.topologySpreadConstraints.topologyKey | quote }}
+          whenUnsatisfiable: {{ .Values.worker.topologySpreadConstraints.whenUnsatisfiable | quote }}
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ include "soniq.workerName" . }}
+              app.kubernetes.io/component: worker
+      {{- end }}
       securityContext:
         {{- toYaml .Values.worker.podSecurityContext | nindent 8 }}
       containers:

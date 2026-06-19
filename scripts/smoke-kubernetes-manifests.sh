@@ -213,6 +213,38 @@ for pdb, deployment in [(api_pdb, api), (worker_pdb, worker)]:
         if pod_labels.get(key) != value:
             raise SystemExit(f"{resource_id(pdb)} selector {key}={value} does not match pod labels")
 
+
+def require_topology_spread(deployment, component):
+    constraints = pod_spec(deployment).get("topologySpreadConstraints") or []
+    if len(constraints) != 1:
+        raise SystemExit(f"{resource_id(deployment)} must define exactly one topology spread constraint")
+    constraint = constraints[0]
+    if constraint.get("maxSkew") != 1:
+        raise SystemExit(f"{resource_id(deployment)} topology spread maxSkew must be 1")
+    if constraint.get("topologyKey") != "kubernetes.io/hostname":
+        raise SystemExit(f"{resource_id(deployment)} topology spread must use kubernetes.io/hostname")
+    if constraint.get("whenUnsatisfiable") != "ScheduleAnyway":
+        raise SystemExit(f"{resource_id(deployment)} topology spread must use ScheduleAnyway")
+    selector = ((constraint.get("labelSelector") or {}).get("matchLabels")) or {}
+    expected_selector = {
+        "app.kubernetes.io/name": resource_id(deployment)[1],
+        "app.kubernetes.io/component": component,
+    }
+    for key, value in expected_selector.items():
+        if selector.get(key) != value:
+            raise SystemExit(f"{resource_id(deployment)} topology spread selector must include {key}={value}")
+    pod_labels = (
+        (((deployment.get("spec") or {}).get("template") or {}).get("metadata") or {}).get("labels")
+        or {}
+    )
+    for key, value in selector.items():
+        if pod_labels.get(key) != value:
+            raise SystemExit(f"{resource_id(deployment)} topology spread selector {key}={value} does not match pod labels")
+
+
+require_topology_spread(api, "api")
+require_topology_spread(worker, "worker")
+
 hpa_spec = api_hpa.get("spec") or {}
 scale_target = hpa_spec.get("scaleTargetRef") or {}
 if scale_target.get("apiVersion") != "apps/v1":

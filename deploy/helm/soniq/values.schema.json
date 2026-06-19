@@ -115,6 +115,19 @@
         }
       }
     },
+    "topologySpreadConstraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "maxSkew": { "type": "integer", "minimum": 1 },
+        "topologyKey": { "type": "string", "minLength": 1 },
+        "whenUnsatisfiable": {
+          "type": "string",
+          "enum": ["DoNotSchedule", "ScheduleAnyway"]
+        }
+      }
+    },
     "networkPolicyRule": {
       "type": "object",
       "additionalProperties": true
@@ -177,6 +190,7 @@
         "replicas": { "type": "integer", "minimum": 0 },
         "terminationGracePeriodSeconds": { "type": "integer", "minimum": 1 },
         "autoscaling": { "$ref": "#/definitions/autoscaling" },
+        "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
         "pdb": { "$ref": "#/definitions/pdb" },
         "image": { "$ref": "#/definitions/image" },
         "containerPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
@@ -209,6 +223,7 @@
         "replicas": { "type": "integer", "minimum": 0 },
         "terminationGracePeriodSeconds": { "type": "integer", "minimum": 1 },
         "autoscaling": { "$ref": "#/definitions/autoscaling" },
+        "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
         "pdb": { "$ref": "#/definitions/pdb" },
         "image": { "$ref": "#/definitions/image" },
         "podAnnotations": { "type": "object", "additionalProperties": { "type": "string" } },

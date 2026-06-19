@@ -262,6 +262,16 @@ raw manifests 和 Helm chart 会为 API 和 worker 创建 PodDisruptionBudget。
 的情况下，Kubernetes 做节点维护或集群升级时可以自愿驱逐其中一个 Pod，同时保留
 至少一个 API Pod 和一个 worker Pod 继续运行。
 
+## Pod Placement
+
+raw manifests 和 Helm chart 会给 API 和 worker pods 加 topology spread
+constraints。默认按 `kubernetes.io/hostname` 分散副本，`maxSkew: 1`，并使用
+`whenUnsatisfiable: ScheduleAnyway`。
+
+`ScheduleAnyway` 的意思是 Kubernetes 会尽量把 Pod 分散到不同节点，但如果集群只有
+一个可用节点，也仍然允许调度。生产 values 可以按需要把它改成 `DoNotSchedule`，
+这样会更严格地要求分散，但在节点不足时 Pod 可能无法调度。
+
 ## Autoscaling
 
 raw manifests 会创建 API HorizontalPodAutoscaler。它指向 `soniq-api`
@@ -320,7 +330,6 @@ kubectl -n soniq logs job/soniq-migrate
 ## 当前限制
 
 - 还没有 Ingress 或 TLS manifest。
-- 还没有 topology spread constraints。
 - worker autoscaling 开启时仍是基于 CPU；还没有实现基于 backlog 的 worker 扩缩容。
 - 还没有远程集群 release smoke；当前 cluster smoke 覆盖的是本地 kind 下的
   raw manifests 和 Helm 两条路径。
