@@ -1,17 +1,19 @@
 # Kubernetes 部署
 
-本文描述 Soniq 第一版 Kubernetes deployment foundation。它刻意使用 `deploy/kubernetes/base/` 下的 raw manifests，而不是 Helm，这样部署契约更容易直接检查。
+本文描述 Soniq 第一版 Kubernetes deployment foundation。它包含
+`deploy/kubernetes/base/` 下便于直接检查的 raw manifests，也包含
+`deploy/helm/soniq/` 下用于参数化部署的第一版 Helm chart。
 
 ## 范围
 
-base manifests 只部署 Soniq 自己拥有的资源：
+raw manifests 和 Helm chart 只部署 Soniq 自己拥有的资源：
 
 - `soniq-migrate` Job。
 - `soniq-api` Deployment 和 Service。
 - `soniq-worker` Deployment。
 - `soniq-config` ConfigMap。
-- `soniq-secret` 示例 Secret。
-- `soniq` Namespace。
+- `soniq-secret` 引用；raw manifests 里有 example Secret，Helm 里可以选择性渲染 Secret。
+- raw manifests 里有 `soniq` Namespace，Helm 里可以选择性渲染 Namespace。
 
 它们不部署 Postgres、Temporal、MinIO、Ingress、TLS certificates、Prometheus、Grafana 或 external secret controllers。
 
@@ -86,6 +88,40 @@ make helm-version
 ```
 
 如果本机没有安装 `helm`，Makefile 会 fallback 到 Docker 里的 Helm 镜像。
+
+校验 Helm chart：
+
+```bash
+make helm-lint
+make helm-template
+```
+
+默认 chart 会渲染 ServiceAccount、ConfigMap、API Service、API Deployment、
+worker Deployment，以及作为 pre-install/pre-upgrade hook 的 migration Job。它会引用
+`soniq-secret`，但默认不会渲染 Secret，所以真实 secret material 不会进入已提交的
+values。它也默认跟随 Helm release namespace，而不是创建 Namespace resource。
+
+如果只是想在本地渲染可选的 Namespace 和占位 Secret 路径：
+
+```bash
+HELM_TEMPLATE_ARGS='--set namespace.create=true --set secret.create=true --set-string secret.stringData.POSTGRES_DSN=postgres://soniq_user:change-me@postgres.example.com:5432/soniq?sslmode=require --set-string secret.stringData.S3_ACCESS_KEY=change-me --set-string secret.stringData.S3_SECRET_KEY=change-me' \
+  make helm-template
+```
+
+真实 Helm install 时，先准备私有 values 文件或外部 Secret，然后安装到目标 namespace：
+
+```bash
+helm upgrade --install soniq deploy/helm/soniq \
+  --namespace soniq \
+  --create-namespace \
+  --wait \
+  --timeout 5m \
+  -f values.production.yaml
+```
+
+默认情况下，migration Job 会作为 Helm `pre-install,pre-upgrade` hook 执行，所以
+migrations 成功完成后才会继续应用 API/worker 等应用资源。只有在明确想单独管理
+migration Job 时，才设置 `migrate.hook.enabled=false`。
 
 运行本地 manifest smoke：
 
@@ -207,7 +243,6 @@ kubectl -n soniq logs job/soniq-migrate
 
 ## 当前限制
 
-- 还没有 Helm chart。
 - 还没有 Ingress 或 TLS manifest。
 - 还没有 HPA、PDB、NetworkPolicy 或 topology spread constraints。
 - 还没有 Helm 级 cluster smoke script；当前 kind smoke 覆盖的是 raw-manifest

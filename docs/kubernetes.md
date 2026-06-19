@@ -1,19 +1,21 @@
 # Kubernetes Deployment
 
 This document describes the first Kubernetes deployment foundation for Soniq.
-It intentionally uses raw manifests under `deploy/kubernetes/base/` instead of
-Helm so the deployment contract stays easy to inspect.
+It includes raw manifests under `deploy/kubernetes/base/` for direct inspection
+and a first Helm chart under `deploy/helm/soniq/` for parameterized deployment.
 
 ## Scope
 
-The base manifests deploy only Soniq-owned resources:
+The raw manifests and Helm chart deploy only Soniq-owned resources:
 
 - `soniq-migrate` Job.
 - `soniq-api` Deployment and Service.
 - `soniq-worker` Deployment.
 - `soniq-config` ConfigMap.
-- `soniq-secret` example Secret.
-- `soniq` Namespace.
+- `soniq-secret` reference, with an example Secret in the raw manifests and
+  optional Secret rendering in Helm.
+- `soniq` Namespace in raw manifests, with optional Namespace rendering in
+  Helm.
 
 They do not deploy Postgres, Temporal, MinIO, Ingress, TLS certificates,
 Prometheus, Grafana, or external secret controllers.
@@ -95,6 +97,43 @@ make helm-version
 
 When local `helm` is unavailable, the Makefile falls back to a Dockerized Helm
 image.
+
+Validate the Helm chart:
+
+```bash
+make helm-lint
+make helm-template
+```
+
+The default chart renders ServiceAccount, ConfigMap, API Service, API
+Deployment, worker Deployment, and a pre-install/pre-upgrade migration Job hook.
+It references `soniq-secret` but does not render a Secret by default, so real
+secret material stays outside committed values. It also follows the Helm
+release namespace by default instead of creating a Namespace resource.
+
+For local rendering of the optional Namespace and placeholder Secret path:
+
+```bash
+HELM_TEMPLATE_ARGS='--set namespace.create=true --set secret.create=true --set-string secret.stringData.POSTGRES_DSN=postgres://soniq_user:change-me@postgres.example.com:5432/soniq?sslmode=require --set-string secret.stringData.S3_ACCESS_KEY=change-me --set-string secret.stringData.S3_SECRET_KEY=change-me' \
+  make helm-template
+```
+
+For a real Helm install, prepare a private values file or external Secret, then
+install into the target namespace:
+
+```bash
+helm upgrade --install soniq deploy/helm/soniq \
+  --namespace soniq \
+  --create-namespace \
+  --wait \
+  --timeout 5m \
+  -f values.production.yaml
+```
+
+The migration Job runs as a Helm `pre-install,pre-upgrade` hook by default, so
+application resources are not applied until migrations complete successfully.
+Set `migrate.hook.enabled=false` only when you intentionally want to manage the
+migration Job separately.
 
 Run the local manifest smoke:
 
@@ -226,7 +265,6 @@ kubectl -n soniq logs job/soniq-migrate
 
 ## Current Limitations
 
-- No Helm chart yet.
 - No Ingress or TLS manifest.
 - No HPA, PDB, NetworkPolicy, or topology spread constraints.
 - No Helm-based cluster smoke script yet; the current kind smoke validates the

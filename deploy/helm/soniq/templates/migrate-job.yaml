@@ -1,0 +1,51 @@
+{{- if .Values.migrate.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "soniq.migrateName" . }}
+  namespace: {{ include "soniq.namespace" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "soniq.migrateName" . }}
+    app.kubernetes.io/component: migrate
+    {{- include "soniq.commonLabels" . | nindent 4 }}
+  {{- if .Values.migrate.hook.enabled }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": {{ .Values.migrate.hook.weight | quote }}
+    "helm.sh/hook-delete-policy": {{ .Values.migrate.hook.deletePolicy | quote }}
+  {{- end }}
+spec:
+  backoffLimit: {{ .Values.migrate.backoffLimit }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "soniq.migrateName" . }}
+        app.kubernetes.io/component: migrate
+        {{- include "soniq.commonLabels" . | nindent 8 }}
+      {{- with .Values.migrate.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      restartPolicy: {{ .Values.migrate.restartPolicy }}
+      serviceAccountName: {{ include "soniq.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.migrate.podSecurityContext | nindent 8 }}
+      containers:
+        - name: migrate
+          image: "{{ .Values.migrate.image.repository }}:{{ .Values.migrate.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.migrate.image.pullPolicy }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "soniq.configName" . }}
+            - secretRef:
+                name: {{ include "soniq.secretName" . }}
+          resources:
+            {{- toYaml .Values.migrate.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.migrate.securityContext | nindent 12 }}
+{{- end }}

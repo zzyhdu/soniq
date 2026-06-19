@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "nameOverride": { "type": "string" },
+    "fullnameOverride": { "type": "string" },
+    "namespace": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create": { "type": "boolean" },
+        "name": { "type": "string" }
+      }
+    },
+    "commonLabels": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "imagePullSecrets": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create": { "type": "boolean" },
+        "name": { "type": "string" },
+        "automountToken": { "type": "boolean" }
+      }
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "data": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "secret": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create": { "type": "boolean" },
+        "name": { "type": "string" },
+        "stringData": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "api": { "$ref": "#/definitions/api" },
+    "worker": { "$ref": "#/definitions/worker" },
+    "migrate": { "$ref": "#/definitions/migrate" }
+  },
+  "definitions": {
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repository": { "type": "string" },
+        "tag": { "type": "string" },
+        "pullPolicy": { "type": "string" }
+      }
+    },
+    "probe": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "securityContext": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "api": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "replicas": { "type": "integer", "minimum": 0 },
+        "image": { "$ref": "#/definitions/image" },
+        "containerPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "service": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": { "type": "string" },
+            "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+            "targetPort": {
+              "oneOf": [
+                { "type": "string" },
+                { "type": "integer", "minimum": 1, "maximum": 65535 }
+              ]
+            }
+          }
+        },
+        "podAnnotations": { "type": "object", "additionalProperties": { "type": "string" } },
+        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "securityContext": { "$ref": "#/definitions/securityContext" },
+        "livenessProbe": { "$ref": "#/definitions/probe" },
+        "readinessProbe": { "$ref": "#/definitions/probe" },
+        "resources": { "$ref": "#/definitions/resources" }
+      }
+    },
+    "worker": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "replicas": { "type": "integer", "minimum": 0 },
+        "image": { "$ref": "#/definitions/image" },
+        "podAnnotations": { "type": "object", "additionalProperties": { "type": "string" } },
+        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "securityContext": { "$ref": "#/definitions/securityContext" },
+        "resources": { "$ref": "#/definitions/resources" }
+      }
+    },
+    "migrate": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "backoffLimit": { "type": "integer", "minimum": 0 },
+        "restartPolicy": { "type": "string" },
+        "hook": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "weight": { "type": "integer" },
+            "deletePolicy": { "type": "string" }
+          }
+        },
+        "image": { "$ref": "#/definitions/image" },
+        "podAnnotations": { "type": "object", "additionalProperties": { "type": "string" } },
+        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "securityContext": { "$ref": "#/definitions/securityContext" },
+        "resources": { "$ref": "#/definitions/resources" }
+      }
+    }
+  }
+}

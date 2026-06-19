@@ -4,10 +4,15 @@ POSTGRES_USER ?= soniq_user
 POSTGRES_DB ?= soniq
 POSTGRES_DSN ?= postgres://soniq_user:soniq_password@localhost:5432/soniq?sslmode=disable
 DOCKER ?= docker
-KUBECTL_IMAGE ?= bitnami/kubectl:latest
+KUBECTL_IMAGE ?= registry.k8s.io/kubectl:v1.36.2
 KUBECTL ?= $(if $(shell command -v kubectl 2>/dev/null),kubectl,$(DOCKER) run --rm -v $(CURDIR):/work -w /work $(KUBECTL_IMAGE))
-HELM_IMAGE ?= alpine/helm:latest
+HELM_IMAGE ?= alpine/helm:4.2.2
 HELM ?= $(if $(shell command -v helm 2>/dev/null),helm,$(DOCKER) run --rm -v $(CURDIR):/work -w /work $(HELM_IMAGE))
+HELM_CHART ?= deploy/helm/soniq
+HELM_RELEASE ?= soniq
+HELM_NAMESPACE ?= soniq
+HELM_TEMPLATE_ARGS ?=
+HELM_LINT_ARGS ?=
 APP_VERSION ?= dev
 DEFAULT_VCS_REF := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 DEFAULT_BUILD_DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -63,7 +68,7 @@ endif
 
 $(foreach key,$(CONFIG_ENV_KEYS),$(if $(filter environment command line,$(__ENV_ORIGIN_$(key))),$(eval override $(key) := $(__ENV_VALUE_$(key)))))
 
-.PHONY: fmt lint test api worker env-check migrate debug-purge-artifacts temporal-up temporal-down temporal-logs temporal-ps smoke-postgres-temporal docker-build docker-build-api docker-build-worker docker-build-migrate k8s-render k8s-dry-run k8s-smoke k8s-smoke-kind helm-version
+.PHONY: fmt lint test api worker env-check migrate debug-purge-artifacts temporal-up temporal-down temporal-logs temporal-ps smoke-postgres-temporal docker-build docker-build-api docker-build-worker docker-build-migrate k8s-render k8s-dry-run k8s-smoke k8s-smoke-kind helm-version helm-template helm-lint
 
 $(foreach key,$(CONFIG_ENV_KEYS),$(eval api worker env-check migrate debug-purge-artifacts smoke-postgres-temporal: export $(key) := $($(key))))
 
@@ -124,7 +129,7 @@ docker-build-migrate:
 		-t $(SONIQ_MIGRATE_IMAGE) .
 
 k8s-render:
-	$(KUBECTL) kustomize deploy/kubernetes/base
+	@$(KUBECTL) kustomize deploy/kubernetes/base
 
 k8s-dry-run:
 	K8S_SMOKE_SERVER_DRY_RUN=1 ./scripts/smoke-kubernetes-manifests.sh
@@ -137,6 +142,12 @@ k8s-smoke-kind:
 
 helm-version:
 	$(HELM) version --short
+
+helm-template:
+	@$(HELM) template $(HELM_RELEASE) $(HELM_CHART) --namespace $(HELM_NAMESPACE) $(HELM_TEMPLATE_ARGS)
+
+helm-lint:
+	$(HELM) lint $(HELM_CHART) $(HELM_LINT_ARGS)
 
 debug-purge-artifacts: export ENV_FILE := $(ENV_FILE)
 debug-purge-artifacts: export LIMIT := $(LIMIT)

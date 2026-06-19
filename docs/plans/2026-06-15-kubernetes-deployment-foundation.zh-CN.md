@@ -415,6 +415,21 @@ deploy/helm/soniq/
 
 这些作为外部依赖。
 
+当前进展：
+
+- 已新增 `deploy/helm/soniq/` Helm chart v0。
+- chart 当前渲染 ServiceAccount、ConfigMap、API Service、API Deployment、
+  worker Deployment 和 migration Job。
+- migration Job 默认作为 Helm `pre-install,pre-upgrade` hook 执行，避免 API/worker
+  在 migrations 完成前启动，也避免普通 Job 在 `helm upgrade` 时无法自然重跑。
+- chart 默认引用 `soniq-secret`，但不渲染 Secret；真实 secret 由外部 Secret
+  或私有 values 管理。
+- chart 默认跟随 Helm release namespace，不主动创建 Namespace；需要 raw-manifest
+  风格时可设置 `namespace.create=true`。
+- 已新增 `values.yaml` 和 `values.schema.json`。
+- 已新增 `make helm-template` 和 `make helm-lint`，并支持 pinned Dockerized Helm fallback。
+- optional Ingress、Helm install smoke 和生产 hardening 尚未实现。
+
 验收：
 
 - `helm template` 通过。

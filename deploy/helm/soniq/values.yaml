@@ -1,0 +1,157 @@
+nameOverride: ""
+fullnameOverride: ""
+
+namespace:
+  create: false
+  name: ""
+
+commonLabels: {}
+imagePullSecrets: []
+
+serviceAccount:
+  create: true
+  name: ""
+  automountToken: false
+
+config:
+  name: ""
+  data:
+    APP_ENV: production
+    APP_PUBLIC_URL: https://soniq.example.com
+    LOG_FORMAT: json
+    LOG_LEVEL: info
+    AUTH_SESSION_TTL_HOURS: "720"
+    AUTH_COOKIE_SECURE: "true"
+    API_ADDRESS: :8080
+    TEMPORAL_ADDRESS: temporal-frontend.temporal.svc.cluster.local:7233
+    TEMPORAL_NAMESPACE: default
+    TEMPORAL_TASK_QUEUE: soniq-audio-pipeline
+    PURGE_ARTIFACT_CLEANUP_INTERVAL_SECONDS: "300"
+    PURGE_ARTIFACT_CLEANUP_BATCH_SIZE: "25"
+    STORAGE_PROVIDER: s3_compatible
+    S3_ENDPOINT: https://s3.example.com
+    S3_REGION: us-east-1
+    S3_BUCKET: soniq
+    S3_FORCE_PATH_STYLE: "false"
+    TRANSCRIPTION_PROVIDER: fake_transcription
+    TRANSCRIPTION_BASE_URL: https://api.xiaomimimo.com/v1
+    TRANSCRIPTION_MODEL: mimo-v2.5-asr
+    TRANSCRIPTION_AUTH_HEADER: api-key
+    TRANSCRIPTION_LANGUAGE: auto
+    DASHSCOPE_BASE_URL: https://dashscope.aliyuncs.com/api/v1
+    DASHSCOPE_ASR_MODEL: paraformer-v2
+    LLM_PROVIDER: fake_llm
+    LLM_BASE_URL: https://dashscope.aliyuncs.com/compatible-mode/v1
+    LLM_MODEL: qwen3.7-plus
+    PRIVACY_ALLOW_EXTERNAL_MODEL_PROVIDERS: "false"
+    PRIVACY_DELETE_ORIGINAL_AUDIO_AFTER_TRANSCRIPTION: "false"
+
+secret:
+  create: false
+  name: ""
+  stringData: {}
+
+api:
+  replicas: 2
+  image:
+    repository: soniq-api
+    tag: dev
+    pullPolicy: IfNotPresent
+  containerPort: 8080
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: http
+  podAnnotations: {}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+  livenessProbe:
+    httpGet:
+      path: /healthz
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 20
+    timeoutSeconds: 2
+    failureThreshold: 3
+  readinessProbe:
+    httpGet:
+      path: /readyz
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 3
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+worker:
+  replicas: 1
+  image:
+    repository: soniq-worker
+    tag: dev
+    pullPolicy: IfNotPresent
+  podAnnotations: {}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+
+migrate:
+  enabled: true
+  backoffLimit: 3
+  restartPolicy: OnFailure
+  hook:
+    enabled: true
+    weight: -5
+    deletePolicy: before-hook-creation,hook-succeeded
+  image:
+    repository: soniq-migrate
+    tag: dev
+    pullPolicy: IfNotPresent
+  podAnnotations: {}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
