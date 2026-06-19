@@ -66,6 +66,10 @@ Non-sensitive values belong in ConfigMap-style configuration:
 | `TEMPORAL_ADDRESS` | yes | Temporal frontend host and port. |
 | `TEMPORAL_NAMESPACE` | yes | Temporal namespace used by API and worker. |
 | `TEMPORAL_TASK_QUEUE` | yes | Must match between API and worker. |
+| `WORKER_MAX_CONCURRENT_WORKFLOW_TASKS` | yes for worker | Per-worker maximum concurrent workflow task executions. Must be greater than 1. |
+| `WORKER_MAX_CONCURRENT_ACTIVITIES` | yes for worker | Per-worker maximum concurrent activity executions. Bounds audio processing and external model calls per worker pod. |
+| `WORKER_MAX_CONCURRENT_LOCAL_ACTIVITIES` | yes for worker | Per-worker maximum concurrent local activity executions. |
+| `WORKER_TASK_QUEUE_ACTIVITIES_PER_SECOND` | yes for worker | Optional task-queue-wide activity rate limit. Use `0` to leave the SDK default effectively unlimited. |
 | `PURGE_ARTIFACT_CLEANUP_INTERVAL_SECONDS` | yes for worker | Background purge cleanup interval. |
 | `PURGE_ARTIFACT_CLEANUP_BATCH_SIZE` | yes for worker | Cleanup batch size. |
 | `STORAGE_PROVIDER` | yes | Only `s3_compatible` is supported. |
@@ -198,6 +202,17 @@ lets the HorizontalPodAutoscaler own the replica count.
 Worker CPU autoscaling is available as a basic option, but Temporal workers are
 better scaled from task queue backlog or custom worker metrics once those
 metrics are exported.
+
+## Worker Concurrency
+
+Worker replicas and worker concurrency are separate controls. Replicas decide
+how many worker pods exist. `WORKER_MAX_CONCURRENT_ACTIVITIES` and related
+settings decide how much work each worker process can run at the same time.
+
+Keep per-worker activity concurrency aligned with CPU, memory, object storage,
+and external ASR/LLM provider limits. Raising worker replicas without bounding
+per-worker concurrency can multiply ffmpeg and model-provider traffic faster
+than the deployment can handle.
 
 ## Network Boundaries
 

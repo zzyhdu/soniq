@@ -54,6 +54,10 @@ Soniq migrations 只作用于 Soniq application Postgres 数据库，不能指�
 | `TEMPORAL_ADDRESS` | yes | Temporal frontend host 和 port。 |
 | `TEMPORAL_NAMESPACE` | yes | API 和 worker 使用的 Temporal namespace。 |
 | `TEMPORAL_TASK_QUEUE` | yes | API 和 worker 必须一致。 |
+| `WORKER_MAX_CONCURRENT_WORKFLOW_TASKS` | worker required | 单个 worker 进程最多同时执行多少 Temporal workflow tasks。必须大于 1。 |
+| `WORKER_MAX_CONCURRENT_ACTIVITIES` | worker required | 单个 worker 进程最多同时执行多少 Temporal activities。用于限制每个 worker pod 内的音频处理和外部 model 调用并发。 |
+| `WORKER_MAX_CONCURRENT_LOCAL_ACTIVITIES` | worker required | 单个 worker 进程最多同时执行多少 Temporal local activities。 |
+| `WORKER_TASK_QUEUE_ACTIVITIES_PER_SECOND` | worker required | 可选的整个 Temporal task queue activity 速率限制。设置为 `0` 表示使用 SDK 默认值，等价于不额外限速。 |
 | `PURGE_ARTIFACT_CLEANUP_INTERVAL_SECONDS` | worker required | 后台 purge cleanup 间隔。 |
 | `PURGE_ARTIFACT_CLEANUP_BATCH_SIZE` | worker required | cleanup batch size。 |
 | `STORAGE_PROVIDER` | yes | 当前只支持 `s3_compatible`。 |

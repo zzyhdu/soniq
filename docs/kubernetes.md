@@ -56,6 +56,11 @@ Edit `deploy/kubernetes/base/configmap.yaml` for non-secret settings:
 - `TEMPORAL_ADDRESS`
 - `TEMPORAL_NAMESPACE`
 - `TEMPORAL_TASK_QUEUE`
+- worker concurrency settings:
+  - `WORKER_MAX_CONCURRENT_WORKFLOW_TASKS`
+  - `WORKER_MAX_CONCURRENT_ACTIVITIES`
+  - `WORKER_MAX_CONCURRENT_LOCAL_ACTIVITIES`
+  - `WORKER_TASK_QUEUE_ACTIVITIES_PER_SECOND`
 - `S3_ENDPOINT`
 - `S3_REGION`
 - `S3_BUCKET`
@@ -322,6 +327,20 @@ enabled for a component, Helm does not render that Deployment's static
 Worker CPU autoscaling is only a baseline option. A later production setup
 should prefer Temporal task queue backlog or custom worker metrics for worker
 scaling decisions.
+
+## Worker Concurrency
+
+Worker replicas and per-worker concurrency should be tuned together. The
+baseline config sets:
+
+- `WORKER_MAX_CONCURRENT_WORKFLOW_TASKS=20`
+- `WORKER_MAX_CONCURRENT_ACTIVITIES=4`
+- `WORKER_MAX_CONCURRENT_LOCAL_ACTIVITIES=4`
+- `WORKER_TASK_QUEUE_ACTIVITIES_PER_SECOND=0`
+
+The activity limit is the main guardrail for ffmpeg work and external ASR/LLM
+provider calls inside each worker pod. The task-queue activity rate can be used
+later when a production environment needs a shared limit across all workers.
 
 ## Network Policies
 

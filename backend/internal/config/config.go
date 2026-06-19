@@ -19,6 +19,10 @@ type Config struct {
 	TemporalAddress                              string
 	TemporalNamespace                            string
 	TemporalTaskQueue                            string
+	WorkerMaxConcurrentWorkflowTasks             int64
+	WorkerMaxConcurrentActivities                int64
+	WorkerMaxConcurrentLocalActivities           int64
+	WorkerTaskQueueActivitiesPerSecond           float64
 	PurgeArtifactCleanupIntervalSeconds          int64
 	PurgeArtifactCleanupBatchSize                int64
 	StorageProvider                              string
@@ -59,6 +63,10 @@ func LoadFromEnv() Config {
 		TemporalAddress:                     envString("TEMPORAL_ADDRESS", "localhost:7233"),
 		TemporalNamespace:                   envString("TEMPORAL_NAMESPACE", "default"),
 		TemporalTaskQueue:                   envString("TEMPORAL_TASK_QUEUE", "soniq-audio-pipeline"),
+		WorkerMaxConcurrentWorkflowTasks:    envInt64ForValidation("WORKER_MAX_CONCURRENT_WORKFLOW_TASKS", 20),
+		WorkerMaxConcurrentActivities:       envInt64ForValidation("WORKER_MAX_CONCURRENT_ACTIVITIES", 4),
+		WorkerMaxConcurrentLocalActivities:  envInt64ForValidation("WORKER_MAX_CONCURRENT_LOCAL_ACTIVITIES", 4),
+		WorkerTaskQueueActivitiesPerSecond:  envFloat64("WORKER_TASK_QUEUE_ACTIVITIES_PER_SECOND", 0),
 		PurgeArtifactCleanupIntervalSeconds: envInt64("PURGE_ARTIFACT_CLEANUP_INTERVAL_SECONDS", 300),
 		PurgeArtifactCleanupBatchSize:       envInt64("PURGE_ARTIFACT_CLEANUP_BATCH_SIZE", 25),
 		StorageProvider:                     envString("STORAGE_PROVIDER", "s3_compatible"),
@@ -102,6 +110,18 @@ func (c Config) ValidateForStartup() error {
 	}
 	if strings.TrimSpace(c.TemporalTaskQueue) == "" {
 		return fmt.Errorf("TEMPORAL_TASK_QUEUE is required")
+	}
+	if c.WorkerMaxConcurrentWorkflowTasks <= 1 {
+		return fmt.Errorf("WORKER_MAX_CONCURRENT_WORKFLOW_TASKS must be greater than 1")
+	}
+	if c.WorkerMaxConcurrentActivities <= 0 {
+		return fmt.Errorf("WORKER_MAX_CONCURRENT_ACTIVITIES must be positive")
+	}
+	if c.WorkerMaxConcurrentLocalActivities <= 0 {
+		return fmt.Errorf("WORKER_MAX_CONCURRENT_LOCAL_ACTIVITIES must be positive")
+	}
+	if c.WorkerTaskQueueActivitiesPerSecond < 0 {
+		return fmt.Errorf("WORKER_TASK_QUEUE_ACTIVITIES_PER_SECOND must be non-negative")
 	}
 	if c.PurgeArtifactCleanupIntervalSeconds <= 0 {
 		return fmt.Errorf("PURGE_ARTIFACT_CLEANUP_INTERVAL_SECONDS must be positive")
@@ -265,6 +285,30 @@ func envInt64(key string, fallback int64) int64 {
 	}
 	var parsed int64
 	if _, err := fmt.Sscanf(strings.TrimSpace(value), "%d", &parsed); err != nil || parsed <= 0 {
+		return fallback
+	}
+	return parsed
+}
+
+func envInt64ForValidation(key string, fallback int64) int64 {
+	value, ok := os.LookupEnv(key)
+	if !ok {
+		return fallback
+	}
+	var parsed int64
+	if _, err := fmt.Sscanf(strings.TrimSpace(value), "%d", &parsed); err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func envFloat64(key string, fallback float64) float64 {
+	value, ok := os.LookupEnv(key)
+	if !ok {
+		return fallback
+	}
+	var parsed float64
+	if _, err := fmt.Sscanf(strings.TrimSpace(value), "%f", &parsed); err != nil {
 		return fallback
 	}
 	return parsed

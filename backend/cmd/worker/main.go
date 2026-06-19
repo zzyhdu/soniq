@@ -57,6 +57,10 @@ func main() {
 		slog.String("temporal_address", cfg.TemporalAddress),
 		slog.String("temporal_namespace", cfg.TemporalNamespace),
 		slog.String("temporal_task_queue", cfg.TemporalTaskQueue),
+		slog.Int64("worker_max_concurrent_workflow_tasks", cfg.WorkerMaxConcurrentWorkflowTasks),
+		slog.Int64("worker_max_concurrent_activities", cfg.WorkerMaxConcurrentActivities),
+		slog.Int64("worker_max_concurrent_local_activities", cfg.WorkerMaxConcurrentLocalActivities),
+		slog.Float64("worker_task_queue_activities_per_second", cfg.WorkerTaskQueueActivitiesPerSecond),
 		slog.String("version", version.Version),
 		slog.String("commit", version.Commit),
 	)
@@ -95,9 +99,7 @@ func run(ctx context.Context, cfg config.Config) error {
 		return err
 	}
 
-	worker := temporalworker.New(temporalClient, cfg.TemporalTaskQueue, temporalworker.Options{
-		WorkerStopTimeout: workerStopTimeout,
-	})
+	worker := temporalworker.New(temporalClient, cfg.TemporalTaskQueue, workerOptionsForConfig(cfg))
 	objectStore, err := buildObjectStore(ctx, cfg)
 	if err != nil {
 		return err
@@ -109,6 +111,16 @@ func run(ctx context.Context, cfg config.Config) error {
 		Logger:    slog.Default(),
 	})
 	return runTemporalWorkerWithCleanup(ctx, worker, cleanupRunner)
+}
+
+func workerOptionsForConfig(cfg config.Config) temporalworker.Options {
+	return temporalworker.Options{
+		WorkerStopTimeout:                       workerStopTimeout,
+		MaxConcurrentWorkflowTaskExecutionSize:  int(cfg.WorkerMaxConcurrentWorkflowTasks),
+		MaxConcurrentActivityExecutionSize:      int(cfg.WorkerMaxConcurrentActivities),
+		MaxConcurrentLocalActivityExecutionSize: int(cfg.WorkerMaxConcurrentLocalActivities),
+		TaskQueueActivitiesPerSecond:            cfg.WorkerTaskQueueActivitiesPerSecond,
+	}
 }
 
 type temporalWorkerRunner interface {

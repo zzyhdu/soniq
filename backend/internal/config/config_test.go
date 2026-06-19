@@ -19,6 +19,10 @@ func clearConfigEnv(t *testing.T) {
 		"TEMPORAL_ADDRESS",
 		"TEMPORAL_NAMESPACE",
 		"TEMPORAL_TASK_QUEUE",
+		"WORKER_MAX_CONCURRENT_WORKFLOW_TASKS",
+		"WORKER_MAX_CONCURRENT_ACTIVITIES",
+		"WORKER_MAX_CONCURRENT_LOCAL_ACTIVITIES",
+		"WORKER_TASK_QUEUE_ACTIVITIES_PER_SECOND",
 		"PURGE_ARTIFACT_CLEANUP_INTERVAL_SECONDS",
 		"PURGE_ARTIFACT_CLEANUP_BATCH_SIZE",
 		"STORAGE_PROVIDER",
@@ -94,6 +98,18 @@ func TestLoadFromEnvUsesDevelopmentDefaults(t *testing.T) {
 	}
 	if cfg.TemporalTaskQueue != "soniq-audio-pipeline" {
 		t.Fatalf("TemporalTaskQueue = %q, want soniq-audio-pipeline", cfg.TemporalTaskQueue)
+	}
+	if cfg.WorkerMaxConcurrentWorkflowTasks != 20 {
+		t.Fatalf("WorkerMaxConcurrentWorkflowTasks = %d, want 20", cfg.WorkerMaxConcurrentWorkflowTasks)
+	}
+	if cfg.WorkerMaxConcurrentActivities != 4 {
+		t.Fatalf("WorkerMaxConcurrentActivities = %d, want 4", cfg.WorkerMaxConcurrentActivities)
+	}
+	if cfg.WorkerMaxConcurrentLocalActivities != 4 {
+		t.Fatalf("WorkerMaxConcurrentLocalActivities = %d, want 4", cfg.WorkerMaxConcurrentLocalActivities)
+	}
+	if cfg.WorkerTaskQueueActivitiesPerSecond != 0 {
+		t.Fatalf("WorkerTaskQueueActivitiesPerSecond = %f, want 0", cfg.WorkerTaskQueueActivitiesPerSecond)
 	}
 	if cfg.PurgeArtifactCleanupIntervalSeconds != 300 {
 		t.Fatalf("PurgeArtifactCleanupIntervalSeconds = %d, want 300", cfg.PurgeArtifactCleanupIntervalSeconds)
@@ -178,6 +194,10 @@ func TestLoadFromEnvAppliesEnvironmentOverrides(t *testing.T) {
 	t.Setenv("TEMPORAL_ADDRESS", "temporal:7233")
 	t.Setenv("TEMPORAL_NAMESPACE", "soniq")
 	t.Setenv("TEMPORAL_TASK_QUEUE", "custom-queue")
+	t.Setenv("WORKER_MAX_CONCURRENT_WORKFLOW_TASKS", "40")
+	t.Setenv("WORKER_MAX_CONCURRENT_ACTIVITIES", "8")
+	t.Setenv("WORKER_MAX_CONCURRENT_LOCAL_ACTIVITIES", "6")
+	t.Setenv("WORKER_TASK_QUEUE_ACTIVITIES_PER_SECOND", "12.5")
 	t.Setenv("PURGE_ARTIFACT_CLEANUP_INTERVAL_SECONDS", "15")
 	t.Setenv("PURGE_ARTIFACT_CLEANUP_BATCH_SIZE", "7")
 	t.Setenv("STORAGE_PROVIDER", "s3_compatible")
@@ -237,6 +257,18 @@ func TestLoadFromEnvAppliesEnvironmentOverrides(t *testing.T) {
 	}
 	if cfg.TemporalTaskQueue != "custom-queue" {
 		t.Fatalf("TemporalTaskQueue = %q, want override", cfg.TemporalTaskQueue)
+	}
+	if cfg.WorkerMaxConcurrentWorkflowTasks != 40 {
+		t.Fatalf("WorkerMaxConcurrentWorkflowTasks = %d, want override", cfg.WorkerMaxConcurrentWorkflowTasks)
+	}
+	if cfg.WorkerMaxConcurrentActivities != 8 {
+		t.Fatalf("WorkerMaxConcurrentActivities = %d, want override", cfg.WorkerMaxConcurrentActivities)
+	}
+	if cfg.WorkerMaxConcurrentLocalActivities != 6 {
+		t.Fatalf("WorkerMaxConcurrentLocalActivities = %d, want override", cfg.WorkerMaxConcurrentLocalActivities)
+	}
+	if cfg.WorkerTaskQueueActivitiesPerSecond != 12.5 {
+		t.Fatalf("WorkerTaskQueueActivitiesPerSecond = %f, want override", cfg.WorkerTaskQueueActivitiesPerSecond)
 	}
 	if cfg.PurgeArtifactCleanupIntervalSeconds != 15 {
 		t.Fatalf("PurgeArtifactCleanupIntervalSeconds = %d, want override", cfg.PurgeArtifactCleanupIntervalSeconds)
@@ -323,6 +355,24 @@ func TestLoadFromEnvUsesDashScopeAPIKeyAsLLMFallback(t *testing.T) {
 	}
 }
 
+func TestLoadFromEnvPreservesInvalidWorkerConcurrencyForValidation(t *testing.T) {
+	clearConfigEnv(t)
+	t.Setenv("WORKER_MAX_CONCURRENT_ACTIVITIES", "0")
+	t.Setenv("WORKER_TASK_QUEUE_ACTIVITIES_PER_SECOND", "-1")
+
+	cfg := LoadFromEnv()
+
+	if cfg.WorkerMaxConcurrentActivities != 0 {
+		t.Fatalf("WorkerMaxConcurrentActivities = %d, want invalid env value preserved", cfg.WorkerMaxConcurrentActivities)
+	}
+	if cfg.WorkerTaskQueueActivitiesPerSecond != -1 {
+		t.Fatalf("WorkerTaskQueueActivitiesPerSecond = %f, want invalid env value preserved", cfg.WorkerTaskQueueActivitiesPerSecond)
+	}
+	if err := cfg.ValidateForStartup(); err == nil {
+		t.Fatal("ValidateForStartup() error = nil, want invalid worker concurrency config error")
+	}
+}
+
 func TestValidateForStartupRejectsRequiredEmptyValues(t *testing.T) {
 	cfg := LoadFromEnv()
 	cfg.TemporalTaskQueue = ""
@@ -385,6 +435,32 @@ func TestValidateForStartupRejectsInvalidPurgeArtifactCleanupConfig(t *testing.T
 	cfg.PurgeArtifactCleanupBatchSize = 0
 	if err := cfg.ValidateForStartup(); err == nil {
 		t.Fatal("ValidateForStartup() error = nil, want invalid cleanup batch size error")
+	}
+}
+
+func TestValidateForStartupRejectsInvalidWorkerConcurrencyConfig(t *testing.T) {
+	cfg := LoadFromEnv()
+	cfg.WorkerMaxConcurrentWorkflowTasks = 1
+	if err := cfg.ValidateForStartup(); err == nil {
+		t.Fatal("ValidateForStartup() error = nil, want invalid workflow task concurrency error")
+	}
+
+	cfg = LoadFromEnv()
+	cfg.WorkerMaxConcurrentActivities = 0
+	if err := cfg.ValidateForStartup(); err == nil {
+		t.Fatal("ValidateForStartup() error = nil, want invalid activity concurrency error")
+	}
+
+	cfg = LoadFromEnv()
+	cfg.WorkerMaxConcurrentLocalActivities = 0
+	if err := cfg.ValidateForStartup(); err == nil {
+		t.Fatal("ValidateForStartup() error = nil, want invalid local activity concurrency error")
+	}
+
+	cfg = LoadFromEnv()
+	cfg.WorkerTaskQueueActivitiesPerSecond = -1
+	if err := cfg.ValidateForStartup(); err == nil {
+		t.Fatal("ValidateForStartup() error = nil, want invalid task queue activities rate error")
 	}
 }
 

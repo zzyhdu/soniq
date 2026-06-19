@@ -52,6 +52,11 @@ make docker-build
 - `TEMPORAL_ADDRESS`
 - `TEMPORAL_NAMESPACE`
 - `TEMPORAL_TASK_QUEUE`
+- worker concurrency settings：
+  - `WORKER_MAX_CONCURRENT_WORKFLOW_TASKS`
+  - `WORKER_MAX_CONCURRENT_ACTIVITIES`
+  - `WORKER_MAX_CONCURRENT_LOCAL_ACTIVITIES`
+  - `WORKER_TASK_QUEUE_ACTIVITIES_PER_SECOND`
 - `S3_ENDPOINT`
 - `S3_REGION`
 - `S3_BUCKET`
@@ -293,6 +298,19 @@ values 里开启。某个组件开启 autoscaling 后，Helm 不再渲染这个 
 
 worker 的 CPU autoscaling 只是基础选项。后续更适合用 Temporal task queue backlog
 或自定义 worker metrics 来做 worker 扩缩容决策。
+
+## Worker Concurrency
+
+worker replicas 和单个 worker 内部并发需要一起调。基础配置是：
+
+- `WORKER_MAX_CONCURRENT_WORKFLOW_TASKS=20`
+- `WORKER_MAX_CONCURRENT_ACTIVITIES=4`
+- `WORKER_MAX_CONCURRENT_LOCAL_ACTIVITIES=4`
+- `WORKER_TASK_QUEUE_ACTIVITIES_PER_SECOND=0`
+
+其中 activity limit 是主要保护项，用来限制每个 worker pod 内同时进行的 ffmpeg
+工作和外部 ASR/LLM provider 调用。task queue activity rate 后续可以用于生产环境
+需要所有 worker 共享一个整体速率上限的场景。
 
 ## Network Policies
 

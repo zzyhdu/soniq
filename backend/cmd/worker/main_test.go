@@ -87,6 +87,32 @@ func TestRunTemporalWorkerWithCleanupReturnsWorkerError(t *testing.T) {
 	}
 }
 
+func TestWorkerOptionsForConfigMapsConcurrencyLimits(t *testing.T) {
+	cfg := config.LoadFromEnv()
+	cfg.WorkerMaxConcurrentWorkflowTasks = 32
+	cfg.WorkerMaxConcurrentActivities = 6
+	cfg.WorkerMaxConcurrentLocalActivities = 5
+	cfg.WorkerTaskQueueActivitiesPerSecond = 2.5
+
+	options := workerOptionsForConfig(cfg)
+
+	if options.WorkerStopTimeout != workerStopTimeout {
+		t.Fatalf("WorkerStopTimeout = %s, want %s", options.WorkerStopTimeout, workerStopTimeout)
+	}
+	if options.MaxConcurrentWorkflowTaskExecutionSize != 32 {
+		t.Fatalf("MaxConcurrentWorkflowTaskExecutionSize = %d, want 32", options.MaxConcurrentWorkflowTaskExecutionSize)
+	}
+	if options.MaxConcurrentActivityExecutionSize != 6 {
+		t.Fatalf("MaxConcurrentActivityExecutionSize = %d, want 6", options.MaxConcurrentActivityExecutionSize)
+	}
+	if options.MaxConcurrentLocalActivityExecutionSize != 5 {
+		t.Fatalf("MaxConcurrentLocalActivityExecutionSize = %d, want 5", options.MaxConcurrentLocalActivityExecutionSize)
+	}
+	if options.TaskQueueActivitiesPerSecond != 2.5 {
+		t.Fatalf("TaskQueueActivitiesPerSecond = %f, want 2.5", options.TaskQueueActivitiesPerSecond)
+	}
+}
+
 func TestRegisterRecordingProcessingRegistersWorkflowAndActivities(t *testing.T) {
 	worker := &recordingWorkerSpy{}
 	store := &workerRecordingStoreSpy{}

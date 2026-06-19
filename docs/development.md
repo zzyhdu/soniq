@@ -793,6 +793,10 @@ The current backend reads environment variables directly. Important local settin
 | `TEMPORAL_ADDRESS` | `localhost:7233` | Temporal server address used by `make api` and `make worker`. |
 | `TEMPORAL_NAMESPACE` | `default` | Temporal namespace used by `make api` and `make worker`. |
 | `TEMPORAL_TASK_QUEUE` | `soniq-audio-pipeline` | Task queue used when the API starts workflows and the worker polls work. |
+| `WORKER_MAX_CONCURRENT_WORKFLOW_TASKS` | `20` | Maximum concurrent Temporal workflow task executions per worker process. Must be greater than 1. |
+| `WORKER_MAX_CONCURRENT_ACTIVITIES` | `4` | Maximum concurrent Temporal activity executions per worker process. This bounds audio processing and external model calls per worker. |
+| `WORKER_MAX_CONCURRENT_LOCAL_ACTIVITIES` | `4` | Maximum concurrent Temporal local activity executions per worker process. |
+| `WORKER_TASK_QUEUE_ACTIVITIES_PER_SECOND` | `0` | Optional server-side activity rate limit for the whole Temporal task queue. `0` leaves the SDK default effectively unlimited. |
 | `STORAGE_PROVIDER` | `s3_compatible` | Object storage provider selector. The supported value is `s3_compatible`. |
 | `S3_ENDPOINT` | `http://localhost:9000` | S3-compatible endpoint used when `STORAGE_PROVIDER=s3_compatible`; points at local MinIO in the Compose stack. |
 | `S3_REGION` | `us-east-1` | S3-compatible region value. |

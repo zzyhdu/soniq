@@ -522,6 +522,7 @@ verify purge artifact rows deleted status
 - raw manifests 已为 API 设置基础 HorizontalPodAutoscaler；Helm chart 已提供 API/worker autoscaling values，默认关闭，生产环境可按 metrics-server 和容量策略开启。
 - raw manifests 和 Helm chart 已为 API/worker 设置 topology spread constraints；默认按节点 hostname 尽量分散副本，同时保留单节点 kind 的调度能力。
 - raw manifests 和 Helm chart 已为 API、worker、migration containers 开启 read-only root filesystem，并通过 `/tmp` emptyDir 显式保留运行时临时文件写入路径。
+- worker 已支持 Temporal 并发配置：workflow task、activity、local activity 并发上限，以及可选 task queue activity rate limit；raw manifests 和 Helm values 已暴露默认值。
 
 ## 推荐执行顺序
 
