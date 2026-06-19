@@ -11,6 +11,7 @@ raw manifests 和 Helm chart 只部署 Soniq 自己拥有的资源：
 - `soniq-migrate` Job。
 - `soniq-api` Deployment 和 Service。
 - `soniq-worker` Deployment。
+- `soniq-api` 和 `soniq-worker` PodDisruptionBudgets。
 - `soniq-config` ConfigMap。
 - `soniq-secret` 引用；raw manifests 里有 example Secret，Helm 里可以选择性渲染 Secret。
 - raw manifests 里有 `soniq` Namespace，Helm 里可以选择性渲染 Namespace。
@@ -244,6 +245,13 @@ Kubernetes 有时间把 Pod 从 Service endpoints 移除，并让正在处理的
 `soniq-worker` 会把同一个停止信号传给 Temporal worker 和 purge artifact cleanup
 loop；Temporal worker 使用 25 秒 `WorkerStopTimeout`，在 Pod 级别的 30 秒宽限期
 结束前尽量完成 drain。
+
+## Disruption Budgets
+
+raw manifests 和 Helm chart 会为 API 和 worker 创建 PodDisruptionBudget。
+两者默认都是 `minAvailable: 1`。在默认 2 个 API replicas 和 2 个 worker replicas
+的情况下，Kubernetes 做节点维护或集群升级时可以自愿驱逐其中一个 Pod，同时保留
+至少一个 API Pod 和一个 worker Pod 继续运行。
 
 ## 更新 Migrations
 

@@ -79,12 +79,34 @@
       "type": "object",
       "additionalProperties": true
     },
+    "pdb": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "minAvailable": {
+          "oneOf": [
+            { "type": "integer", "minimum": 0 },
+            { "type": "string" },
+            { "type": "null" }
+          ]
+        },
+        "maxUnavailable": {
+          "oneOf": [
+            { "type": "integer", "minimum": 0 },
+            { "type": "string" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
     "api": {
       "type": "object",
       "additionalProperties": true,
       "properties": {
         "replicas": { "type": "integer", "minimum": 0 },
         "terminationGracePeriodSeconds": { "type": "integer", "minimum": 1 },
+        "pdb": { "$ref": "#/definitions/pdb" },
         "image": { "$ref": "#/definitions/image" },
         "containerPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
         "service": {
@@ -115,6 +137,7 @@
       "properties": {
         "replicas": { "type": "integer", "minimum": 0 },
         "terminationGracePeriodSeconds": { "type": "integer", "minimum": 1 },
+        "pdb": { "$ref": "#/definitions/pdb" },
         "image": { "$ref": "#/definitions/image" },
         "podAnnotations": { "type": "object", "additionalProperties": { "type": "string" } },
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },

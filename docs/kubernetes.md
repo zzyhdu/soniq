@@ -11,6 +11,7 @@ The raw manifests and Helm chart deploy only Soniq-owned resources:
 - `soniq-migrate` Job.
 - `soniq-api` Deployment and Service.
 - `soniq-worker` Deployment.
+- `soniq-api` and `soniq-worker` PodDisruptionBudgets.
 - `soniq-config` ConfigMap.
 - `soniq-secret` reference, with an example Secret in the raw manifests and
   optional Secret rendering in Helm.
@@ -267,6 +268,13 @@ has time to remove the pod from service endpoints and let in-flight requests
 finish. `soniq-worker` passes the same signal context to the Temporal worker and
 purge artifact cleanup loop; the Temporal worker uses a 25 second
 `WorkerStopTimeout` before the pod-level grace period expires.
+
+## Disruption Budgets
+
+The raw manifests and Helm chart create PodDisruptionBudgets for API and worker.
+Both default to `minAvailable: 1`. With the default 2 API replicas and 2 worker
+replicas, Kubernetes can voluntarily evict one pod during node maintenance or
+cluster upgrades while keeping at least one API pod and one worker pod running.
 
 ## Update Migrations
 

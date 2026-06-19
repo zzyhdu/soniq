@@ -152,3 +152,11 @@ cleanup loop.
 Kubernetes pods should allow at least 30 seconds of termination grace for API
 and worker pods so the process-level 25 second drain can finish before the
 container is force-killed.
+
+## Disruption Budgets
+
+API and worker deployments should run at least two replicas in production-like
+environments. Soniq's Kubernetes manifests set API replicas to 2 and worker
+replicas to 2 by default, with PodDisruptionBudgets requiring at least one API
+pod and one worker pod to remain available during voluntary disruptions such as
+node drains and cluster upgrades.

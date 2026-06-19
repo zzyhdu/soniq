@@ -8,3 +8,5 @@ resources:
   - api-deployment.yaml
   - api-service.yaml
   - worker-deployment.yaml
+  - api-pdb.yaml
+  - worker-pdb.yaml

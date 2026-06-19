@@ -1,3 +1,15 @@
 {{- if and .Values.migrate.enabled .Values.migrate.hook.enabled .Values.secret.create -}}
 {{- fail "secret.create=true cannot be used with migrate.hook.enabled=true because the pre-install migration hook runs before chart-created Secrets exist. Pre-create the Secret, or set migrate.hook.enabled=false and manage migration separately." -}}
 {{- end -}}
+{{- range $component, $pdb := dict "api" .Values.api.pdb "worker" .Values.worker.pdb -}}
+{{- if $pdb.enabled -}}
+{{- $hasMinAvailable := ne $pdb.minAvailable nil -}}
+{{- $hasMaxUnavailable := ne $pdb.maxUnavailable nil -}}
+{{- if and $hasMinAvailable $hasMaxUnavailable -}}
+{{- fail (printf "%s.pdb must set only one of minAvailable or maxUnavailable" $component) -}}
+{{- end -}}
+{{- if not (or $hasMinAvailable $hasMaxUnavailable) -}}
+{{- fail (printf "%s.pdb must set minAvailable or maxUnavailable when enabled" $component) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}

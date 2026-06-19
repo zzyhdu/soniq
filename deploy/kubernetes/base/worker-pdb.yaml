@@ -1,0 +1,15 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: soniq-worker
+  namespace: soniq
+  labels:
+    app.kubernetes.io/name: soniq-worker
+    app.kubernetes.io/component: worker
+    app.kubernetes.io/part-of: soniq
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: soniq-worker
+      app.kubernetes.io/component: worker

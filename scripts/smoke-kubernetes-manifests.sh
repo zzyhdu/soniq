@@ -61,6 +61,8 @@ expected_resources = {
     ("Deployment", "soniq-api", "soniq"),
     ("Service", "soniq-api", "soniq"),
     ("Deployment", "soniq-worker", "soniq"),
+    ("PodDisruptionBudget", "soniq-api", "soniq"),
+    ("PodDisruptionBudget", "soniq-worker", "soniq"),
 }
 
 
@@ -110,6 +112,8 @@ api = by_id[("Deployment", "soniq-api", "soniq")]
 worker = by_id[("Deployment", "soniq-worker", "soniq")]
 migrate = by_id[("Job", "soniq-migrate", "soniq")]
 service = by_id[("Service", "soniq-api", "soniq")]
+api_pdb = by_id[("PodDisruptionBudget", "soniq-api", "soniq")]
+worker_pdb = by_id[("PodDisruptionBudget", "soniq-worker", "soniq")]
 expected_pod_users = {
     ("Deployment", "soniq-api", "soniq"): (65532, 65532),
     ("Deployment", "soniq-worker", "soniq"): (10001, 10001),
@@ -187,6 +191,19 @@ api_pod_labels = (
 for key, value in service_selector.items():
     if api_pod_labels.get(key) != value:
         raise SystemExit(f"soniq-api Service selector {key}={value} does not match API pod labels")
+
+for pdb, deployment in [(api_pdb, api), (worker_pdb, worker)]:
+    pdb_spec = pdb.get("spec") or {}
+    if pdb_spec.get("minAvailable") != 1:
+        raise SystemExit(f"{resource_id(pdb)} minAvailable must be 1")
+    selector = ((pdb_spec.get("selector") or {}).get("matchLabels")) or {}
+    pod_labels = (
+        (((deployment.get("spec") or {}).get("template") or {}).get("metadata") or {}).get("labels")
+        or {}
+    )
+    for key, value in selector.items():
+        if pod_labels.get(key) != value:
+            raise SystemExit(f"{resource_id(pdb)} selector {key}={value} does not match pod labels")
 
 if (migrate.get("spec") or {}).get("backoffLimit") != 3:
     raise SystemExit("soniq-migrate backoffLimit must be 3")

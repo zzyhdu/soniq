@@ -1,0 +1,22 @@
+{{- if .Values.worker.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "soniq.workerName" . }}
+  namespace: {{ include "soniq.namespace" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "soniq.workerName" . }}
+    app.kubernetes.io/component: worker
+    {{- include "soniq.commonLabels" . | nindent 4 }}
+spec:
+  {{- if ne .Values.worker.pdb.minAvailable nil }}
+  minAvailable: {{ .Values.worker.pdb.minAvailable }}
+  {{- end }}
+  {{- if ne .Values.worker.pdb.maxUnavailable nil }}
+  maxUnavailable: {{ .Values.worker.pdb.maxUnavailable }}
+  {{- end }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "soniq.workerName" . }}
+      app.kubernetes.io/component: worker
+{{- end }}
