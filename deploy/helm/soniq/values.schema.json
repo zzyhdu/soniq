@@ -30,6 +30,7 @@
         "automountToken": { "type": "boolean" }
       }
     },
+    "networkPolicy": { "$ref": "#/definitions/networkPolicy" },
     "config": {
       "type": "object",
       "additionalProperties": false,
@@ -97,6 +98,61 @@
             { "type": "string" },
             { "type": "null" }
           ]
+        }
+      }
+    },
+    "networkPolicyRule": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "allowedEgressTCPPorts": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 1, "maximum": 65535 }
+        },
+        "api": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ingress": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "from": {
+                  "type": "array",
+                  "items": { "type": "object", "additionalProperties": true }
+                }
+              }
+            },
+            "extraEgress": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/networkPolicyRule" }
+            }
+          }
+        },
+        "worker": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "extraEgress": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/networkPolicyRule" }
+            }
+          }
+        },
+        "migrate": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "extraEgress": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/networkPolicyRule" }
+            }
+          }
         }
       }
     },

@@ -160,3 +160,18 @@ environments. Soniq's Kubernetes manifests set API replicas to 2 and worker
 replicas to 2 by default, with PodDisruptionBudgets requiring at least one API
 pod and one worker pod to remain available during voluntary disruptions such as
 node drains and cluster upgrades.
+
+## Network Boundaries
+
+Kubernetes NetworkPolicy should be enabled in clusters whose CNI plugin enforces
+it. Soniq's baseline policies select API, worker, and migration pods:
+
+- API allows inbound TCP 8080 for HTTP traffic.
+- Worker and migration pods deny inbound traffic.
+- API, worker, and migration pods allow outbound DNS plus TCP 80, 443, 9000,
+  5432, and 7233 for object storage, Postgres, Temporal, and external model
+  providers.
+
+Production environments with dependencies on different ports or stricter IP
+boundaries should override the Helm `networkPolicy` values with cluster-specific
+egress rules.

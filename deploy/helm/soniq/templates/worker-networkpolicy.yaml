@@ -1,0 +1,25 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "soniq.workerName" . }}
+  namespace: {{ include "soniq.namespace" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "soniq.workerName" . }}
+    app.kubernetes.io/component: worker
+    {{- include "soniq.commonLabels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "soniq.workerName" . }}
+      app.kubernetes.io/component: worker
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress:
+    {{- include "soniq.networkPolicyEgress" . | nindent 4 }}
+    {{- with .Values.networkPolicy.worker.extraEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}

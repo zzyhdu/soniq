@@ -13,6 +13,23 @@ serviceAccount:
   name: ""
   automountToken: false
 
+networkPolicy:
+  enabled: true
+  allowedEgressTCPPorts:
+    - 80
+    - 443
+    - 9000
+    - 5432
+    - 7233
+  api:
+    ingress:
+      from: []
+    extraEgress: []
+  worker:
+    extraEgress: []
+  migrate:
+    extraEgress: []
+
 config:
   name: ""
   data:

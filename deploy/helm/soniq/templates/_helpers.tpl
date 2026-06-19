@@ -86,3 +86,19 @@ Component-specific names.
 {{- define "soniq.migrateName" -}}
 {{- printf "%s-migrate" (include "soniq.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
+
+{{/*
+Common egress rules for Soniq NetworkPolicy resources.
+*/}}
+{{- define "soniq.networkPolicyEgress" -}}
+- ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+- ports:
+{{- range .Values.networkPolicy.allowedEgressTCPPorts }}
+    - protocol: TCP
+      port: {{ . }}
+{{- end }}
+{{- end -}}

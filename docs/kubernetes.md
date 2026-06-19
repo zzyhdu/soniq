@@ -12,6 +12,7 @@ The raw manifests and Helm chart deploy only Soniq-owned resources:
 - `soniq-api` Deployment and Service.
 - `soniq-worker` Deployment.
 - `soniq-api` and `soniq-worker` PodDisruptionBudgets.
+- `soniq-api`, `soniq-worker`, and `soniq-migrate` NetworkPolicies.
 - `soniq-config` ConfigMap.
 - `soniq-secret` reference, with an example Secret in the raw manifests and
   optional Secret rendering in Helm.
@@ -239,6 +240,11 @@ Then start API and worker:
 kubectl apply -f deploy/kubernetes/base/api-deployment.yaml
 kubectl apply -f deploy/kubernetes/base/api-service.yaml
 kubectl apply -f deploy/kubernetes/base/worker-deployment.yaml
+kubectl apply -f deploy/kubernetes/base/api-pdb.yaml
+kubectl apply -f deploy/kubernetes/base/worker-pdb.yaml
+kubectl apply -f deploy/kubernetes/base/api-networkpolicy.yaml
+kubectl apply -f deploy/kubernetes/base/worker-networkpolicy.yaml
+kubectl apply -f deploy/kubernetes/base/migrate-networkpolicy.yaml
 ```
 
 Wait for API readiness:
@@ -275,6 +281,19 @@ The raw manifests and Helm chart create PodDisruptionBudgets for API and worker.
 Both default to `minAvailable: 1`. With the default 2 API replicas and 2 worker
 replicas, Kubernetes can voluntarily evict one pod during node maintenance or
 cluster upgrades while keeping at least one API pod and one worker pod running.
+
+## Network Policies
+
+The raw manifests and Helm chart create NetworkPolicies for API, worker, and
+migration pods. These policies require a Kubernetes CNI plugin that enforces
+NetworkPolicy.
+
+The baseline policy allows API ingress on TCP 8080, denies worker and migration
+ingress, and allows egress for DNS plus TCP 80, 443, 9000, 5432, and 7233.
+Those ports cover the default HTTP/HTTPS, MinIO/S3-compatible, Postgres, and
+Temporal paths. If production dependencies use different ports or require
+destination-specific allowlists, override Helm `networkPolicy` values before
+installing.
 
 ## Update Migrations
 
@@ -313,7 +332,7 @@ kubectl -n soniq logs job/soniq-migrate
 ## Current Limitations
 
 - No Ingress or TLS manifest.
-- No HPA, PDB, NetworkPolicy, or topology spread constraints.
+- No HPA or topology spread constraints.
 - No remote-cluster release smoke yet; current cluster smoke coverage is local
   kind for both raw manifests and Helm.
 - Worker exposes no HTTP health endpoint, so worker health is currently based

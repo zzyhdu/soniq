@@ -63,6 +63,9 @@ expected_resources = {
     ("Deployment", "soniq-worker", "soniq"),
     ("PodDisruptionBudget", "soniq-api", "soniq"),
     ("PodDisruptionBudget", "soniq-worker", "soniq"),
+    ("NetworkPolicy", "soniq-api", "soniq"),
+    ("NetworkPolicy", "soniq-worker", "soniq"),
+    ("NetworkPolicy", "soniq-migrate", "soniq"),
 }
 
 
@@ -114,6 +117,9 @@ migrate = by_id[("Job", "soniq-migrate", "soniq")]
 service = by_id[("Service", "soniq-api", "soniq")]
 api_pdb = by_id[("PodDisruptionBudget", "soniq-api", "soniq")]
 worker_pdb = by_id[("PodDisruptionBudget", "soniq-worker", "soniq")]
+api_network_policy = by_id[("NetworkPolicy", "soniq-api", "soniq")]
+worker_network_policy = by_id[("NetworkPolicy", "soniq-worker", "soniq")]
+migrate_network_policy = by_id[("NetworkPolicy", "soniq-migrate", "soniq")]
 expected_pod_users = {
     ("Deployment", "soniq-api", "soniq"): (65532, 65532),
     ("Deployment", "soniq-worker", "soniq"): (10001, 10001),
@@ -204,6 +210,52 @@ for pdb, deployment in [(api_pdb, api), (worker_pdb, worker)]:
     for key, value in selector.items():
         if pod_labels.get(key) != value:
             raise SystemExit(f"{resource_id(pdb)} selector {key}={value} does not match pod labels")
+
+for network_policy, deployment in [
+    (api_network_policy, api),
+    (worker_network_policy, worker),
+    (migrate_network_policy, migrate),
+]:
+    policy_spec = network_policy.get("spec") or {}
+    policy_types = set(policy_spec.get("policyTypes") or [])
+    if policy_types != {"Ingress", "Egress"}:
+        raise SystemExit(f"{resource_id(network_policy)} policyTypes must be Ingress and Egress")
+    selector = ((policy_spec.get("podSelector") or {}).get("matchLabels")) or {}
+    pod_labels = (
+        (((deployment.get("spec") or {}).get("template") or {}).get("metadata") or {}).get("labels")
+        or {}
+    )
+    for key, value in selector.items():
+        if pod_labels.get(key) != value:
+            raise SystemExit(f"{resource_id(network_policy)} selector {key}={value} does not match pod labels")
+    egress_ports = {
+        (port.get("protocol", "TCP"), port.get("port"))
+        for rule in policy_spec.get("egress") or []
+        for port in rule.get("ports") or []
+    }
+    for required_port in [
+        ("UDP", 53),
+        ("TCP", 53),
+        ("TCP", 80),
+        ("TCP", 443),
+        ("TCP", 9000),
+        ("TCP", 5432),
+        ("TCP", 7233),
+    ]:
+        if required_port not in egress_ports:
+            raise SystemExit(f"{resource_id(network_policy)} is missing egress port {required_port}")
+
+api_ingress_ports = {
+    (port.get("protocol", "TCP"), port.get("port"))
+    for rule in (api_network_policy.get("spec") or {}).get("ingress") or []
+    for port in rule.get("ports") or []
+}
+if ("TCP", 8080) not in api_ingress_ports:
+    raise SystemExit("soniq-api NetworkPolicy must allow ingress TCP 8080")
+for network_policy in [worker_network_policy, migrate_network_policy]:
+    ingress = (network_policy.get("spec") or {}).get("ingress")
+    if ingress != []:
+        raise SystemExit(f"{resource_id(network_policy)} must deny ingress")
 
 if (migrate.get("spec") or {}).get("backoffLimit") != 3:
     raise SystemExit("soniq-migrate backoffLimit must be 3")

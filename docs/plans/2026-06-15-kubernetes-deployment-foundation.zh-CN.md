@@ -34,7 +34,7 @@ Kubernetes 前置条件已经补齐一部分：
 后续还缺：
 
 - 更完整的 resource requests/limits 调优。
-- HPA/NetworkPolicy/topology spread 等生产硬化。
+- HPA/topology spread 等生产硬化。
 - 远程集群 release smoke 和回滚 runbook。
 
 ## 核心原则
@@ -518,6 +518,7 @@ verify purge artifact rows deleted status
 - worker 已处理 `SIGINT`/`SIGTERM`，通过 context 停止 Temporal worker polling，并取消 purge artifact cleanup loop。
 - raw manifests 和 Helm chart 已为 API/worker 设置 `terminationGracePeriodSeconds: 30`。
 - raw manifests 和 Helm chart 已为 API/worker 设置 PodDisruptionBudget；API 和 worker 默认各 2 个副本，PDB 默认 `minAvailable: 1`。
+- raw manifests 和 Helm chart 已为 API、worker、migration pods 设置基础 NetworkPolicy；默认允许 DNS、HTTP/HTTPS、MinIO/S3-compatible、Postgres 和 Temporal 出站。
 
 ## 推荐执行顺序
 

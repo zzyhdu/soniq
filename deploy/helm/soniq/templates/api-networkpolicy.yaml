@@ -1,0 +1,32 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "soniq.apiName" . }}
+  namespace: {{ include "soniq.namespace" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "soniq.apiName" . }}
+    app.kubernetes.io/component: api
+    {{- include "soniq.commonLabels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "soniq.apiName" . }}
+      app.kubernetes.io/component: api
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: {{ .Values.api.containerPort }}
+      {{- with .Values.networkPolicy.api.ingress.from }}
+      from:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  egress:
+    {{- include "soniq.networkPolicyEgress" . | nindent 4 }}
+    {{- with .Values.networkPolicy.api.extraEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}

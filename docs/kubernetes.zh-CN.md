@@ -12,6 +12,7 @@ raw manifests 和 Helm chart 只部署 Soniq 自己拥有的资源：
 - `soniq-api` Deployment 和 Service。
 - `soniq-worker` Deployment。
 - `soniq-api` 和 `soniq-worker` PodDisruptionBudgets。
+- `soniq-api`、`soniq-worker` 和 `soniq-migrate` NetworkPolicies。
 - `soniq-config` ConfigMap。
 - `soniq-secret` 引用；raw manifests 里有 example Secret，Helm 里可以选择性渲染 Secret。
 - raw manifests 里有 `soniq` Namespace，Helm 里可以选择性渲染 Namespace。
@@ -218,6 +219,11 @@ kubectl -n soniq logs job/soniq-migrate
 kubectl apply -f deploy/kubernetes/base/api-deployment.yaml
 kubectl apply -f deploy/kubernetes/base/api-service.yaml
 kubectl apply -f deploy/kubernetes/base/worker-deployment.yaml
+kubectl apply -f deploy/kubernetes/base/api-pdb.yaml
+kubectl apply -f deploy/kubernetes/base/worker-pdb.yaml
+kubectl apply -f deploy/kubernetes/base/api-networkpolicy.yaml
+kubectl apply -f deploy/kubernetes/base/worker-networkpolicy.yaml
+kubectl apply -f deploy/kubernetes/base/migrate-networkpolicy.yaml
 ```
 
 等待 API ready：
@@ -252,6 +258,16 @@ raw manifests 和 Helm chart 会为 API 和 worker 创建 PodDisruptionBudget。
 两者默认都是 `minAvailable: 1`。在默认 2 个 API replicas 和 2 个 worker replicas
 的情况下，Kubernetes 做节点维护或集群升级时可以自愿驱逐其中一个 Pod，同时保留
 至少一个 API Pod 和一个 worker Pod 继续运行。
+
+## Network Policies
+
+raw manifests 和 Helm chart 会为 API、worker、migration pods 创建 NetworkPolicy。
+这些策略只有在 Kubernetes 集群的 CNI plugin 支持并执行 NetworkPolicy 时才会真正生效。
+
+基础策略会允许 API 的 TCP 8080 入站，拒绝 worker 和 migration 的入站流量，并允许
+DNS 以及 TCP 80、443、9000、5432、7233 出站。这些端口覆盖默认 HTTP/HTTPS、
+MinIO/S3-compatible、Postgres 和 Temporal 路径。如果生产依赖使用不同端口，或者需要
+按目标地址做更严格 allowlist，需要在安装前覆盖 Helm `networkPolicy` values。
 
 ## 更新 Migrations
 
@@ -288,7 +304,7 @@ kubectl -n soniq logs job/soniq-migrate
 ## 当前限制
 
 - 还没有 Ingress 或 TLS manifest。
-- 还没有 HPA、PDB、NetworkPolicy 或 topology spread constraints。
+- 还没有 HPA 或 topology spread constraints。
 - 还没有远程集群 release smoke；当前 cluster smoke 覆盖的是本地 kind 下的
   raw manifests 和 Helm 两条路径。
 - Worker 还没有暴露 HTTP health endpoint，所以 worker health 当前主要依赖进程状态和日志。
