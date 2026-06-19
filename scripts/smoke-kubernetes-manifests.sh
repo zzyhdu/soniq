@@ -182,9 +182,22 @@ for resource in [api, worker, migrate]:
     security_context = container.get("securityContext") or {}
     if security_context.get("allowPrivilegeEscalation") is not False:
         raise SystemExit(f"{resource_id(resource)} must disable privilege escalation")
+    if security_context.get("readOnlyRootFilesystem") is not True:
+        raise SystemExit(f"{resource_id(resource)} must use a read-only root filesystem")
     dropped = ((security_context.get("capabilities") or {}).get("drop")) or []
     if "ALL" not in dropped:
         raise SystemExit(f"{resource_id(resource)} must drop all capabilities")
+    volumes = pod_spec(resource).get("volumes") or []
+    tmp_volumes = [volume for volume in volumes if volume.get("name") == "tmp"]
+    if len(tmp_volumes) != 1 or "emptyDir" not in tmp_volumes[0]:
+        raise SystemExit(f"{resource_id(resource)} must define a tmp emptyDir volume")
+    volume_mounts = container.get("volumeMounts") or []
+    has_tmp_mount = any(
+        mount.get("name") == "tmp" and mount.get("mountPath") == "/tmp"
+        for mount in volume_mounts
+    )
+    if not has_tmp_mount:
+        raise SystemExit(f"{resource_id(resource)} must mount tmp at /tmp")
 
 if first_container(api).get("livenessProbe", {}).get("httpGet", {}).get("path") != "/healthz":
     raise SystemExit("soniq-api livenessProbe must use /healthz")

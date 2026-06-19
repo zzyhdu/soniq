@@ -272,6 +272,15 @@ constraints。默认按 `kubernetes.io/hostname` 分散副本，`maxSkew: 1`，�
 一个可用节点，也仍然允许调度。生产 values 可以按需要把它改成 `DoNotSchedule`，
 这样会更严格地要求分散，但在节点不足时 Pod 可能无法调度。
 
+## Security Hardening
+
+API、worker 和 migration containers 都以 non-root 用户运行，drop 所有 Linux
+capabilities，禁用 privilege escalation，并设置 `readOnlyRootFilesystem: true`。
+
+manifests 会给每个 container 挂一个 `emptyDir` 到 `/tmp`。这样根文件系统保持只读，
+但应用仍然有一个明确、受限的运行时可写目录，用于 multipart buffering、worker
+音频临时文件，以及 ffmpeg/ffprobe 的临时文件。
+
 ## Autoscaling
 
 raw manifests 会创建 API HorizontalPodAutoscaler。它指向 `soniq-api`

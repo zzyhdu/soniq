@@ -173,6 +173,16 @@ small-cluster installs working. In larger production clusters, operators can
 change this to `DoNotSchedule` through Helm values when strict node spreading is
 preferred over scheduling flexibility.
 
+## Security Hardening
+
+Soniq API, worker, and migration containers run as non-root users, drop Linux
+capabilities, disable privilege escalation, and use read-only root filesystems
+in the Kubernetes manifests and Helm chart.
+
+Each pod mounts a writable `emptyDir` at `/tmp`. This keeps runtime writes
+explicit while still supporting Go multipart upload buffering, worker audio
+staging, and ffmpeg/ffprobe temporary files.
+
 ## Autoscaling
 
 Soniq's raw Kubernetes manifests include a baseline API

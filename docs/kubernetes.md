@@ -296,6 +296,17 @@ worker pods. The default constraint spreads replicas by
 can still schedule pods when a cluster has only one usable node. Production
 values can switch this to `DoNotSchedule` when strict spreading is required.
 
+## Security Hardening
+
+API, worker, and migration containers run as non-root users, drop all Linux
+capabilities, disable privilege escalation, and set
+`readOnlyRootFilesystem: true`.
+
+The manifests mount an `emptyDir` volume at `/tmp` for each container. This
+gives the application a narrow writable runtime path for multipart buffering,
+worker audio staging, and ffmpeg/ffprobe temporary files without making the
+image filesystem writable.
+
 ## Autoscaling
 
 The raw manifests create an API HorizontalPodAutoscaler. It targets the

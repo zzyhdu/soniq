@@ -498,7 +498,7 @@ verify purge artifact rows deleted status
 - securityContext：
   - non-root。
   - drop capabilities。
-  - readOnlyRootFilesystem，若可行。
+  - readOnlyRootFilesystem。
 - resource limits。
 - graceful shutdown 文档和测试。
 - separate worker concurrency config。
@@ -521,6 +521,7 @@ verify purge artifact rows deleted status
 - raw manifests 和 Helm chart 已为 API、worker、migration pods 设置基础 NetworkPolicy；默认允许 DNS、HTTP/HTTPS、MinIO/S3-compatible、Postgres 和 Temporal 出站。
 - raw manifests 已为 API 设置基础 HorizontalPodAutoscaler；Helm chart 已提供 API/worker autoscaling values，默认关闭，生产环境可按 metrics-server 和容量策略开启。
 - raw manifests 和 Helm chart 已为 API/worker 设置 topology spread constraints；默认按节点 hostname 尽量分散副本，同时保留单节点 kind 的调度能力。
+- raw manifests 和 Helm chart 已为 API、worker、migration containers 开启 read-only root filesystem，并通过 `/tmp` emptyDir 显式保留运行时临时文件写入路径。
 
 ## 推荐执行顺序
 
