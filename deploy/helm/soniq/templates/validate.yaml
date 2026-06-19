@@ -13,3 +13,14 @@
 {{- end -}}
 {{- end -}}
 {{- end -}}
+{{- range $component, $autoscaling := dict "api" .Values.api.autoscaling "worker" .Values.worker.autoscaling -}}
+{{- if $autoscaling.enabled -}}
+{{- if lt (int $autoscaling.maxReplicas) (int $autoscaling.minReplicas) -}}
+{{- fail (printf "%s.autoscaling.maxReplicas must be greater than or equal to minReplicas" $component) -}}
+{{- end -}}
+{{- $targetCPU := int $autoscaling.targetCPUUtilizationPercentage -}}
+{{- if or (lt $targetCPU 1) (gt $targetCPU 100) -}}
+{{- fail (printf "%s.autoscaling.targetCPUUtilizationPercentage must be between 1 and 100" $component) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}

@@ -63,6 +63,7 @@ expected_resources = {
     ("Deployment", "soniq-worker", "soniq"),
     ("PodDisruptionBudget", "soniq-api", "soniq"),
     ("PodDisruptionBudget", "soniq-worker", "soniq"),
+    ("HorizontalPodAutoscaler", "soniq-api", "soniq"),
     ("NetworkPolicy", "soniq-api", "soniq"),
     ("NetworkPolicy", "soniq-worker", "soniq"),
     ("NetworkPolicy", "soniq-migrate", "soniq"),
@@ -117,6 +118,7 @@ migrate = by_id[("Job", "soniq-migrate", "soniq")]
 service = by_id[("Service", "soniq-api", "soniq")]
 api_pdb = by_id[("PodDisruptionBudget", "soniq-api", "soniq")]
 worker_pdb = by_id[("PodDisruptionBudget", "soniq-worker", "soniq")]
+api_hpa = by_id[("HorizontalPodAutoscaler", "soniq-api", "soniq")]
 api_network_policy = by_id[("NetworkPolicy", "soniq-api", "soniq")]
 worker_network_policy = by_id[("NetworkPolicy", "soniq-worker", "soniq")]
 migrate_network_policy = by_id[("NetworkPolicy", "soniq-migrate", "soniq")]
@@ -210,6 +212,32 @@ for pdb, deployment in [(api_pdb, api), (worker_pdb, worker)]:
     for key, value in selector.items():
         if pod_labels.get(key) != value:
             raise SystemExit(f"{resource_id(pdb)} selector {key}={value} does not match pod labels")
+
+hpa_spec = api_hpa.get("spec") or {}
+scale_target = hpa_spec.get("scaleTargetRef") or {}
+if scale_target.get("apiVersion") != "apps/v1":
+    raise SystemExit("soniq-api HPA must target apps/v1")
+if scale_target.get("kind") != "Deployment":
+    raise SystemExit("soniq-api HPA must target a Deployment")
+if scale_target.get("name") != "soniq-api":
+    raise SystemExit("soniq-api HPA must target soniq-api")
+if hpa_spec.get("minReplicas") != 2:
+    raise SystemExit("soniq-api HPA minReplicas must be 2")
+if hpa_spec.get("maxReplicas") != 6:
+    raise SystemExit("soniq-api HPA maxReplicas must be 6")
+cpu_metrics = [
+    metric
+    for metric in hpa_spec.get("metrics") or []
+    if metric.get("type") == "Resource"
+    and ((metric.get("resource") or {}).get("name")) == "cpu"
+]
+if len(cpu_metrics) != 1:
+    raise SystemExit("soniq-api HPA must define exactly one CPU resource metric")
+cpu_target = (((cpu_metrics[0].get("resource") or {}).get("target")) or {})
+if cpu_target.get("type") != "Utilization":
+    raise SystemExit("soniq-api HPA CPU metric must use utilization")
+if cpu_target.get("averageUtilization") != 70:
+    raise SystemExit("soniq-api HPA CPU target averageUtilization must be 70")
 
 for network_policy, deployment in [
     (api_network_policy, api),

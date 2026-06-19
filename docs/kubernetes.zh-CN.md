@@ -12,6 +12,7 @@ raw manifests 和 Helm chart 只部署 Soniq 自己拥有的资源：
 - `soniq-api` Deployment 和 Service。
 - `soniq-worker` Deployment。
 - `soniq-api` 和 `soniq-worker` PodDisruptionBudgets。
+- raw manifests 里的 `soniq-api` HorizontalPodAutoscaler。
 - `soniq-api`、`soniq-worker` 和 `soniq-migrate` NetworkPolicies。
 - `soniq-config` ConfigMap。
 - `soniq-secret` 引用；raw manifests 里有 example Secret，Helm 里可以选择性渲染 Secret。
@@ -99,7 +100,8 @@ make helm-template
 ```
 
 默认 chart 会渲染 ServiceAccount、ConfigMap、API Service、API Deployment、
-worker Deployment，以及作为 pre-install/pre-upgrade hook 的 migration Job。它会引用
+worker Deployment、API/worker PodDisruptionBudgets、API/worker/migration
+NetworkPolicies，以及作为 pre-install/pre-upgrade hook 的 migration Job。它会引用
 `soniq-secret`，但默认不会渲染 Secret，所以真实 secret material 不会进入已提交的
 values。它也默认跟随 Helm release namespace，而不是创建 Namespace resource。
 
@@ -221,6 +223,7 @@ kubectl apply -f deploy/kubernetes/base/api-service.yaml
 kubectl apply -f deploy/kubernetes/base/worker-deployment.yaml
 kubectl apply -f deploy/kubernetes/base/api-pdb.yaml
 kubectl apply -f deploy/kubernetes/base/worker-pdb.yaml
+kubectl apply -f deploy/kubernetes/base/api-hpa.yaml
 kubectl apply -f deploy/kubernetes/base/api-networkpolicy.yaml
 kubectl apply -f deploy/kubernetes/base/worker-networkpolicy.yaml
 kubectl apply -f deploy/kubernetes/base/migrate-networkpolicy.yaml
@@ -258,6 +261,19 @@ raw manifests 和 Helm chart 会为 API 和 worker 创建 PodDisruptionBudget。
 两者默认都是 `minAvailable: 1`。在默认 2 个 API replicas 和 2 个 worker replicas
 的情况下，Kubernetes 做节点维护或集群升级时可以自愿驱逐其中一个 Pod，同时保留
 至少一个 API Pod 和一个 worker Pod 继续运行。
+
+## Autoscaling
+
+raw manifests 会创建 API HorizontalPodAutoscaler。它指向 `soniq-api`
+Deployment，保持 2 到 6 个 API replicas，并以平均 CPU 使用率 70% 作为扩容目标。
+
+Helm chart 暴露了 `api.autoscaling` 和 `worker.autoscaling`，但默认都关闭。
+只有在集群已经提供 resource metrics，比如安装了 metrics-server 时，才建议在生产
+values 里开启。某个组件开启 autoscaling 后，Helm 不再渲染这个 Deployment 的固定
+`replicas` 字段，而是让 HorizontalPodAutoscaler 接管副本数量。
+
+worker 的 CPU autoscaling 只是基础选项。后续更适合用 Temporal task queue backlog
+或自定义 worker metrics 来做 worker 扩缩容决策。
 
 ## Network Policies
 
@@ -304,7 +320,8 @@ kubectl -n soniq logs job/soniq-migrate
 ## 当前限制
 
 - 还没有 Ingress 或 TLS manifest。
-- 还没有 HPA 或 topology spread constraints。
+- 还没有 topology spread constraints。
+- worker autoscaling 开启时仍是基于 CPU；还没有实现基于 backlog 的 worker 扩缩容。
 - 还没有远程集群 release smoke；当前 cluster smoke 覆盖的是本地 kind 下的
   raw manifests 和 Helm 两条路径。
 - Worker 还没有暴露 HTTP health endpoint，所以 worker health 当前主要依赖进程状态和日志。

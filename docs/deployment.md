@@ -161,6 +161,22 @@ replicas to 2 by default, with PodDisruptionBudgets requiring at least one API
 pod and one worker pod to remain available during voluntary disruptions such as
 node drains and cluster upgrades.
 
+## Autoscaling
+
+Soniq's raw Kubernetes manifests include a baseline API
+HorizontalPodAutoscaler. It keeps at least 2 API replicas, scales up to 6, and
+uses a 70% average CPU utilization target.
+
+The Helm chart exposes CPU-based autoscaling values for API and worker
+deployments, but keeps them disabled by default. Enable them only in clusters
+with resource metrics available, such as metrics-server. When autoscaling is
+enabled for a component, the chart omits the Deployment `replicas` field and
+lets the HorizontalPodAutoscaler own the replica count.
+
+Worker CPU autoscaling is available as a basic option, but Temporal workers are
+better scaled from task queue backlog or custom worker metrics once those
+metrics are exported.
+
 ## Network Boundaries
 
 Kubernetes NetworkPolicy should be enabled in clusters whose CNI plugin enforces

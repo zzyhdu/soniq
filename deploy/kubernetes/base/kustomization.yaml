@@ -10,6 +10,7 @@ resources:
   - worker-deployment.yaml
   - api-pdb.yaml
   - worker-pdb.yaml
+  - api-hpa.yaml
   - api-networkpolicy.yaml
   - worker-networkpolicy.yaml
   - migrate-networkpolicy.yaml

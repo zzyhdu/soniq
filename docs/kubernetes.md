@@ -12,6 +12,7 @@ The raw manifests and Helm chart deploy only Soniq-owned resources:
 - `soniq-api` Deployment and Service.
 - `soniq-worker` Deployment.
 - `soniq-api` and `soniq-worker` PodDisruptionBudgets.
+- `soniq-api` HorizontalPodAutoscaler in raw manifests.
 - `soniq-api`, `soniq-worker`, and `soniq-migrate` NetworkPolicies.
 - `soniq-config` ConfigMap.
 - `soniq-secret` reference, with an example Secret in the raw manifests and
@@ -108,8 +109,9 @@ make helm-template
 ```
 
 The default chart renders ServiceAccount, ConfigMap, API Service, API
-Deployment, worker Deployment, and a pre-install/pre-upgrade migration Job hook.
-It references `soniq-secret` but does not render a Secret by default, so real
+Deployment, worker Deployment, API/worker PodDisruptionBudgets, API/worker/
+migration NetworkPolicies, and a pre-install/pre-upgrade migration Job hook. It
+references `soniq-secret` but does not render a Secret by default, so real
 secret material stays outside committed values. It also follows the Helm
 release namespace by default instead of creating a Namespace resource.
 
@@ -242,6 +244,7 @@ kubectl apply -f deploy/kubernetes/base/api-service.yaml
 kubectl apply -f deploy/kubernetes/base/worker-deployment.yaml
 kubectl apply -f deploy/kubernetes/base/api-pdb.yaml
 kubectl apply -f deploy/kubernetes/base/worker-pdb.yaml
+kubectl apply -f deploy/kubernetes/base/api-hpa.yaml
 kubectl apply -f deploy/kubernetes/base/api-networkpolicy.yaml
 kubectl apply -f deploy/kubernetes/base/worker-networkpolicy.yaml
 kubectl apply -f deploy/kubernetes/base/migrate-networkpolicy.yaml
@@ -281,6 +284,22 @@ The raw manifests and Helm chart create PodDisruptionBudgets for API and worker.
 Both default to `minAvailable: 1`. With the default 2 API replicas and 2 worker
 replicas, Kubernetes can voluntarily evict one pod during node maintenance or
 cluster upgrades while keeping at least one API pod and one worker pod running.
+
+## Autoscaling
+
+The raw manifests create an API HorizontalPodAutoscaler. It targets the
+`soniq-api` Deployment, keeps 2 to 6 API replicas, and scales on 70% average CPU
+utilization.
+
+The Helm chart exposes `api.autoscaling` and `worker.autoscaling`, but keeps
+both disabled by default. Enable them in production values only when the cluster
+has resource metrics available, for example metrics-server. When autoscaling is
+enabled for a component, Helm does not render that Deployment's static
+`replicas` value, so the HorizontalPodAutoscaler controls replica count.
+
+Worker CPU autoscaling is only a baseline option. A later production setup
+should prefer Temporal task queue backlog or custom worker metrics for worker
+scaling decisions.
 
 ## Network Policies
 
@@ -332,7 +351,9 @@ kubectl -n soniq logs job/soniq-migrate
 ## Current Limitations
 
 - No Ingress or TLS manifest.
-- No HPA or topology spread constraints.
+- No topology spread constraints.
+- Worker autoscaling is CPU-based when enabled; backlog-based worker scaling is
+  not implemented yet.
 - No remote-cluster release smoke yet; current cluster smoke coverage is local
   kind for both raw manifests and Helm.
 - Worker exposes no HTTP health endpoint, so worker health is currently based

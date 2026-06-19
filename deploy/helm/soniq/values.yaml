@@ -71,6 +71,11 @@ secret:
 api:
   replicas: 2
   terminationGracePeriodSeconds: 30
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
   pdb:
     enabled: true
     minAvailable: 1
@@ -123,6 +128,11 @@ api:
 worker:
   replicas: 2
   terminationGracePeriodSeconds: 30
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
   pdb:
     enabled: true
     minAvailable: 1
