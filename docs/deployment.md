@@ -164,6 +164,26 @@ other high-cardinality values as Prometheus labels. Worker, Temporal SDK, and
 business-operation metrics are planned but not part of this first API metrics
 slice.
 
+The repository includes an optional local observability stack in
+`compose.observability.yml`:
+
+- Prometheus for metrics storage and queries.
+- Grafana for dashboards.
+- OpenTelemetry Collector for future OTLP metrics and traces.
+- Jaeger for trace storage and inspection.
+
+Start it with:
+
+```bash
+make observability-up
+```
+
+Prometheus scrapes the local API at `host.docker.internal:8080/metrics`.
+Grafana is available at `http://localhost:3001` with local-only default
+credentials `admin` / `soniq_admin`, and Jaeger is available at
+`http://localhost:16686`. These defaults are for local development and should
+not be used as production credentials or a production observability deployment.
+
 ## Shutdown Behavior
 
 `soniq-api` handles `SIGINT` and `SIGTERM` gracefully. On shutdown it stops

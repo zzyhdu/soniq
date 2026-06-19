@@ -424,6 +424,8 @@ soniq_recording_processing_failed_total
 - `compose.observability.yml`
 - Prometheus
 - Grafana
+- OpenTelemetry Collector
+- Jaeger
 
 默认不随 `make temporal-up` 启动，避免本地开发过重。
 
@@ -432,6 +434,7 @@ Makefile：
 ```txt
 make observability-up
 make observability-down
+make observability-smoke
 ```
 
 ### Phase 3 验收标准
@@ -456,8 +459,13 @@ make observability-down
   `soniq_http_request_duration_seconds{route,method}`。
 - HTTP metrics 使用 chi route template，测试覆盖不会把 workspace/recording id 放入
   metrics label。
-- worker metrics、Temporal SDK metrics、Prometheus/Grafana compose、dashboard 和
-  alert rules 仍是后续工作。
+- 已新增可选本地 observability compose，包含 Prometheus、Grafana、
+  OpenTelemetry Collector 和 Jaeger。
+- Grafana 已 provision Prometheus/Jaeger datasources 和最小 API dashboard：
+  request rate、5xx ratio、p95 latency。
+- 已新增 `make observability-up/down/ps/logs/smoke`。
+- worker metrics、Temporal SDK metrics、业务 metrics、alert rules 和 tracing 代码接入
+  仍是后续工作。
 
 ## Phase 4 — OpenTelemetry tracing
 

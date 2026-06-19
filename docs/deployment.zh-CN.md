@@ -137,3 +137,22 @@ Kubernetes 或任何 load balancer 都应该用 `/readyz` 判断 API 是否 read
 `workspace_id`、`recording_id`、object key、email、文件名，或者其他高基数字段放进
 Prometheus labels。worker、Temporal SDK 和业务操作 metrics 已计划，但不属于这次
 API metrics 的第一步。
+
+仓库还包含一个可选的本地 observability stack：
+
+- `compose.observability.yml`
+- Prometheus：存储和查询 metrics。
+- Grafana：展示 dashboard。
+- OpenTelemetry Collector：接收后续 OTLP metrics 和 traces。
+- Jaeger：存储和查看 traces。
+
+启动命令：
+
+```bash
+make observability-up
+```
+
+Prometheus 会抓取本地 API 的 `host.docker.internal:8080/metrics`。Grafana 地址是
+`http://localhost:3001`，本地默认账号密码是 `admin` / `soniq_admin`；Jaeger 地址是
+`http://localhost:16686`。这些默认值只用于本地开发，不应作为生产 credentials 或生产
+observability 部署方式。

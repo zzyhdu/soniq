@@ -1,5 +1,7 @@
 ENV_FILE ?= .env
 COMPOSE_FILE ?= compose.temporal.yml
+OBSERVABILITY_COMPOSE_FILE ?= compose.observability.yml
+OBSERVABILITY_COMPOSE_PROJECT ?= soniq-observability
 POSTGRES_USER ?= soniq_user
 POSTGRES_DB ?= soniq
 POSTGRES_DSN ?= postgres://soniq_user:soniq_password@localhost:5432/soniq?sslmode=disable
@@ -73,7 +75,7 @@ endif
 
 $(foreach key,$(CONFIG_ENV_KEYS),$(if $(filter environment command line,$(__ENV_ORIGIN_$(key))),$(eval override $(key) := $(__ENV_VALUE_$(key)))))
 
-.PHONY: fmt lint test api worker env-check migrate debug-purge-artifacts temporal-up temporal-down temporal-logs temporal-ps smoke-postgres-temporal docker-build docker-build-api docker-build-worker docker-build-migrate k8s-render k8s-dry-run k8s-smoke k8s-smoke-kind k8s-smoke-kind-helm helm-version helm-template helm-lint
+.PHONY: fmt lint test api worker env-check migrate debug-purge-artifacts temporal-up temporal-down temporal-logs temporal-ps observability-up observability-down observability-logs observability-ps observability-smoke smoke-postgres-temporal docker-build docker-build-api docker-build-worker docker-build-migrate k8s-render k8s-dry-run k8s-smoke k8s-smoke-kind k8s-smoke-kind-helm helm-version helm-template helm-lint
 
 $(foreach key,$(CONFIG_ENV_KEYS),$(eval api worker env-check migrate debug-purge-artifacts smoke-postgres-temporal: export $(key) := $($(key))))
 
@@ -174,6 +176,21 @@ temporal-logs:
 
 temporal-ps:
 	docker compose -f $(COMPOSE_FILE) ps
+
+observability-up:
+	docker compose -p $(OBSERVABILITY_COMPOSE_PROJECT) -f $(OBSERVABILITY_COMPOSE_FILE) up -d
+
+observability-down:
+	docker compose -p $(OBSERVABILITY_COMPOSE_PROJECT) -f $(OBSERVABILITY_COMPOSE_FILE) down
+
+observability-logs:
+	docker compose -p $(OBSERVABILITY_COMPOSE_PROJECT) -f $(OBSERVABILITY_COMPOSE_FILE) logs -f prometheus grafana otel-collector jaeger
+
+observability-ps:
+	docker compose -p $(OBSERVABILITY_COMPOSE_PROJECT) -f $(OBSERVABILITY_COMPOSE_FILE) ps
+
+observability-smoke:
+	./scripts/smoke-observability-stack.sh
 
 smoke-postgres-temporal: override STORAGE_PROVIDER := s3_compatible
 smoke-postgres-temporal:

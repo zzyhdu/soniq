@@ -318,6 +318,42 @@ low-cardinality `route`, `method`, and `status` labels. Route labels use chi
 route templates such as `/workspaces/{workspace_id}/recordings/{recording_id}`,
 not concrete workspace or recording IDs.
 
+To run the optional local observability stack:
+
+```bash
+make observability-up
+```
+
+This starts Prometheus, Grafana, OpenTelemetry Collector, and Jaeger through
+`compose.observability.yml`. It is intentionally separate from
+`make temporal-up` so the default local development path stays lightweight.
+
+Local URLs:
+
+- Prometheus: `http://localhost:9090`
+- Grafana: `http://localhost:3001` with local credentials
+  `admin` / `soniq_admin`
+- Jaeger: `http://localhost:16686`
+- OpenTelemetry OTLP gRPC: `localhost:4317`
+- OpenTelemetry OTLP HTTP: `http://localhost:4318`
+
+Prometheus scrapes the local API at `host.docker.internal:8080/metrics`, so run
+`make api` on the default `API_ADDRESS=:8080` before expecting the `soniq-api`
+Prometheus target to be up. Grafana is provisioned with Prometheus and Jaeger
+datasources and a minimal `Soniq API Overview` dashboard for request rate, 5xx
+ratio, and p95 latency. The OpenTelemetry Collector is available for future
+OTLP metrics and traces; the current API HTTP metrics still use the direct
+Prometheus scrape path.
+
+Useful commands:
+
+```bash
+make observability-ps
+make observability-logs
+make observability-smoke
+make observability-down
+```
+
 Every API response includes `X-Request-ID`. If the client sends that header, the
 API returns the same value; otherwise the API generates one. API and worker logs
 use structured `slog` output. Keep `LOG_FORMAT=text` for local readability, or
