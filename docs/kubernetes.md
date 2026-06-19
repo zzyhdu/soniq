@@ -412,6 +412,9 @@ Migration logs:
 kubectl -n soniq logs job/soniq-migrate
 ```
 
+Backup and restore operations are documented in
+[backup-restore.md](backup-restore.md).
+
 ## Current Limitations
 
 - No Ingress or TLS manifest.

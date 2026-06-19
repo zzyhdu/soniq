@@ -111,6 +111,8 @@ Object storage 必须支持 S3-compatible 的 `PutObject`、`GetObject`、`Delet
 
 Temporal history 和 visibility storage 由 Temporal 部署负责。Temporal 应按照 Temporal 自己的部署策略备份，而不是通过 Soniq application migrations 备份。
 
+具体备份和恢复操作清单见 [backup-restore.zh-CN.md](backup-restore.zh-CN.md)。
+
 ## Readiness
 
 `GET /healthz` 表示 API 进程还活着。

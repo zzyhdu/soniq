@@ -375,6 +375,8 @@ Migration logs：
 kubectl -n soniq logs job/soniq-migrate
 ```
 
+备份和恢复操作见 [backup-restore.zh-CN.md](backup-restore.zh-CN.md)。
+
 ## 当前限制
 
 - 还没有 Ingress 或 TLS manifest。

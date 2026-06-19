@@ -133,6 +133,9 @@ Temporal history and visibility storage are owned by the Temporal deployment.
 Back up Temporal according to the Temporal deployment strategy, not Soniq
 application migrations.
 
+Use [backup-restore.md](backup-restore.md) for the operational backup and
+restore checklist.
+
 ## Readiness
 
 `GET /healthz` means the API process is alive.
