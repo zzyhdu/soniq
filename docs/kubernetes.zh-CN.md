@@ -110,6 +110,24 @@ NetworkPolicies，以及作为 pre-install/pre-upgrade hook 的 migration Job。
 `soniq-secret`，但默认不会渲染 Secret，所以真实 secret material 不会进入已提交的
 values。它也默认跟随 Helm release namespace，而不是创建 Namespace resource。
 
+chart 里也包含一个生产覆盖示例：
+
+```bash
+deploy/helm/soniq/values.production.example.yaml
+```
+
+可以把它作为私有 `values.production.yaml` 的起点。真实部署前需要替换 image
+repository、public URL、Temporal、object storage、resources、autoscaling 和
+provider 配置。示例里刻意保持 `secret.create=false`；真实 credentials 应该放在
+预先创建的 Kubernetes Secret 或 external secret manager 中。
+
+校验这个生产 values 示例：
+
+```bash
+HELM_LINT_ARGS='-f deploy/helm/soniq/values.production.example.yaml' make helm-lint
+HELM_TEMPLATE_ARGS='-f deploy/helm/soniq/values.production.example.yaml' make helm-template
+```
+
 如果只是想在本地渲染可选的 Namespace 和占位 Secret 路径：
 
 ```bash
@@ -127,6 +145,9 @@ kubectl -n soniq create secret generic soniq-secret \
   --from-literal=S3_SECRET_KEY='change-me' \
   --dry-run=client -o yaml | kubectl apply -f -
 ```
+
+如果生产 values 开启了外部 ASR 或 LLM provider，需要把对应 provider key 也放进同一个
+Secret，例如 `DASHSCOPE_API_KEY`、`TRANSCRIPTION_API_KEY` 或 `LLM_API_KEY`。
 
 然后带上私有配置覆盖来应用 chart：
 

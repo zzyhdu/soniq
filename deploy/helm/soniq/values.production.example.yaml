@@ -1,0 +1,155 @@
+# Example production override values for the Soniq Helm chart.
+#
+# Copy this file outside the repository, replace placeholders, and keep real
+# secrets in a pre-created Kubernetes Secret or an external secret manager.
+# Do not commit real credentials.
+
+fullnameOverride: soniq
+
+namespace:
+  create: false
+  name: soniq
+
+commonLabels:
+  app.kubernetes.io/environment: production
+
+imagePullSecrets: []
+
+serviceAccount:
+  create: true
+  automountToken: false
+
+secret:
+  create: false
+  name: soniq-secret
+
+config:
+  data:
+    APP_ENV: production
+    APP_PUBLIC_URL: https://soniq.example.com
+    LOG_FORMAT: json
+    LOG_LEVEL: info
+    AUTH_SESSION_TTL_HOURS: "720"
+    AUTH_COOKIE_SECURE: "true"
+    API_ADDRESS: :8080
+
+    TEMPORAL_ADDRESS: temporal-frontend.temporal.svc.cluster.local:7233
+    TEMPORAL_NAMESPACE: default
+    TEMPORAL_TASK_QUEUE: soniq-audio-pipeline
+
+    WORKER_MAX_CONCURRENT_WORKFLOW_TASKS: "20"
+    WORKER_MAX_CONCURRENT_ACTIVITIES: "4"
+    WORKER_MAX_CONCURRENT_LOCAL_ACTIVITIES: "4"
+    WORKER_TASK_QUEUE_ACTIVITIES_PER_SECOND: "0"
+    PURGE_ARTIFACT_CLEANUP_INTERVAL_SECONDS: "300"
+    PURGE_ARTIFACT_CLEANUP_BATCH_SIZE: "25"
+
+    STORAGE_PROVIDER: s3_compatible
+    S3_ENDPOINT: https://s3.example.com
+    S3_REGION: us-east-1
+    S3_BUCKET: soniq
+    S3_FORCE_PATH_STYLE: "false"
+
+    # Keep fake providers until real provider credentials are present in the
+    # external Secret. For DashScope native ASR, set TRANSCRIPTION_PROVIDER to
+    # dashscope_asr, PRIVACY_ALLOW_EXTERNAL_MODEL_PROVIDERS to "true", and add
+    # DASHSCOPE_API_KEY to soniq-secret.
+    TRANSCRIPTION_PROVIDER: fake_transcription
+    TRANSCRIPTION_BASE_URL: https://api.xiaomimimo.com/v1
+    TRANSCRIPTION_MODEL: mimo-v2.5-asr
+    TRANSCRIPTION_AUTH_HEADER: api-key
+    TRANSCRIPTION_LANGUAGE: auto
+    DASHSCOPE_BASE_URL: https://dashscope.aliyuncs.com/api/v1
+    DASHSCOPE_ASR_MODEL: paraformer-v2
+
+    # For an OpenAI-compatible LLM, set LLM_PROVIDER to openai_compatible,
+    # PRIVACY_ALLOW_EXTERNAL_MODEL_PROVIDERS to "true", and add LLM_API_KEY to
+    # soniq-secret.
+    LLM_PROVIDER: fake_llm
+    LLM_BASE_URL: https://dashscope.aliyuncs.com/compatible-mode/v1
+    LLM_MODEL: qwen3.7-plus
+
+    PRIVACY_ALLOW_EXTERNAL_MODEL_PROVIDERS: "false"
+    PRIVACY_DELETE_ORIGINAL_AUDIO_AFTER_TRANSCRIPTION: "false"
+
+networkPolicy:
+  enabled: true
+  allowedEgressTCPPorts:
+    - 80
+    - 443
+    - 9000
+    - 5432
+    - 7233
+  api:
+    ingress:
+      # Empty means any source in the namespace/network policy scope can reach
+      # API TCP 8080. Replace with namespaceSelector/podSelector/ipBlock rules
+      # when the cluster has a known ingress controller boundary.
+      from: []
+    extraEgress: []
+  worker:
+    extraEgress: []
+  migrate:
+    extraEgress: []
+
+api:
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+  pdb:
+    enabled: true
+    minAvailable: 1
+    maxUnavailable: null
+  image:
+    repository: registry.example.com/soniq/soniq-api
+    tag: "2026.06.19"
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+worker:
+  replicas: 2
+  # Keep CPU-based autoscaling disabled for Temporal workers. Prefer Temporal
+  # task queue backlog or custom worker metrics before scaling worker pods.
+  autoscaling:
+    enabled: false
+  pdb:
+    enabled: true
+    minAvailable: 1
+    maxUnavailable: null
+  image:
+    repository: registry.example.com/soniq/soniq-worker
+    tag: "2026.06.19"
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+
+migrate:
+  enabled: true
+  hook:
+    enabled: true
+    weight: -5
+    deletePolicy: before-hook-creation,hook-succeeded
+  image:
+    repository: registry.example.com/soniq/soniq-migrate
+    tag: "2026.06.19"
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi

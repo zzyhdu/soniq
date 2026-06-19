@@ -120,6 +120,25 @@ references `soniq-secret` but does not render a Secret by default, so real
 secret material stays outside committed values. It also follows the Helm
 release namespace by default instead of creating a Namespace resource.
 
+The chart also includes an example production override file:
+
+```bash
+deploy/helm/soniq/values.production.example.yaml
+```
+
+Use it as a starting point for a private `values.production.yaml`. Replace image
+repositories, public URLs, Temporal, object storage, resource, autoscaling, and
+provider settings before installing. The example intentionally keeps
+`secret.create=false`; real credentials should stay in a pre-created Kubernetes
+Secret or an external secret manager.
+
+Validate the example production values:
+
+```bash
+HELM_LINT_ARGS='-f deploy/helm/soniq/values.production.example.yaml' make helm-lint
+HELM_TEMPLATE_ARGS='-f deploy/helm/soniq/values.production.example.yaml' make helm-template
+```
+
 For local rendering of the optional Namespace and placeholder Secret path:
 
 ```bash
@@ -138,6 +157,10 @@ kubectl -n soniq create secret generic soniq-secret \
   --from-literal=S3_SECRET_KEY='change-me' \
   --dry-run=client -o yaml | kubectl apply -f -
 ```
+
+If production values enable external ASR or LLM providers, add the required
+provider keys to the same Secret, such as `DASHSCOPE_API_KEY`,
+`TRANSCRIPTION_API_KEY`, or `LLM_API_KEY`.
 
 Then apply the chart with any private config overrides:
 

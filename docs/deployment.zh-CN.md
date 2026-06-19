@@ -90,6 +90,10 @@ Soniq migrations 只作用于 Soniq application Postgres 数据库，不能指�
 | `DASHSCOPE_API_KEY` | provider-specific | DashScope native ASR key。 |
 | `LLM_API_KEY` | provider-specific | External LLM key。 |
 
+Helm chart 提供了 `deploy/helm/soniq/values.production.example.yaml`，作为不包含
+secret 的生产 values 起点。它需要和预先创建的 Kubernetes Secret 或 external secret
+manager 一起使用，用来提供上面这些敏感值。
+
 当前认证使用存储在 Postgres 中的 opaque session token，并使用绑定到 session token 的 CSRF token。目前还没有单独的 session signing secret。
 
 ## Storage 要求

@@ -102,6 +102,11 @@ Sensitive values belong in Secret-style configuration:
 | `DASHSCOPE_API_KEY` | provider-specific | DashScope native ASR key. |
 | `LLM_API_KEY` | provider-specific | External LLM key. |
 
+The Helm chart includes `deploy/helm/soniq/values.production.example.yaml` as a
+non-secret production values starting point. It should be combined with a
+pre-created Kubernetes Secret or an external secret manager for the sensitive
+keys above.
+
 Current auth uses opaque session tokens stored in Postgres and CSRF tokens
 bound to those session tokens. There is no separate session signing secret yet.
 
