@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/zzyhdu/soniq/backend/internal/domain"
+	"github.com/zzyhdu/soniq/backend/internal/observability"
 	"github.com/zzyhdu/soniq/backend/internal/recordings"
 	"github.com/zzyhdu/soniq/backend/internal/storage"
 )
@@ -215,13 +216,15 @@ func newRouterWithDependencies(store RecordingStore, workspaceStore WorkspaceSto
 		authResolver = NewDevAuthResolver("usr_dev")
 	}
 
+	metrics := observability.NewMetrics()
 	router := chi.NewRouter()
-	router.Use(requestLoggingMiddleware(nil))
+	router.Use(requestLoggingMiddleware(nil, metrics))
 	if authConfig != nil {
 		router.Use(csrfProtectionMiddleware(*authConfig))
 	}
 	router.MethodFunc(http.MethodGet, "/healthz", healthzHandler)
 	router.MethodFunc(http.MethodGet, "/readyz", readyzHandler(readinessChecker))
+	router.Method(http.MethodGet, "/metrics", metrics.Handler())
 	router.MethodFunc(http.MethodGet, "/openapi.yaml", openAPIHandler)
 	router.MethodFunc(http.MethodGet, "/api-console", apiConsoleHandler)
 	if authConfig != nil {

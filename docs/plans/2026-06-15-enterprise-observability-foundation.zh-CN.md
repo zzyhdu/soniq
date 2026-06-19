@@ -449,6 +449,16 @@ make observability-down
 - route label 使用模板路径的测试。
 - 不出现 recording/user/workspace id label 的测试。
 
+当前进展：
+
+- API 已新增 `/metrics`，使用 Prometheus text exposition format。
+- 已实现 `soniq_http_requests_total{route,method,status}` 和
+  `soniq_http_request_duration_seconds{route,method}`。
+- HTTP metrics 使用 chi route template，测试覆盖不会把 workspace/recording id 放入
+  metrics label。
+- worker metrics、Temporal SDK metrics、Prometheus/Grafana compose、dashboard 和
+  alert rules 仍是后续工作。
+
 ## Phase 4 — OpenTelemetry tracing
 
 目标：串起一次操作跨组件的路径。

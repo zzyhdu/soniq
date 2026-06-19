@@ -556,7 +556,7 @@ Kubernetes 依赖 observability Phase 1/2：
 
 后续 Prometheus metrics 会继续增强 K8s 部署：
 
-- `/metrics` 用于 scrape。
+- API `/metrics` 已可用于 Prometheus scrape。
 - Grafana dashboard 用于 API/worker/purge cleanup 监控。
 - alert rules 用于生产告警。
 

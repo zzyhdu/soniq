@@ -30,7 +30,7 @@ type responseLogRecorder struct {
 	apiError    *apiErrorLog
 }
 
-func requestLoggingMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
+func requestLoggingMiddleware(logger *slog.Logger, metrics *observability.Metrics) func(http.Handler) http.Handler {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -53,6 +53,7 @@ func requestLoggingMiddleware(logger *slog.Logger) func(http.Handler) http.Handl
 
 			route := requestRoutePattern(request)
 			duration := time.Since(startedAt)
+			metrics.ObserveHTTPRequest(route, r.Method, recorder.status, duration)
 			attrs := []any{
 				slog.String("event", "http_request_completed"),
 				slog.String("request_id", requestID),

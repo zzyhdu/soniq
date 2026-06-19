@@ -150,6 +150,20 @@ restore checklist.
 Kubernetes or any load balancer should use `/readyz` for API readiness and
 `/healthz` for API liveness.
 
+## Metrics
+
+`GET /metrics` exposes Prometheus text-format API metrics. The first supported
+metrics are:
+
+- `soniq_http_requests_total{route,method,status}`
+- `soniq_http_request_duration_seconds{route,method}`
+
+The `route` label uses the router template, not the concrete path. Do not add
+`user_id`, `workspace_id`, `recording_id`, object keys, emails, filenames, or
+other high-cardinality values as Prometheus labels. Worker, Temporal SDK, and
+business-operation metrics are planned but not part of this first API metrics
+slice.
+
 ## Shutdown Behavior
 
 `soniq-api` handles `SIGINT` and `SIGTERM` gracefully. On shutdown it stops

@@ -125,3 +125,15 @@ Temporal history 和 visibility storage 由 Temporal 部署负责。Temporal 应
 - S3-compatible bucket。
 
 Kubernetes 或任何 load balancer 都应该用 `/readyz` 判断 API 是否 ready，用 `/healthz` 判断 API 是否 live。
+
+## Metrics
+
+`GET /metrics` 暴露 Prometheus text-format API metrics。当前第一批支持的 metrics 是：
+
+- `soniq_http_requests_total{route,method,status}`
+- `soniq_http_request_duration_seconds{route,method}`
+
+`route` label 使用 router template，而不是真实请求 path。不要把 `user_id`、
+`workspace_id`、`recording_id`、object key、email、文件名，或者其他高基数字段放进
+Prometheus labels。worker、Temporal SDK 和业务操作 metrics 已计划，但不属于这次
+API metrics 的第一步。

@@ -50,6 +50,22 @@ paths:
           $ref: '#/components/responses/Error'
         default:
           $ref: '#/components/responses/Error'
+  /metrics:
+    get:
+      summary: Scrape Prometheus metrics
+      operationId: getMetrics
+      security: []
+      responses:
+        '200':
+          description: Prometheus text exposition metrics.
+          content:
+            text/plain:
+              schema:
+                type: string
+        '405':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
   /auth/signup:
     post:
       summary: Sign up with email and password

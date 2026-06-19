@@ -307,6 +307,17 @@ Temporal health, and S3-compatible bucket reachability. It returns `200` with
 plus short check errors when a dependency is unavailable. It does not return
 DSNs, secrets, or storage credentials.
 
+The API exposes Prometheus metrics at `/metrics`:
+
+```bash
+curl -i http://localhost:8080/metrics
+```
+
+Current API metrics include HTTP request count and request duration with
+low-cardinality `route`, `method`, and `status` labels. Route labels use chi
+route templates such as `/workspaces/{workspace_id}/recordings/{recording_id}`,
+not concrete workspace or recording IDs.
+
 Every API response includes `X-Request-ID`. If the client sends that header, the
 API returns the same value; otherwise the API generates one. API and worker logs
 use structured `slog` output. Keep `LOG_FORMAT=text` for local readability, or

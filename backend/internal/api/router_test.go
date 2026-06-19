@@ -73,6 +73,27 @@ func TestOpenAPIEndpointServesContract(t *testing.T) {
 	}
 }
 
+func TestMetricsEndpointServesPrometheusMetrics(t *testing.T) {
+	router := NewRouter()
+	router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	request := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", response.Code, http.StatusOK)
+	}
+	contentType := response.Header().Get("Content-Type")
+	if !strings.HasPrefix(contentType, "text/plain") {
+		t.Fatalf("Content-Type = %q, want text/plain", contentType)
+	}
+	body := response.Body.String()
+	if !strings.Contains(body, `soniq_http_requests_total{method="GET",route="/healthz",status="200"} 1`) {
+		t.Fatalf("metrics output missing healthz request counter:\n%s", body)
+	}
+}
+
 func TestAPIConsoleEndpointServesScalarPage(t *testing.T) {
 	router := NewRouterWithStore(newFakeRecordingStore())
 	request := httptest.NewRequest(http.MethodGet, "/api-console", nil)

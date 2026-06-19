@@ -363,6 +363,13 @@ kubectl -n soniq exec deploy/soniq-api -- /soniq-api --version
 kubectl -n soniq logs deploy/soniq-api
 ```
 
+API metrics：
+
+```bash
+kubectl -n soniq port-forward service/soniq-api 8080:80
+curl -i http://localhost:8080/metrics
+```
+
 Worker logs：
 
 ```bash

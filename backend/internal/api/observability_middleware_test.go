@@ -17,7 +17,7 @@ func TestRequestLoggingMiddlewarePropagatesRequestIDAndWritesAccessLog(t *testin
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 	router := chi.NewRouter()
-	router.Use(requestLoggingMiddleware(logger))
+	router.Use(requestLoggingMiddleware(logger, nil))
 	router.Get("/workspaces/{workspace_id}/recordings/{recording_id}", func(w http.ResponseWriter, r *http.Request) {
 		setRequestLogUserID(r.Context(), "usr_1")
 		setRequestLogWorkspaceID(r.Context(), "wsp_1")
@@ -55,7 +55,7 @@ func TestRequestLoggingMiddlewareGeneratesRequestID(t *testing.T) {
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 	router := chi.NewRouter()
-	router.Use(requestLoggingMiddleware(logger))
+	router.Use(requestLoggingMiddleware(logger, nil))
 	router.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -76,7 +76,7 @@ func TestRequestLoggingMiddlewareLogsOnlyFiveHundredErrorsAsAPIErrors(t *testing
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 	router := chi.NewRouter()
-	router.Use(requestLoggingMiddleware(logger))
+	router.Use(requestLoggingMiddleware(logger, nil))
 	router.Get("/server-error", func(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "database unavailable")
 	})
@@ -95,6 +95,34 @@ func TestRequestLoggingMiddlewareLogsOnlyFiveHundredErrorsAsAPIErrors(t *testing
 	assertLogNumber(t, apiErrors[0], "status", http.StatusInternalServerError)
 	assertLogField(t, apiErrors[0], "error_code", string(errorCodeInternalError))
 	assertLogField(t, apiErrors[0], "error", "database unavailable")
+}
+
+func TestRequestLoggingMiddlewareRecordsHTTPMetricsWithRouteTemplate(t *testing.T) {
+	metrics := observability.NewMetrics()
+	router := chi.NewRouter()
+	router.Use(requestLoggingMiddleware(slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)), metrics))
+	router.Get("/workspaces/{workspace_id}/recordings/{recording_id}", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	router.Method(http.MethodGet, "/metrics", metrics.Handler())
+
+	router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/workspaces/wsp_1/recordings/rec_1", nil))
+	metricsResponse := httptest.NewRecorder()
+	router.ServeHTTP(metricsResponse, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+
+	if metricsResponse.Code != http.StatusOK {
+		t.Fatalf("metrics status code = %d, want %d", metricsResponse.Code, http.StatusOK)
+	}
+	body := metricsResponse.Body.String()
+	if !strings.Contains(body, `soniq_http_requests_total{method="GET",route="/workspaces/{workspace_id}/recordings/{recording_id}",status="204"} 1`) {
+		t.Fatalf("metrics output missing templated request counter:\n%s", body)
+	}
+	if !strings.Contains(body, `soniq_http_request_duration_seconds_bucket{method="GET",route="/workspaces/{workspace_id}/recordings/{recording_id}",le=`) {
+		t.Fatalf("metrics output missing templated duration histogram:\n%s", body)
+	}
+	if strings.Contains(body, "wsp_1") || strings.Contains(body, "rec_1") {
+		t.Fatalf("metrics output leaked high-cardinality IDs:\n%s", body)
+	}
 }
 
 func decodeJSONLogEntries(t *testing.T, output string) []map[string]any {
