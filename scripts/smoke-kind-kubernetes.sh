@@ -6,6 +6,11 @@ COMPOSE_FILE="${COMPOSE_FILE:-compose.temporal.yml}"
 KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-soniq}"
 K8S_NAMESPACE="${K8S_NAMESPACE:-soniq}"
 KUSTOMIZE_DIR="${KUSTOMIZE_DIR:-deploy/kubernetes/base}"
+HELM_CHART="${HELM_CHART:-deploy/helm/soniq}"
+HELM_RELEASE="${HELM_RELEASE:-soniq}"
+HELM_BIN="${HELM_BIN:-helm}"
+HELM_WRAPPER="${HELM_WRAPPER:-}"
+KIND_SMOKE_DEPLOYER="${KIND_SMOKE_DEPLOYER:-kubectl}"
 POSTGRES_USER="${POSTGRES_USER:-soniq_user}"
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-soniq_password}"
 POSTGRES_DB="${POSTGRES_DB:-soniq}"
@@ -47,6 +52,21 @@ log() {
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
     printf '%s is required for kind Kubernetes smoke\n' "$1" >&2
+    exit 127
+  fi
+}
+
+run_helm() {
+  if [[ -n "$HELM_WRAPPER" ]]; then
+    bash "$HELM_WRAPPER" "$@"
+    return
+  fi
+  "$HELM_BIN" "$@"
+}
+
+require_helm() {
+  if ! run_helm version --short >/dev/null 2>&1; then
+    printf 'helm is required for Helm kind Kubernetes smoke; set HELM_BIN to a runnable Helm command\n' >&2
     exit 127
   fi
 }
@@ -734,9 +754,162 @@ with open(output_path, "w", encoding="utf-8") as handle:
 PY
 }
 
+render_external_dependency_manifest() {
+  local postgres_ip="$1"
+  local temporal_ip="$2"
+  local minio_ip="$3"
+
+  log "rendering external dependency smoke manifest"
+  python3 - "$SMOKE_MANIFEST" "$postgres_ip" "$temporal_ip" "$minio_ip" "$K8S_NAMESPACE" <<'PY'
+import sys
+
+import yaml
+
+output_path, postgres_ip, temporal_ip, minio_ip, namespace = sys.argv[1:]
+
+
+def external_service(name, port_name, port):
+    return {
+        "apiVersion": "v1",
+        "kind": "Service",
+        "metadata": {
+            "name": name,
+            "namespace": namespace,
+            "labels": {
+                "app.kubernetes.io/name": name,
+                "app.kubernetes.io/part-of": "soniq",
+                "soniq.dev/smoke-dependency": "true",
+            },
+        },
+        "spec": {
+            "ports": [
+                {
+                    "name": port_name,
+                    "port": port,
+                    "targetPort": port,
+                }
+            ]
+        },
+    }
+
+
+def external_endpoint_slice(name, port_name, port, ip):
+    return {
+        "apiVersion": "discovery.k8s.io/v1",
+        "kind": "EndpointSlice",
+        "metadata": {
+            "name": f"{name}-smoke",
+            "namespace": namespace,
+            "labels": {
+                "app.kubernetes.io/name": name,
+                "app.kubernetes.io/part-of": "soniq",
+                "soniq.dev/smoke-dependency": "true",
+                "kubernetes.io/service-name": name,
+                "endpointslice.kubernetes.io/managed-by": "soniq-kind-smoke",
+            },
+        },
+        "addressType": "IPv4",
+        "ports": [
+            {
+                "name": port_name,
+                "protocol": "TCP",
+                "port": port,
+            }
+        ],
+        "endpoints": [{"addresses": [ip]}],
+    }
+
+
+resources = [
+    external_service("soniq-postgresql", "postgres", 5432),
+    external_endpoint_slice("soniq-postgresql", "postgres", 5432, postgres_ip),
+    external_service("temporal", "grpc", 7233),
+    external_endpoint_slice("temporal", "grpc", 7233, temporal_ip),
+    external_service("minio", "s3", 9000),
+    external_endpoint_slice("minio", "s3", 9000, minio_ip),
+]
+
+with open(output_path, "w", encoding="utf-8") as handle:
+    yaml.safe_dump_all(resources, handle, sort_keys=False)
+PY
+}
+
+deploy_smoke_manifest() {
+  local postgres_ip="$1"
+  local temporal_ip="$2"
+  local minio_ip="$3"
+
+  render_smoke_manifest "$postgres_ip" "$temporal_ip" "$minio_ip"
+
+  log "applying smoke manifest"
+  kubectl apply -f "$SMOKE_MANIFEST"
+
+  log "waiting for migration job"
+  if ! kubectl -n "$K8S_NAMESPACE" wait --for=condition=complete job/soniq-migrate --timeout=180s; then
+    show_debug_context
+    return 1
+  fi
+  kubectl -n "$K8S_NAMESPACE" logs job/soniq-migrate
+}
+
+deploy_smoke_helm_release() {
+  local postgres_ip="$1"
+  local temporal_ip="$2"
+  local minio_ip="$3"
+  local postgres_dsn
+
+  render_external_dependency_manifest "$postgres_ip" "$temporal_ip" "$minio_ip"
+
+  log "creating namespace $K8S_NAMESPACE for Helm smoke dependencies"
+  kubectl create namespace "$K8S_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+
+  log "applying external dependency smoke manifest"
+  kubectl apply -f "$SMOKE_MANIFEST"
+
+  postgres_dsn="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@soniq-postgresql:5432/$POSTGRES_DB?sslmode=disable"
+
+  log "creating external Secret soniq-secret for Helm migration hook"
+  kubectl -n "$K8S_NAMESPACE" create secret generic soniq-secret \
+    --from-literal=POSTGRES_DSN="$postgres_dsn" \
+    --from-literal=S3_ACCESS_KEY="$S3_ACCESS_KEY" \
+    --from-literal=S3_SECRET_KEY="$S3_SECRET_KEY" \
+    --from-literal=TRANSCRIPTION_API_KEY="" \
+    --from-literal=MIMO_API_KEY="" \
+    --from-literal=DASHSCOPE_API_KEY="" \
+    --from-literal=LLM_API_KEY="" \
+    --dry-run=client -o yaml | kubectl apply -f -
+
+  log "installing Helm release $HELM_RELEASE from $HELM_CHART"
+  run_helm upgrade --install "$HELM_RELEASE" "$HELM_CHART" \
+    --namespace "$K8S_NAMESPACE" \
+    --wait \
+    --timeout 180s \
+    --set fullnameOverride=soniq \
+    --set secret.name=soniq-secret \
+    --set-string config.data.APP_PUBLIC_URL="http://localhost:$KIND_SMOKE_API_PORT" \
+    --set-string config.data.AUTH_COOKIE_SECURE=false \
+    --set-string config.data.TEMPORAL_ADDRESS=temporal:7233 \
+    --set-string config.data.TEMPORAL_NAMESPACE=default \
+    --set-string config.data.TEMPORAL_TASK_QUEUE=soniq-audio-pipeline \
+    --set-string config.data.STORAGE_PROVIDER=s3_compatible \
+    --set-string config.data.S3_ENDPOINT=http://minio:9000 \
+    --set-string config.data.S3_REGION=us-east-1 \
+    --set-string config.data.S3_BUCKET="$S3_BUCKET" \
+    --set-string config.data.S3_FORCE_PATH_STYLE=true \
+    --set-string config.data.TRANSCRIPTION_PROVIDER=fake_transcription \
+    --set-string config.data.LLM_PROVIDER=fake_llm \
+    --set-string config.data.PRIVACY_ALLOW_EXTERNAL_MODEL_PROVIDERS=false
+
+  run_helm -n "$K8S_NAMESPACE" status "$HELM_RELEASE"
+}
+
 show_debug_context() {
   log "recent pod status"
   kubectl -n "$K8S_NAMESPACE" get pods -o wide || true
+  if [[ "$KIND_SMOKE_DEPLOYER" == "helm" ]]; then
+    log "helm release status"
+    run_helm -n "$K8S_NAMESPACE" status "$HELM_RELEASE" || true
+  fi
   log "migrate logs"
   kubectl -n "$K8S_NAMESPACE" logs job/soniq-migrate || true
   log "api logs"
@@ -750,6 +923,12 @@ main() {
   require_command docker
   require_command kind
   require_command kubectl
+  if [[ "$KIND_SMOKE_DEPLOYER" == "helm" ]]; then
+    require_helm
+  elif [[ "$KIND_SMOKE_DEPLOYER" != "kubectl" ]]; then
+    printf 'KIND_SMOKE_DEPLOYER must be kubectl or helm, got %s\n' "$KIND_SMOKE_DEPLOYER" >&2
+    exit 2
+  fi
   require_command python3
   python3 -c 'import yaml' >/dev/null 2>&1 || {
     printf 'python3 with PyYAML is required for kind Kubernetes smoke\n' >&2
@@ -791,8 +970,6 @@ main() {
   log "loading Soniq images into kind cluster $KIND_CLUSTER_NAME"
   kind load docker-image soniq-api:dev soniq-worker:dev soniq-migrate:dev --name "$KIND_CLUSTER_NAME"
 
-  render_smoke_manifest "$postgres_ip" "$temporal_ip" "$minio_ip"
-
   if [[ "$KIND_SMOKE_CLEAN_NAMESPACE" == "1" ]]; then
     log "cleaning namespace $K8S_NAMESPACE"
     kubectl delete namespace "$K8S_NAMESPACE" --ignore-not-found
@@ -801,15 +978,11 @@ main() {
     done
   fi
 
-  log "applying smoke manifest"
-  kubectl apply -f "$SMOKE_MANIFEST"
-
-  log "waiting for migration job"
-  if ! kubectl -n "$K8S_NAMESPACE" wait --for=condition=complete job/soniq-migrate --timeout=180s; then
-    show_debug_context
-    return 1
+  if [[ "$KIND_SMOKE_DEPLOYER" == "helm" ]]; then
+    deploy_smoke_helm_release "$postgres_ip" "$temporal_ip" "$minio_ip"
+  else
+    deploy_smoke_manifest "$postgres_ip" "$temporal_ip" "$minio_ip"
   fi
-  kubectl -n "$K8S_NAMESPACE" logs job/soniq-migrate
 
   log "waiting for API and worker deployments"
   if ! kubectl -n "$K8S_NAMESPACE" rollout status deployment/soniq-api --timeout=180s; then

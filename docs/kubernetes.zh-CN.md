@@ -104,24 +104,38 @@ values。它也默认跟随 Helm release namespace，而不是创建 Namespace r
 如果只是想在本地渲染可选的 Namespace 和占位 Secret 路径：
 
 ```bash
-HELM_TEMPLATE_ARGS='--set namespace.create=true --set secret.create=true --set-string secret.stringData.POSTGRES_DSN=postgres://soniq_user:change-me@postgres.example.com:5432/soniq?sslmode=require --set-string secret.stringData.S3_ACCESS_KEY=change-me --set-string secret.stringData.S3_SECRET_KEY=change-me' \
+HELM_TEMPLATE_ARGS='--set namespace.create=true --set secret.create=true --set migrate.hook.enabled=false --set-string secret.stringData.POSTGRES_DSN=postgres://soniq_user:change-me@postgres.example.com:5432/soniq?sslmode=require --set-string secret.stringData.S3_ACCESS_KEY=change-me --set-string secret.stringData.S3_SECRET_KEY=change-me' \
   make helm-template
 ```
 
-真实 Helm install 时，先准备私有 values 文件或外部 Secret，然后安装到目标 namespace：
+真实 Helm install 时，先创建 namespace 和 Secret，然后安装到这个 namespace：
+
+```bash
+kubectl create namespace soniq --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n soniq create secret generic soniq-secret \
+  --from-literal=POSTGRES_DSN='postgres://soniq_user:change-me@postgres.example.com:5432/soniq?sslmode=require' \
+  --from-literal=S3_ACCESS_KEY='change-me' \
+  --from-literal=S3_SECRET_KEY='change-me' \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+然后带上私有配置覆盖来应用 chart：
 
 ```bash
 helm upgrade --install soniq deploy/helm/soniq \
   --namespace soniq \
-  --create-namespace \
   --wait \
   --timeout 5m \
   -f values.production.yaml
 ```
 
 默认情况下，migration Job 会作为 Helm `pre-install,pre-upgrade` hook 执行，所以
-migrations 成功完成后才会继续应用 API/worker 等应用资源。只有在明确想单独管理
-migration Job 时，才设置 `migrate.hook.enabled=false`。
+migrations 成功完成后才会继续应用 API/worker 等应用资源。因为 pre-install hook
+会在普通 chart resources 创建前执行，所以 `soniq-secret` 引用的 Secret 必须在
+install 前已经存在。hook 会直接从 chart values 接收非敏感 config，从预先存在的
+Secret 接收敏感值。只有在明确想单独管理 migration Job 时，才设置
+`migrate.hook.enabled=false`。chart 会拒绝 `secret.create=true` 和默认 migration
+hook 同时开启，因为这个组合在首次 install 时无法工作。
 
 运行本地 manifest smoke：
 
@@ -165,6 +179,19 @@ API 上传一个生成的 WAV 文件，等待 Temporal workflow 完成，校验 
 summary 和 mind map 已经持久化，然后继续验证 recording 生命周期：soft delete、
 Trash restore、再次 soft delete、永久 purge、purge artifact cleanup rows，以及
 S3 object 删除。如果只想跑部署 readiness 部分，可以设置 `KIND_SMOKE_WORKFLOW=0`。
+
+通过 Helm chart 运行同一条 kind smoke：
+
+```bash
+make k8s-smoke-kind-helm
+```
+
+这条路径仍然使用 Compose 管理的 Postgres、Temporal 和 MinIO，但会用
+`helm upgrade --install` 部署 Soniq API、worker 和 migration hook。因为 migration
+hook 需要在普通 chart resources 应用前读取 Secret，smoke 脚本会先创建外部
+`soniq-secret`，再调用 Helm。如果本机没有安装 `helm`，这个 target 会通过
+`scripts/helm-cluster.sh` 使用 Dockerized Helm，并通过 host network 和挂载的
+`~/.kube` 访问本地 kind API server。
 
 ## Apply
 
@@ -218,7 +245,7 @@ kubectl -n soniq delete job soniq-migrate
 kubectl apply -f deploy/kubernetes/base/migrate-job.yaml
 ```
 
-后面 Helm pre-install/pre-upgrade hooks 可以处理这个问题；当前 base layer 保持行为显式。
+Helm chart 已经通过 pre-install/pre-upgrade hooks 处理 migration 重跑；当前 raw-manifest 路径保持行为显式。
 
 ## 运维检查
 
@@ -245,6 +272,6 @@ kubectl -n soniq logs job/soniq-migrate
 
 - 还没有 Ingress 或 TLS manifest。
 - 还没有 HPA、PDB、NetworkPolicy 或 topology spread constraints。
-- 还没有 Helm 级 cluster smoke script；当前 kind smoke 覆盖的是 raw-manifest
-  部署路径。
+- 还没有远程集群 release smoke；当前 cluster smoke 覆盖的是本地 kind 下的
+  raw manifests 和 Helm 两条路径。
 - Worker 还没有暴露 HTTP health endpoint，所以 worker health 当前主要依赖进程状态和日志。

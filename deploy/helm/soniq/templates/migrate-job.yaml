@@ -28,7 +28,14 @@ spec:
       {{- end }}
     spec:
       restartPolicy: {{ .Values.migrate.restartPolicy }}
+      automountServiceAccountToken: false
+      {{- if .Values.migrate.hook.enabled }}
+      {{- with .Values.migrate.serviceAccountName }}
+      serviceAccountName: {{ . }}
+      {{- end }}
+      {{- else }}
       serviceAccountName: {{ include "soniq.serviceAccountName" . }}
+      {{- end }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -39,11 +46,22 @@ spec:
         - name: migrate
           image: "{{ .Values.migrate.image.repository }}:{{ .Values.migrate.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.migrate.image.pullPolicy }}
+          {{- if .Values.migrate.hook.enabled }}
+          env:
+            {{- range $key, $value := .Values.config.data }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          envFrom:
+            - secretRef:
+                name: {{ include "soniq.secretName" . }}
+          {{- else }}
           envFrom:
             - configMapRef:
                 name: {{ include "soniq.configName" . }}
             - secretRef:
                 name: {{ include "soniq.secretName" . }}
+          {{- end }}
           resources:
             {{- toYaml .Values.migrate.resources | nindent 12 }}
           securityContext:

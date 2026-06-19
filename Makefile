@@ -8,6 +8,7 @@ KUBECTL_IMAGE ?= registry.k8s.io/kubectl:v1.36.2
 KUBECTL ?= $(if $(shell command -v kubectl 2>/dev/null),kubectl,$(DOCKER) run --rm -v $(CURDIR):/work -w /work $(KUBECTL_IMAGE))
 HELM_IMAGE ?= alpine/helm:4.2.2
 HELM ?= $(if $(shell command -v helm 2>/dev/null),helm,$(DOCKER) run --rm -v $(CURDIR):/work -w /work $(HELM_IMAGE))
+HELM_CLUSTER_WRAPPER ?= $(CURDIR)/scripts/helm-cluster.sh
 HELM_CHART ?= deploy/helm/soniq
 HELM_RELEASE ?= soniq
 HELM_NAMESPACE ?= soniq
@@ -68,7 +69,7 @@ endif
 
 $(foreach key,$(CONFIG_ENV_KEYS),$(if $(filter environment command line,$(__ENV_ORIGIN_$(key))),$(eval override $(key) := $(__ENV_VALUE_$(key)))))
 
-.PHONY: fmt lint test api worker env-check migrate debug-purge-artifacts temporal-up temporal-down temporal-logs temporal-ps smoke-postgres-temporal docker-build docker-build-api docker-build-worker docker-build-migrate k8s-render k8s-dry-run k8s-smoke k8s-smoke-kind helm-version helm-template helm-lint
+.PHONY: fmt lint test api worker env-check migrate debug-purge-artifacts temporal-up temporal-down temporal-logs temporal-ps smoke-postgres-temporal docker-build docker-build-api docker-build-worker docker-build-migrate k8s-render k8s-dry-run k8s-smoke k8s-smoke-kind k8s-smoke-kind-helm helm-version helm-template helm-lint
 
 $(foreach key,$(CONFIG_ENV_KEYS),$(eval api worker env-check migrate debug-purge-artifacts smoke-postgres-temporal: export $(key) := $($(key))))
 
@@ -139,6 +140,9 @@ k8s-smoke:
 
 k8s-smoke-kind:
 	./scripts/smoke-kind-kubernetes.sh
+
+k8s-smoke-kind-helm:
+	KIND_SMOKE_DEPLOYER=helm HELM_WRAPPER='$(HELM_CLUSTER_WRAPPER)' ./scripts/smoke-kind-kubernetes.sh
 
 helm-version:
 	$(HELM) version --short

@@ -126,6 +126,7 @@ worker:
 
 migrate:
   enabled: true
+  serviceAccountName: ""
   backoffLimit: 3
   restartPolicy: OnFailure
   hook:

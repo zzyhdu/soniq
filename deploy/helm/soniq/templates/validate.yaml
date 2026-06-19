@@ -1,0 +1,3 @@
+{{- if and .Values.migrate.enabled .Values.migrate.hook.enabled .Values.secret.create -}}
+{{- fail "secret.create=true cannot be used with migrate.hook.enabled=true because the pre-install migration hook runs before chart-created Secrets exist. Pre-create the Secret, or set migrate.hook.enabled=false and manage migration separately." -}}
+{{- end -}}

@@ -125,6 +125,7 @@
       "additionalProperties": true,
       "properties": {
         "enabled": { "type": "boolean" },
+        "serviceAccountName": { "type": "string" },
         "backoffLimit": { "type": "integer", "minimum": 0 },
         "restartPolicy": { "type": "string" },
         "hook": {

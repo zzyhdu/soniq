@@ -33,11 +33,10 @@ Kubernetes 前置条件已经补齐一部分：
 
 后续还缺：
 
-- Helm values schema 和 chart。
-- Kubernetes smoke。
 - 更完整的 resource requests/limits 调优。
 - graceful shutdown 明确化。
 - HPA/PDB/NetworkPolicy/topology spread 等生产硬化。
+- 远程集群 release smoke 和回滚 runbook。
 
 ## 核心原则
 
@@ -422,13 +421,17 @@ deploy/helm/soniq/
   worker Deployment 和 migration Job。
 - migration Job 默认作为 Helm `pre-install,pre-upgrade` hook 执行，避免 API/worker
   在 migrations 完成前启动，也避免普通 Job 在 `helm upgrade` 时无法自然重跑。
+- chart 会拒绝 `secret.create=true` 和默认 migration hook 同时开启，避免 hook 在
+  chart-created Secret 创建前失败。
 - chart 默认引用 `soniq-secret`，但不渲染 Secret；真实 secret 由外部 Secret
   或私有 values 管理。
 - chart 默认跟随 Helm release namespace，不主动创建 Namespace；需要 raw-manifest
   风格时可设置 `namespace.create=true`。
 - 已新增 `values.yaml` 和 `values.schema.json`。
 - 已新增 `make helm-template` 和 `make helm-lint`，并支持 pinned Dockerized Helm fallback。
-- optional Ingress、Helm install smoke 和生产 hardening 尚未实现。
+- 已新增 `make k8s-smoke-kind-helm`，用 Helm chart 部署 API/worker/migration hook，
+  并复用现有 kind workflow/lifecycle smoke。
+- optional Ingress 和生产 hardening 尚未实现。
 
 验收：
 

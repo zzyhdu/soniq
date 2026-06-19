@@ -114,17 +114,27 @@ release namespace by default instead of creating a Namespace resource.
 For local rendering of the optional Namespace and placeholder Secret path:
 
 ```bash
-HELM_TEMPLATE_ARGS='--set namespace.create=true --set secret.create=true --set-string secret.stringData.POSTGRES_DSN=postgres://soniq_user:change-me@postgres.example.com:5432/soniq?sslmode=require --set-string secret.stringData.S3_ACCESS_KEY=change-me --set-string secret.stringData.S3_SECRET_KEY=change-me' \
+HELM_TEMPLATE_ARGS='--set namespace.create=true --set secret.create=true --set migrate.hook.enabled=false --set-string secret.stringData.POSTGRES_DSN=postgres://soniq_user:change-me@postgres.example.com:5432/soniq?sslmode=require --set-string secret.stringData.S3_ACCESS_KEY=change-me --set-string secret.stringData.S3_SECRET_KEY=change-me' \
   make helm-template
 ```
 
-For a real Helm install, prepare a private values file or external Secret, then
-install into the target namespace:
+For a real Helm install, create the namespace and Secret first, then install
+into that namespace:
+
+```bash
+kubectl create namespace soniq --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n soniq create secret generic soniq-secret \
+  --from-literal=POSTGRES_DSN='postgres://soniq_user:change-me@postgres.example.com:5432/soniq?sslmode=require' \
+  --from-literal=S3_ACCESS_KEY='change-me' \
+  --from-literal=S3_SECRET_KEY='change-me' \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+Then apply the chart with any private config overrides:
 
 ```bash
 helm upgrade --install soniq deploy/helm/soniq \
   --namespace soniq \
-  --create-namespace \
   --wait \
   --timeout 5m \
   -f values.production.yaml
@@ -132,8 +142,13 @@ helm upgrade --install soniq deploy/helm/soniq \
 
 The migration Job runs as a Helm `pre-install,pre-upgrade` hook by default, so
 application resources are not applied until migrations complete successfully.
-Set `migrate.hook.enabled=false` only when you intentionally want to manage the
-migration Job separately.
+Because pre-install hooks run before normal chart resources are created, the
+Secret referenced by `soniq-secret` must exist before install. The hook receives
+non-secret config directly from chart values and sensitive values from the
+pre-existing Secret. Set `migrate.hook.enabled=false` only when you
+intentionally want to manage the migration Job separately. The chart rejects
+`secret.create=true` with the default migration hook enabled because that
+combination cannot work on a first install.
 
 Run the local manifest smoke:
 
@@ -183,6 +198,21 @@ rows, then verifies the recording lifecycle path: soft delete, Trash restore,
 soft delete again, permanent purge, purge artifact cleanup rows, and S3 object
 deletion. Set `KIND_SMOKE_WORKFLOW=0` to run only the deployment readiness
 portion.
+
+Run the same kind smoke through the Helm chart:
+
+```bash
+make k8s-smoke-kind-helm
+```
+
+This uses the same Compose-managed Postgres, Temporal, and MinIO dependencies,
+but deploys Soniq API, worker, and the migration hook with
+`helm upgrade --install`. The smoke script creates the external `soniq-secret`
+before invoking Helm because the migration hook needs Secret values before
+normal chart resources are applied. When local `helm` is unavailable, this
+target uses `scripts/helm-cluster.sh` to run the Dockerized Helm image with the
+host network and mounted `~/.kube` directory so it can reach the local kind API
+server.
 
 ## Apply
 
@@ -239,8 +269,8 @@ kubectl -n soniq delete job soniq-migrate
 kubectl apply -f deploy/kubernetes/base/migrate-job.yaml
 ```
 
-Helm pre-install/pre-upgrade hooks can handle this later, but this base layer
-keeps the behavior explicit.
+The Helm chart already runs migrations through pre-install/pre-upgrade hooks.
+This raw-manifest path keeps the behavior explicit.
 
 ## Operational Checks
 
@@ -267,7 +297,7 @@ kubectl -n soniq logs job/soniq-migrate
 
 - No Ingress or TLS manifest.
 - No HPA, PDB, NetworkPolicy, or topology spread constraints.
-- No Helm-based cluster smoke script yet; the current kind smoke validates the
-  raw-manifest deployment path.
+- No remote-cluster release smoke yet; current cluster smoke coverage is local
+  kind for both raw manifests and Helm.
 - Worker exposes no HTTP health endpoint, so worker health is currently based
   on process status and logs.
