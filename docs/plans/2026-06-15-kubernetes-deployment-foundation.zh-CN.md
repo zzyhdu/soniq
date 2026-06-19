@@ -34,7 +34,6 @@ Kubernetes 前置条件已经补齐一部分：
 后续还缺：
 
 - 更完整的 resource requests/limits 调优。
-- graceful shutdown 明确化。
 - HPA/PDB/NetworkPolicy/topology spread 等生产硬化。
 - 远程集群 release smoke 和回滚 runbook。
 
@@ -512,6 +511,12 @@ verify purge artifact rows deleted status
 - API readiness 在依赖不可用时正确下线。
 - worker 收到 SIGTERM 后停止接新任务并优雅退出。
 - 企业部署文档覆盖备份、恢复、升级、回滚。
+
+当前进展：
+
+- API 已处理 `SIGINT`/`SIGTERM`，停止接新 HTTP 连接，并最多等待 25 秒完成 in-flight requests。
+- worker 已处理 `SIGINT`/`SIGTERM`，通过 context 停止 Temporal worker polling，并取消 purge artifact cleanup loop。
+- raw manifests 和 Helm chart 已为 API/worker 设置 `terminationGracePeriodSeconds: 30`。
 
 ## 推荐执行顺序
 

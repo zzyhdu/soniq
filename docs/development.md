@@ -313,6 +313,11 @@ use structured `slog` output. Keep `LOG_FORMAT=text` for local readability, or
 set `LOG_FORMAT=json` when logs will be collected by a log backend. `LOG_LEVEL`
 accepts `debug`, `info`, `warn`, or `error`.
 
+The API and worker handle `SIGINT` and `SIGTERM` for local and Kubernetes
+shutdowns. `make api` stops accepting new HTTP requests and waits briefly for
+in-flight requests before exiting. `make worker` stops the Temporal worker and
+cancels the purge artifact cleanup loop before exiting.
+
 ## Use the Recording API
 
 The identity, workspace, and recording endpoints now persist metadata in Soniq Postgres in the production API path. `POST /auth/signup` creates a new user, default workspace, owner membership, and login session; subsequent requests authenticate through the `soniq_session` httpOnly cookie backed by the `user_sessions` table. Unsafe authenticated requests also require `X-CSRF-Token` copied from the readable `soniq_csrf` cookie. Records survive API process restarts as long as the local Postgres volume remains intact. Audio-backed recordings write the original uploaded file through S3-compatible object storage; the worker later writes a sibling normalized artifact named `normalized.wav`.

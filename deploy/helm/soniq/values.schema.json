@@ -84,6 +84,7 @@
       "additionalProperties": true,
       "properties": {
         "replicas": { "type": "integer", "minimum": 0 },
+        "terminationGracePeriodSeconds": { "type": "integer", "minimum": 1 },
         "image": { "$ref": "#/definitions/image" },
         "containerPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
         "service": {
@@ -113,6 +114,7 @@
       "additionalProperties": true,
       "properties": {
         "replicas": { "type": "integer", "minimum": 0 },
+        "terminationGracePeriodSeconds": { "type": "integer", "minimum": 1 },
         "image": { "$ref": "#/definitions/image" },
         "podAnnotations": { "type": "object", "additionalProperties": { "type": "string" } },
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },

@@ -137,3 +137,18 @@ application migrations.
 
 Kubernetes or any load balancer should use `/readyz` for API readiness and
 `/healthz` for API liveness.
+
+## Shutdown Behavior
+
+`soniq-api` handles `SIGINT` and `SIGTERM` gracefully. On shutdown it stops
+accepting new HTTP connections, waits up to 25 seconds for in-flight requests
+to complete, then closes runtime dependencies.
+
+`soniq-worker` handles the same signals through a shared process context. On
+shutdown it asks the Temporal worker to stop polling for new tasks, waits up to
+25 seconds for the Temporal SDK worker to drain, and cancels the purge artifact
+cleanup loop.
+
+Kubernetes pods should allow at least 30 seconds of termination grace for API
+and worker pods so the process-level 25 second drain can finish before the
+container is force-killed.

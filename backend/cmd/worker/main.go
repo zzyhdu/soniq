@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -23,6 +25,8 @@ import (
 	"go.temporal.io/sdk/client"
 	temporalworker "go.temporal.io/sdk/worker"
 )
+
+const workerStopTimeout = 25 * time.Second
 
 func main() {
 	showVersion := flag.Bool("version", false, "print build version and exit")
@@ -57,7 +61,10 @@ func main() {
 		slog.String("commit", version.Commit),
 	)
 
-	if err := run(context.Background(), cfg); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := run(ctx, cfg); err != nil {
 		logger.Error("worker stopped", slog.String("event", "worker_stopped"), slog.Any("error", err))
 		os.Exit(1)
 	}
@@ -88,29 +95,54 @@ func run(ctx context.Context, cfg config.Config) error {
 		return err
 	}
 
-	worker := temporalworker.New(temporalClient, cfg.TemporalTaskQueue, temporalworker.Options{})
+	worker := temporalworker.New(temporalClient, cfg.TemporalTaskQueue, temporalworker.Options{
+		WorkerStopTimeout: workerStopTimeout,
+	})
 	objectStore, err := buildObjectStore(ctx, cfg)
 	if err != nil {
 		return err
 	}
 	registerRecordingProcessing(worker, recordingStore, objectStore, activities.FFProbeRunner{}, activities.FFmpegNormalizeRunner{}, transcriptionProvider, summaryProvider)
-	cleanupCtx, cancelCleanup := context.WithCancel(ctx)
-	defer cancelCleanup()
 	cleanupRunner := cleanup.NewRecordingPurgeArtifactCleaner(recordingStore, objectStore, cleanup.RecordingPurgeArtifactCleanerOptions{
 		Interval:  time.Duration(cfg.PurgeArtifactCleanupIntervalSeconds) * time.Second,
 		BatchSize: int(cfg.PurgeArtifactCleanupBatchSize),
 		Logger:    slog.Default(),
 	})
+	return runTemporalWorkerWithCleanup(ctx, worker, cleanupRunner)
+}
+
+type temporalWorkerRunner interface {
+	Run(<-chan interface{}) error
+}
+
+type backgroundRunner interface {
+	Run(context.Context)
+}
+
+func runTemporalWorkerWithCleanup(ctx context.Context, worker temporalWorkerRunner, cleanupRunner backgroundRunner) error {
+	cleanupCtx, cancelCleanup := context.WithCancel(ctx)
+	defer cancelCleanup()
 	cleanupDone := make(chan struct{})
 	go func() {
 		defer close(cleanupDone)
 		cleanupRunner.Run(cleanupCtx)
 	}()
 
-	err = worker.Run(temporalworker.InterruptCh())
+	workerCtx, cancelWorker := context.WithCancel(ctx)
+	defer cancelWorker()
+	err := worker.Run(interruptChFromContext(workerCtx))
 	cancelCleanup()
 	<-cleanupDone
 	return err
+}
+
+func interruptChFromContext(ctx context.Context) <-chan interface{} {
+	interruptCh := make(chan interface{})
+	go func() {
+		<-ctx.Done()
+		close(interruptCh)
+	}()
+	return interruptCh
 }
 
 type recordingProcessingRegistry interface {

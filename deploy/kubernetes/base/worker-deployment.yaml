@@ -20,6 +20,7 @@ spec:
         app.kubernetes.io/component: worker
         app.kubernetes.io/part-of: soniq
     spec:
+      terminationGracePeriodSeconds: 30
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001

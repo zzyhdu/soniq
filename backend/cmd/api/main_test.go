@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/textproto"
@@ -24,6 +25,74 @@ import (
 	"github.com/zzyhdu/soniq/backend/internal/workflows"
 	"go.temporal.io/sdk/client"
 )
+
+func TestServeHTTPServerShutdownWaitsForInFlightRequest(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	handlerStarted := make(chan struct{})
+	releaseHandler := make(chan struct{})
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(handlerStarted)
+		<-releaseHandler
+		w.WriteHeader(http.StatusAccepted)
+	})
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	server := &http.Server{Handler: handler}
+	serverErr := make(chan error, 1)
+	go func() {
+		serverErr <- serveHTTPServer(ctx, nil, server, listener, time.Second)
+	}()
+
+	responseErr := make(chan error, 1)
+	go func() {
+		response, err := http.Get("http://" + listener.Addr().String())
+		if err != nil {
+			responseErr <- err
+			return
+		}
+		defer response.Body.Close()
+		if response.StatusCode != http.StatusAccepted {
+			responseErr <- fmt.Errorf("status code = %d, want %d", response.StatusCode, http.StatusAccepted)
+			return
+		}
+		responseErr <- nil
+	}()
+
+	select {
+	case <-handlerStarted:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for handler to start")
+	}
+
+	cancel()
+	select {
+	case err := <-serverErr:
+		t.Fatalf("server returned before in-flight handler finished: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(releaseHandler)
+	select {
+	case err := <-responseErr:
+		if err != nil {
+			t.Fatalf("request error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for request to complete")
+	}
+	select {
+	case err := <-serverErr:
+		if err != nil {
+			t.Fatalf("server error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for graceful shutdown")
+	}
+}
 
 func TestBuildHandlerCreatesRecordingSessionWithoutStartingWorkflow(t *testing.T) {
 	temporalClient := &temporalClientSpy{}

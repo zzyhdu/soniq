@@ -53,6 +53,7 @@ secret:
 
 api:
   replicas: 2
+  terminationGracePeriodSeconds: 30
   image:
     repository: soniq-api
     tag: dev
@@ -100,6 +101,7 @@ api:
 
 worker:
   replicas: 1
+  terminationGracePeriodSeconds: 30
   image:
     repository: soniq-worker
     tag: dev

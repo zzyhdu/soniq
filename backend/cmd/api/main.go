@@ -2,12 +2,16 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -27,6 +31,7 @@ import (
 const (
 	requiredSchemaMigrationVersion = 6
 	readinessCheckTimeout          = 2 * time.Second
+	apiShutdownTimeout             = 25 * time.Second
 )
 
 func main() {
@@ -53,7 +58,10 @@ func main() {
 	}
 	slog.SetDefault(logger)
 
-	handler, cleanup, err := buildHandler(context.Background(), cfg, dialTemporalClient, openPostgresAppStore)
+	rootCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	handler, cleanup, err := buildHandler(rootCtx, cfg, dialTemporalClient, openPostgresAppStore)
 	if err != nil {
 		logger.Error("build api handler", slog.String("event", "api_startup_failed"), slog.Any("error", err))
 		os.Exit(1)
@@ -67,10 +75,59 @@ func main() {
 		slog.String("version", version.Version),
 		slog.String("commit", version.Commit),
 	)
-	if err := http.ListenAndServe(addr, handler); err != nil {
+	if err := serveHTTP(rootCtx, logger, addr, handler, apiShutdownTimeout); err != nil {
 		logger.Error("api server stopped", slog.String("event", "api_stopped"), slog.Any("error", err))
 		os.Exit(1)
 	}
+}
+
+func serveHTTP(ctx context.Context, logger *slog.Logger, addr string, handler http.Handler, shutdownTimeout time.Duration) error {
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("listen on %s: %w", addr, err)
+	}
+	server := &http.Server{Handler: handler}
+	return serveHTTPServer(ctx, logger, server, listener, shutdownTimeout)
+}
+
+func serveHTTPServer(ctx context.Context, logger *slog.Logger, server *http.Server, listener net.Listener, shutdownTimeout time.Duration) error {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	if shutdownTimeout <= 0 {
+		shutdownTimeout = apiShutdownTimeout
+	}
+
+	serverErr := make(chan error, 1)
+	go func() {
+		err := server.Serve(listener)
+		if errors.Is(err, http.ErrServerClosed) {
+			err = nil
+		}
+		serverErr <- err
+	}()
+
+	select {
+	case err := <-serverErr:
+		return err
+	case <-ctx.Done():
+	}
+
+	logger.Info("shutting down soniq-api",
+		slog.String("event", "api_shutdown_started"),
+		slog.Duration("timeout", shutdownTimeout),
+	)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		_ = server.Close()
+		return fmt.Errorf("shutdown api server: %w", err)
+	}
+	if err := <-serverErr; err != nil {
+		return err
+	}
+	logger.Info("soniq-api shutdown completed", slog.String("event", "api_shutdown_completed"))
+	return nil
 }
 
 type temporalWorkflowClient interface {

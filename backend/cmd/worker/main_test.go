@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
 	"reflect"
 	"strings"
@@ -16,6 +17,75 @@ import (
 	"github.com/zzyhdu/soniq/backend/internal/workflows"
 	"go.temporal.io/sdk/activity"
 )
+
+func TestInterruptChFromContextClosesWhenContextIsCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	interruptCh := interruptChFromContext(ctx)
+
+	cancel()
+
+	select {
+	case <-interruptCh:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for interrupt channel to close")
+	}
+}
+
+func TestRunTemporalWorkerWithCleanupStopsCleanupOnContextCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	worker := &temporalWorkerRunnerSpy{started: make(chan struct{})}
+	cleanupRunner := &backgroundRunnerSpy{started: make(chan struct{}), stopped: make(chan struct{})}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- runTemporalWorkerWithCleanup(ctx, worker, cleanupRunner)
+	}()
+
+	select {
+	case <-worker.started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for worker to start")
+	}
+	select {
+	case <-cleanupRunner.started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for cleanup runner to start")
+	}
+
+	cancel()
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("runTemporalWorkerWithCleanup returned error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for worker shutdown")
+	}
+	select {
+	case <-cleanupRunner.stopped:
+	default:
+		t.Fatal("cleanup runner stopped after function returned = false, want true")
+	}
+}
+
+func TestRunTemporalWorkerWithCleanupReturnsWorkerError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	wantErr := errors.New("worker failed")
+	worker := &temporalWorkerRunnerSpy{started: make(chan struct{}), err: wantErr}
+	cleanupRunner := &backgroundRunnerSpy{started: make(chan struct{}), stopped: make(chan struct{})}
+
+	err := runTemporalWorkerWithCleanup(ctx, worker, cleanupRunner)
+
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("error = %v, want %v", err, wantErr)
+	}
+	select {
+	case <-cleanupRunner.stopped:
+	default:
+		t.Fatal("cleanup runner stopped after worker error = false, want true")
+	}
+}
 
 func TestRegisterRecordingProcessingRegistersWorkflowAndActivities(t *testing.T) {
 	worker := &recordingWorkerSpy{}
@@ -192,6 +262,31 @@ func TestSummaryProviderForConfigRejectsExternalProviderInPrivateMode(t *testing
 
 func sameFunction(a, b interface{}) bool {
 	return reflect.ValueOf(a).Pointer() == reflect.ValueOf(b).Pointer()
+}
+
+type temporalWorkerRunnerSpy struct {
+	started chan struct{}
+	err     error
+}
+
+func (s *temporalWorkerRunnerSpy) Run(interruptCh <-chan interface{}) error {
+	close(s.started)
+	if s.err != nil {
+		return s.err
+	}
+	<-interruptCh
+	return nil
+}
+
+type backgroundRunnerSpy struct {
+	started chan struct{}
+	stopped chan struct{}
+}
+
+func (s *backgroundRunnerSpy) Run(ctx context.Context) {
+	close(s.started)
+	<-ctx.Done()
+	close(s.stopped)
 }
 
 type objectStoreTestStub struct{}

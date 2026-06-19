@@ -259,6 +259,15 @@ If `AUTH_COOKIE_SECURE=true`, browser login requires HTTPS. For local
 port-forward-only testing over HTTP, temporarily set `AUTH_COOKIE_SECURE=false`
 in `soniq-config`.
 
+## Shutdown
+
+The API and worker Deployment specs set `terminationGracePeriodSeconds: 30`.
+`soniq-api` uses `http.Server.Shutdown` with a 25 second timeout, so Kubernetes
+has time to remove the pod from service endpoints and let in-flight requests
+finish. `soniq-worker` passes the same signal context to the Temporal worker and
+purge artifact cleanup loop; the Temporal worker uses a 25 second
+`WorkerStopTimeout` before the pod-level grace period expires.
+
 ## Update Migrations
 
 Kubernetes Jobs are not updated in place after their pod template changes. For

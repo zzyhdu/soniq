@@ -236,6 +236,15 @@ curl -i http://localhost:8080/readyz
 
 如果 `AUTH_COOKIE_SECURE=true`，浏览器登录需要 HTTPS。仅通过本地 port-forward 使用 HTTP 测试时，可以临时在 `soniq-config` 中设置 `AUTH_COOKIE_SECURE=false`。
 
+## Shutdown
+
+API 和 worker Deployment 都设置了 `terminationGracePeriodSeconds: 30`。
+`soniq-api` 收到停止信号后会调用 `http.Server.Shutdown`，最多等待 25 秒，让
+Kubernetes 有时间把 Pod 从 Service endpoints 移除，并让正在处理的 HTTP 请求结束。
+`soniq-worker` 会把同一个停止信号传给 Temporal worker 和 purge artifact cleanup
+loop；Temporal worker 使用 25 秒 `WorkerStopTimeout`，在 Pod 级别的 30 秒宽限期
+结束前尽量完成 drain。
+
 ## 更新 Migrations
 
 Kubernetes Jobs 在 pod template 变化后不会原地更新。raw-manifest 阶段如果要重新跑 migration，需要删除并重新创建 Job：
