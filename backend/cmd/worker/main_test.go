@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
@@ -12,6 +14,7 @@ import (
 	"github.com/zzyhdu/soniq/backend/internal/activities"
 	"github.com/zzyhdu/soniq/backend/internal/config"
 	"github.com/zzyhdu/soniq/backend/internal/domain"
+	"github.com/zzyhdu/soniq/backend/internal/observability"
 	"github.com/zzyhdu/soniq/backend/internal/recordings"
 	"github.com/zzyhdu/soniq/backend/internal/storage"
 	"github.com/zzyhdu/soniq/backend/internal/workflows"
@@ -117,7 +120,7 @@ func TestRegisterRecordingProcessingRegistersWorkflowAndActivities(t *testing.T)
 	worker := &recordingWorkerSpy{}
 	store := &workerRecordingStoreSpy{}
 
-	registerRecordingProcessing(worker, store, objectStoreTestStub{}, audioProbeRunnerTestStub{}, audioNormalizeRunnerTestStub{}, activities.FakeTranscriptionProvider{}, activities.FakeSummaryProvider{})
+	registerRecordingProcessing(worker, store, objectStoreTestStub{}, audioProbeRunnerTestStub{}, audioNormalizeRunnerTestStub{}, activities.FakeTranscriptionProvider{}, activities.FakeSummaryProvider{}, nil)
 
 	if got, want := len(worker.workflows), 1; got != want {
 		t.Fatalf("registered workflows = %d, want %d", got, want)
@@ -146,6 +149,88 @@ func TestRegisterRecordingProcessingRegistersWorkflowAndActivities(t *testing.T)
 		if got := worker.activities[i].options.Name; got != wantName {
 			t.Fatalf("activity %d name = %q, want %q", i, got, wantName)
 		}
+	}
+}
+
+func TestRegisterRecordingProcessingRecordsActivityMetrics(t *testing.T) {
+	worker := &recordingWorkerSpy{}
+	store := &workerRecordingStoreSpy{}
+	metrics := observability.NewMetrics()
+
+	registerRecordingProcessing(worker, store, objectStoreTestStub{}, audioProbeRunnerTestStub{}, audioNormalizeRunnerTestStub{}, activities.FakeTranscriptionProvider{}, activities.FakeSummaryProvider{}, metrics)
+
+	completeActivity := findRegisteredActivity[func(context.Context, activities.RecordingReference) (activities.RecordingProcessingResult, error)](t, worker, activities.CompleteRecordingProcessingActivityName)
+	if _, err := completeActivity(context.Background(), activities.RecordingReference{WorkspaceID: "wsp_default", RecordingID: "rec_1"}); err != nil {
+		t.Fatalf("complete activity returned error: %v", err)
+	}
+	failActivity := findRegisteredActivity[func(context.Context, activities.RecordingFailure) error](t, worker, activities.FailRecordingProcessingActivityName)
+	if err := failActivity(context.Background(), activities.RecordingFailure{WorkspaceID: "wsp_default", RecordingID: "rec_2", Reason: "transcribe audio: failed"}); err != nil {
+		t.Fatalf("fail activity returned error: %v", err)
+	}
+
+	body := workerMetricsBody(t, metrics)
+	for _, want := range []string{
+		`soniq_worker_activities_total{activity="` + activities.CompleteRecordingProcessingActivityName + `",result="success"} 1`,
+		`soniq_worker_activities_total{activity="` + activities.FailRecordingProcessingActivityName + `",result="success"} 1`,
+		`soniq_recording_terminal_status_updates_total{status="completed"} 1`,
+		`soniq_recording_terminal_status_updates_total{status="failed"} 1`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("metrics output missing %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "rec_1") || strings.Contains(body, "rec_2") || strings.Contains(body, "wsp_default") {
+		t.Fatalf("metrics output leaked high-cardinality IDs:\n%s", body)
+	}
+}
+
+func TestRegisterRecordingProcessingDoesNotRecordFailedOutcomeWhenFailureStatusWriteFails(t *testing.T) {
+	worker := &recordingWorkerSpy{}
+	store := &workerRecordingStoreSpy{updateStatusErr: errors.New("update status failed")}
+	metrics := observability.NewMetrics()
+
+	registerRecordingProcessing(worker, store, objectStoreTestStub{}, audioProbeRunnerTestStub{}, audioNormalizeRunnerTestStub{}, activities.FakeTranscriptionProvider{}, activities.FakeSummaryProvider{}, metrics)
+
+	failActivity := findRegisteredActivity[func(context.Context, activities.RecordingFailure) error](t, worker, activities.FailRecordingProcessingActivityName)
+	err := failActivity(context.Background(), activities.RecordingFailure{WorkspaceID: "wsp_default", RecordingID: "rec_2", Reason: "transcribe audio: failed"})
+	if err == nil {
+		t.Fatal("fail activity returned nil error, want update status error")
+	}
+
+	body := workerMetricsBody(t, metrics)
+	if !strings.Contains(body, `soniq_worker_activities_total{activity="`+activities.FailRecordingProcessingActivityName+`",result="error"} 1`) {
+		t.Fatalf("metrics output missing failed activity execution:\n%s", body)
+	}
+	if strings.Contains(body, `soniq_recording_terminal_status_updates_total{status="failed"}`) {
+		t.Fatalf("metrics output recorded failed processing outcome before failure status write succeeded:\n%s", body)
+	}
+}
+
+func TestStartWorkerMetricsServerServesMetrics(t *testing.T) {
+	metrics := observability.NewMetrics()
+	metrics.ObserveRecordingTerminalStatus(observability.MetricsRecordingStatusCompleted)
+
+	address, stop, err := startWorkerMetricsServer(context.Background(), "127.0.0.1:0", metrics, nil)
+	if err != nil {
+		t.Fatalf("startWorkerMetricsServer returned error: %v", err)
+	}
+	defer stop()
+
+	response, err := http.Get("http://" + address + "/metrics")
+	if err != nil {
+		t.Fatalf("GET worker metrics: %v", err)
+	}
+	defer response.Body.Close()
+	bodyBytes, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read metrics body: %v", err)
+	}
+	body := string(bodyBytes)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("metrics status = %d, want 200; body=%s", response.StatusCode, body)
+	}
+	if !strings.Contains(body, `soniq_recording_terminal_status_updates_total{status="completed"} 1`) {
+		t.Fatalf("metrics output missing recording terminal status counter:\n%s", body)
 	}
 }
 
@@ -290,6 +375,32 @@ func sameFunction(a, b interface{}) bool {
 	return reflect.ValueOf(a).Pointer() == reflect.ValueOf(b).Pointer()
 }
 
+func findRegisteredActivity[T any](t *testing.T, worker *recordingWorkerSpy, name string) T {
+	t.Helper()
+	for _, registered := range worker.activities {
+		if registered.options.Name == name {
+			activityFn, ok := registered.activity.(T)
+			if !ok {
+				t.Fatalf("activity %s type = %T, want requested activity type", name, registered.activity)
+			}
+			return activityFn
+		}
+	}
+	t.Fatalf("activity %s was not registered", name)
+	var zero T
+	return zero
+}
+
+func workerMetricsBody(t *testing.T, metrics *observability.Metrics) string {
+	t.Helper()
+	response := httptest.NewRecorder()
+	metrics.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("metrics status = %d, want 200", response.Code)
+	}
+	return response.Body.String()
+}
+
 type temporalWorkerRunnerSpy struct {
 	started chan struct{}
 	err     error
@@ -367,7 +478,9 @@ func (s *recordingWorkerSpy) RegisterActivityWithOptions(activityFn interface{},
 	s.activities = append(s.activities, registeredActivity{activity: activityFn, options: options})
 }
 
-type workerRecordingStoreSpy struct{}
+type workerRecordingStoreSpy struct {
+	updateStatusErr error
+}
 
 func (s *workerRecordingStoreSpy) Get(id string) (domain.Recording, bool, error) {
 	return domain.Recording{ID: id, WorkspaceID: "wsp_default"}, true, nil
@@ -385,6 +498,9 @@ func (s *workerRecordingStoreSpy) GetForWorkspace(input recordings.GetRecordingI
 }
 
 func (s *workerRecordingStoreSpy) UpdateStatus(input recordings.UpdateRecordingStatusInput) (domain.Recording, error) {
+	if s.updateStatusErr != nil {
+		return domain.Recording{}, s.updateStatusErr
+	}
 	return domain.Recording{ID: input.ID, WorkspaceID: input.WorkspaceID, Status: input.Status}, nil
 }
 

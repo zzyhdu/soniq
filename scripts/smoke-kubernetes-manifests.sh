@@ -96,6 +96,7 @@ for key in [
     "TEMPORAL_ADDRESS",
     "TEMPORAL_NAMESPACE",
     "TEMPORAL_TASK_QUEUE",
+    "WORKER_METRICS_ADDRESS",
     "WORKER_MAX_CONCURRENT_WORKFLOW_TASKS",
     "WORKER_MAX_CONCURRENT_ACTIVITIES",
     "WORKER_MAX_CONCURRENT_LOCAL_ACTIVITIES",
@@ -207,6 +208,12 @@ if first_container(api).get("livenessProbe", {}).get("httpGet", {}).get("path") 
     raise SystemExit("soniq-api livenessProbe must use /healthz")
 if first_container(api).get("readinessProbe", {}).get("httpGet", {}).get("path") != "/readyz":
     raise SystemExit("soniq-api readinessProbe must use /readyz")
+worker_ports = {
+    (port.get("name"), port.get("containerPort"))
+    for port in first_container(worker).get("ports") or []
+}
+if ("metrics", 9091) not in worker_ports:
+    raise SystemExit("soniq-worker must expose metrics containerPort 9091")
 
 service_selector = (service.get("spec") or {}).get("selector") or {}
 api_pod_labels = (

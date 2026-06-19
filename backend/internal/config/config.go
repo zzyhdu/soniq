@@ -19,6 +19,7 @@ type Config struct {
 	TemporalAddress                              string
 	TemporalNamespace                            string
 	TemporalTaskQueue                            string
+	WorkerMetricsAddress                         string
 	WorkerMaxConcurrentWorkflowTasks             int64
 	WorkerMaxConcurrentActivities                int64
 	WorkerMaxConcurrentLocalActivities           int64
@@ -63,6 +64,7 @@ func LoadFromEnv() Config {
 		TemporalAddress:                     envString("TEMPORAL_ADDRESS", "localhost:7233"),
 		TemporalNamespace:                   envString("TEMPORAL_NAMESPACE", "default"),
 		TemporalTaskQueue:                   envString("TEMPORAL_TASK_QUEUE", "soniq-audio-pipeline"),
+		WorkerMetricsAddress:                envString("WORKER_METRICS_ADDRESS", ":9091"),
 		WorkerMaxConcurrentWorkflowTasks:    envInt64ForValidation("WORKER_MAX_CONCURRENT_WORKFLOW_TASKS", 20),
 		WorkerMaxConcurrentActivities:       envInt64ForValidation("WORKER_MAX_CONCURRENT_ACTIVITIES", 4),
 		WorkerMaxConcurrentLocalActivities:  envInt64ForValidation("WORKER_MAX_CONCURRENT_LOCAL_ACTIVITIES", 4),

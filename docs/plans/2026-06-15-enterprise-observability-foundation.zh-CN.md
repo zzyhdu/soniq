@@ -395,14 +395,16 @@ WORKER_METRICS_ADDRESS=:9091
 初始 metrics：
 
 ```txt
+soniq_worker_activities_total{activity,result}
+soniq_worker_activity_duration_seconds{activity}
+soniq_recording_terminal_status_updates_total{status}
 soniq_purge_artifacts_claimed_total
 soniq_purge_artifacts_deleted_total
 soniq_purge_artifacts_failed_total
-soniq_purge_artifacts_pending
-soniq_purge_cleanup_run_duration_seconds
-soniq_recording_processing_completed_total
-soniq_recording_processing_failed_total
+soniq_purge_cleanup_run_duration_seconds{result}
 ```
+
+后续可在 store 支持低成本统计后再补 `soniq_purge_artifacts_pending` gauge。
 
 ### Temporal SDK metrics
 
@@ -463,9 +465,13 @@ make observability-smoke
   OpenTelemetry Collector 和 Jaeger。
 - Grafana 已 provision Prometheus/Jaeger datasources 和最小 API dashboard：
   request rate、5xx ratio、p95 latency。
+- worker 已新增独立 `/metrics` endpoint，默认 `WORKER_METRICS_ADDRESS=:9091`。
+- 已实现 worker activity count/duration、recording terminal status update counts、
+  purge cleanup claimed/deleted/failed counters 和 cleanup run duration。
+- 本地 Prometheus 已 scrape `host.docker.internal:9091/metrics`，Grafana dashboard 已加入
+  worker activity、recording terminal status 和 purge cleanup panels。
 - 已新增 `make observability-up/down/ps/logs/smoke`。
-- worker metrics、Temporal SDK metrics、业务 metrics、alert rules 和 tracing 代码接入
-  仍是后续工作。
+- Temporal SDK metrics、alert rules 和 tracing 代码接入仍是后续工作。
 
 ## Phase 4 — OpenTelemetry tracing
 

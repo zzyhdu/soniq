@@ -66,6 +66,7 @@ Non-sensitive values belong in ConfigMap-style configuration:
 | `TEMPORAL_ADDRESS` | yes | Temporal frontend host and port. |
 | `TEMPORAL_NAMESPACE` | yes | Temporal namespace used by API and worker. |
 | `TEMPORAL_TASK_QUEUE` | yes | Must match between API and worker. |
+| `WORKER_METRICS_ADDRESS` | yes for worker | Worker Prometheus metrics listen address, usually `:9091`. Set empty only when metrics are intentionally disabled. |
 | `WORKER_MAX_CONCURRENT_WORKFLOW_TASKS` | yes for worker | Per-worker maximum concurrent workflow task executions. Must be greater than 1. |
 | `WORKER_MAX_CONCURRENT_ACTIVITIES` | yes for worker | Per-worker maximum concurrent activity executions. Bounds audio processing and external model calls per worker pod. |
 | `WORKER_MAX_CONCURRENT_LOCAL_ACTIVITIES` | yes for worker | Per-worker maximum concurrent local activity executions. |
@@ -152,17 +153,28 @@ Kubernetes or any load balancer should use `/readyz` for API readiness and
 
 ## Metrics
 
-`GET /metrics` exposes Prometheus text-format API metrics. The first supported
-metrics are:
+`GET /metrics` on the API exposes Prometheus text-format API metrics:
 
 - `soniq_http_requests_total{route,method,status}`
 - `soniq_http_request_duration_seconds{route,method}`
 
-The `route` label uses the router template, not the concrete path. Do not add
-`user_id`, `workspace_id`, `recording_id`, object keys, emails, filenames, or
-other high-cardinality values as Prometheus labels. Worker, Temporal SDK, and
-business-operation metrics are planned but not part of this first API metrics
-slice.
+The worker exposes its own `/metrics` endpoint on `WORKER_METRICS_ADDRESS`.
+Current worker metrics include:
+
+- `soniq_worker_activities_total{activity,result}`
+- `soniq_worker_activity_duration_seconds{activity}`
+- `soniq_recording_terminal_status_updates_total{status}`
+- `soniq_purge_artifacts_claimed_total`
+- `soniq_purge_artifacts_deleted_total`
+- `soniq_purge_artifacts_failed_total`
+- `soniq_purge_cleanup_run_duration_seconds{result}`
+
+The API `route` label uses the router template, not the concrete path. Do not
+add `user_id`, `workspace_id`, `recording_id`, artifact IDs, object keys,
+emails, filenames, or other high-cardinality values as Prometheus labels.
+`soniq_recording_terminal_status_updates_total` records persisted terminal
+status updates such as `completed` and `failed`; it is not a full Temporal
+workflow outcome counter. Temporal SDK metrics are planned separately.
 
 The repository includes an optional local observability stack in
 `compose.observability.yml`:
@@ -178,7 +190,8 @@ Start it with:
 make observability-up
 ```
 
-Prometheus scrapes the local API at `host.docker.internal:8080/metrics`.
+Prometheus scrapes the local API at `host.docker.internal:8080/metrics` and the
+local worker at `host.docker.internal:9091/metrics`.
 Grafana is available at `http://localhost:3001` with local-only default
 credentials `admin` / `soniq_admin`, and Jaeger is available at
 `http://localhost:16686`. These defaults are for local development and should
@@ -262,7 +275,9 @@ Kubernetes NetworkPolicy should be enabled in clusters whose CNI plugin enforces
 it. Soniq's baseline policies select API, worker, and migration pods:
 
 - API allows inbound TCP 8080 for HTTP traffic.
-- Worker and migration pods deny inbound traffic.
+- Worker and migration pods deny inbound traffic by default. Worker metrics are
+  exposed by the container on TCP 9091, but production deployments should allow
+  ingress only from Prometheus or the chosen monitoring namespace.
 - API, worker, and migration pods allow outbound DNS plus TCP 80, 443, 9000,
   5432, and 7233 for object storage, Postgres, Temporal, and external model
   providers.

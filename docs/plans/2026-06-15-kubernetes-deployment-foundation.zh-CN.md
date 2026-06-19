@@ -557,6 +557,9 @@ Kubernetes 依赖 observability Phase 1/2：
 后续 Prometheus metrics 会继续增强 K8s 部署：
 
 - API `/metrics` 已可用于 Prometheus scrape。
+- worker `/metrics` 已通过 `WORKER_METRICS_ADDRESS=:9091` 和 container port 暴露；
+  baseline NetworkPolicy 默认拒绝 worker 入站，生产需显式允许 Prometheus/监控 namespace
+  访问 TCP 9091。ServiceMonitor/PodMonitor 仍是后续集成项。
 - Grafana dashboard 用于 API/worker/purge cleanup 监控。
 - alert rules 用于生产告警。
 

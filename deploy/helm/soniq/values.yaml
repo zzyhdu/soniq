@@ -26,6 +26,8 @@ networkPolicy:
       from: []
     extraEgress: []
   worker:
+    metricsIngress:
+      from: []
     extraEgress: []
   migrate:
     extraEgress: []
@@ -43,6 +45,7 @@ config:
     TEMPORAL_ADDRESS: temporal-frontend.temporal.svc.cluster.local:7233
     TEMPORAL_NAMESPACE: default
     TEMPORAL_TASK_QUEUE: soniq-audio-pipeline
+    WORKER_METRICS_ADDRESS: :9091
     WORKER_MAX_CONCURRENT_WORKFLOW_TASKS: "20"
     WORKER_MAX_CONCURRENT_ACTIVITIES: "4"
     WORKER_MAX_CONCURRENT_LOCAL_ACTIVITIES: "4"
@@ -156,6 +159,7 @@ worker:
     repository: soniq-worker
     tag: dev
     pullPolicy: IfNotPresent
+  metricsPort: 9091
   podAnnotations: {}
   podSecurityContext:
     runAsNonRoot: true

@@ -63,6 +63,31 @@ func (s *purgeObjectStoreSpy) DeleteObject(ctx context.Context, key string) erro
 	return s.err
 }
 
+type purgeMetricsSpy struct {
+	claimed      int
+	deleted      int
+	failed       int
+	runResults   []string
+	runDurations []time.Duration
+}
+
+func (s *purgeMetricsSpy) ObservePurgeArtifactsClaimed(count int) {
+	s.claimed += count
+}
+
+func (s *purgeMetricsSpy) ObservePurgeArtifactDeleted() {
+	s.deleted++
+}
+
+func (s *purgeMetricsSpy) ObservePurgeArtifactFailed() {
+	s.failed++
+}
+
+func (s *purgeMetricsSpy) ObservePurgeCleanupRun(result string, duration time.Duration) {
+	s.runResults = append(s.runResults, result)
+	s.runDurations = append(s.runDurations, duration)
+}
+
 func TestRecordingPurgeArtifactCleanerRunOnceDeletesClaimedArtifacts(t *testing.T) {
 	store := &purgeArtifactStoreSpy{claimed: []recordings.RecordingPurgeArtifact{{
 		ID:           "rpa_1",
@@ -83,6 +108,40 @@ func TestRecordingPurgeArtifactCleanerRunOnceDeletesClaimedArtifacts(t *testing.
 	}
 	if len(store.failed) != 0 {
 		t.Fatalf("failed marks = %+v, want none", store.failed)
+	}
+}
+
+func TestRecordingPurgeArtifactCleanerRunOnceRecordsMetrics(t *testing.T) {
+	store := &purgeArtifactStoreSpy{claimed: []recordings.RecordingPurgeArtifact{{
+		ID:           "rpa_1",
+		ObjectKey:    "workspaces/wsp_default/recordings/rec/original.wav",
+		AttemptCount: 0,
+	}}}
+	objectStore := &purgeObjectStoreSpy{}
+	metrics := &purgeMetricsSpy{}
+	cleaner := NewRecordingPurgeArtifactCleaner(store, objectStore, RecordingPurgeArtifactCleanerOptions{
+		BatchSize: 10,
+		Metrics:   metrics,
+	})
+
+	if err := cleaner.RunOnce(context.Background()); err != nil {
+		t.Fatalf("RunOnce returned error: %v", err)
+	}
+
+	if metrics.claimed != 1 {
+		t.Fatalf("claimed metrics = %d, want 1", metrics.claimed)
+	}
+	if metrics.deleted != 1 {
+		t.Fatalf("deleted metrics = %d, want 1", metrics.deleted)
+	}
+	if metrics.failed != 0 {
+		t.Fatalf("failed metrics = %d, want 0", metrics.failed)
+	}
+	if got, want := metrics.runResults, []string{"success"}; len(got) != 1 || got[0] != want[0] {
+		t.Fatalf("run results = %+v, want %+v", got, want)
+	}
+	if len(metrics.runDurations) != 1 || metrics.runDurations[0] < 0 {
+		t.Fatalf("run durations = %+v, want one non-negative duration", metrics.runDurations)
 	}
 }
 
@@ -111,6 +170,38 @@ func TestRecordingPurgeArtifactCleanerRunOnceMarksFailedArtifactsRetryable(t *te
 	}
 	if len(store.deleted) != 0 {
 		t.Fatalf("deleted marks = %+v, want none", store.deleted)
+	}
+}
+
+func TestRecordingPurgeArtifactCleanerRunOnceRecordsFailureMetrics(t *testing.T) {
+	store := &purgeArtifactStoreSpy{claimed: []recordings.RecordingPurgeArtifact{{
+		ID:           "rpa_1",
+		ObjectKey:    "workspaces/wsp_default/recordings/rec/original.wav",
+		AttemptCount: 1,
+	}}}
+	objectStore := &purgeObjectStoreSpy{err: errCleanupObjectDelete}
+	metrics := &purgeMetricsSpy{}
+	cleaner := NewRecordingPurgeArtifactCleaner(store, objectStore, RecordingPurgeArtifactCleanerOptions{
+		BatchSize: 10,
+		Metrics:   metrics,
+	})
+
+	err := cleaner.RunOnce(context.Background())
+	if err == nil {
+		t.Fatal("RunOnce returned nil error, want delete error")
+	}
+
+	if metrics.claimed != 1 {
+		t.Fatalf("claimed metrics = %d, want 1", metrics.claimed)
+	}
+	if metrics.deleted != 0 {
+		t.Fatalf("deleted metrics = %d, want 0", metrics.deleted)
+	}
+	if metrics.failed != 1 {
+		t.Fatalf("failed metrics = %d, want 1", metrics.failed)
+	}
+	if got, want := metrics.runResults, []string{"error"}; len(got) != 1 || got[0] != want[0] {
+		t.Fatalf("run results = %+v, want %+v", got, want)
 	}
 }
 

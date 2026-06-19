@@ -123,6 +123,172 @@
       ],
       "title": "API p95 Latency",
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 8
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (activity, result) (rate(soniq_worker_activities_total[5m]))",
+          "legendFormat": "{{activity}} {{result}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Worker Activity Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 8
+      },
+      "id": 5,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (status) (rate(soniq_recording_terminal_status_updates_total[5m]))",
+          "legendFormat": "{{status}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Recording Terminal Status Updates",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 8
+      },
+      "id": 6,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(soniq_purge_artifacts_claimed_total{job=\"soniq-worker\"}[5m]))",
+          "legendFormat": "claimed",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(soniq_purge_artifacts_deleted_total{job=\"soniq-worker\"}[5m]))",
+          "legendFormat": "deleted",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(rate(soniq_purge_artifacts_failed_total{job=\"soniq-worker\"}[5m]))",
+          "legendFormat": "failed",
+          "refId": "C"
+        }
+      ],
+      "title": "Purge Artifact Cleanup Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 16
+      },
+      "id": 7,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, result) (rate(soniq_purge_cleanup_run_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95 {{result}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Purge Cleanup p95 Duration",
+      "type": "timeseries"
     }
   ],
   "refresh": "10s",
@@ -130,6 +296,7 @@
   "tags": [
     "soniq",
     "api",
+    "worker",
     "observability"
   ],
   "templating": {
@@ -141,7 +308,7 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Soniq API Overview",
+  "title": "Soniq Overview",
   "uid": "soniq-api-overview",
   "version": 1,
   "weekStart": ""

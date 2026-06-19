@@ -37,6 +37,7 @@ config:
     TEMPORAL_NAMESPACE: default
     TEMPORAL_TASK_QUEUE: soniq-audio-pipeline
 
+    WORKER_METRICS_ADDRESS: :9091
     WORKER_MAX_CONCURRENT_WORKFLOW_TASKS: "20"
     WORKER_MAX_CONCURRENT_ACTIVITIES: "4"
     WORKER_MAX_CONCURRENT_LOCAL_ACTIVITIES: "4"
@@ -88,6 +89,8 @@ networkPolicy:
       from: []
     extraEgress: []
   worker:
+    metricsIngress:
+      from: []
     extraEgress: []
   migrate:
     extraEgress: []
@@ -128,6 +131,7 @@ worker:
     repository: registry.example.com/soniq/soniq-worker
     tag: "2026.06.19"
     pullPolicy: IfNotPresent
+  metricsPort: 9091
   resources:
     requests:
       cpu: 250m

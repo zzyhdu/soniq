@@ -56,6 +56,7 @@ Edit `deploy/kubernetes/base/configmap.yaml` for non-secret settings:
 - `TEMPORAL_ADDRESS`
 - `TEMPORAL_NAMESPACE`
 - `TEMPORAL_TASK_QUEUE`
+- `WORKER_METRICS_ADDRESS`
 - worker concurrency settings:
   - `WORKER_MAX_CONCURRENT_WORKFLOW_TASKS`
   - `WORKER_MAX_CONCURRENT_ACTIVITIES`
@@ -374,9 +375,11 @@ NetworkPolicy.
 The baseline policy allows API ingress on TCP 8080, denies worker and migration
 ingress, and allows egress for DNS plus TCP 80, 443, 9000, 5432, and 7233.
 Those ports cover the default HTTP/HTTPS, MinIO/S3-compatible, Postgres, and
-Temporal paths. If production dependencies use different ports or require
-destination-specific allowlists, override Helm `networkPolicy` values before
-installing.
+Temporal paths. The worker container still exposes its metrics port, but
+production deployments should explicitly allow TCP 9091 only from Prometheus or
+the chosen monitoring namespace by setting Helm `networkPolicy.worker.metricsIngress.from`.
+If production dependencies use different ports or require destination-specific
+allowlists, override Helm `networkPolicy` values before installing.
 
 ## Update Migrations
 
@@ -405,6 +408,13 @@ API metrics:
 ```bash
 kubectl -n soniq port-forward service/soniq-api 8080:80
 curl -i http://localhost:8080/metrics
+```
+
+Worker metrics:
+
+```bash
+kubectl -n soniq port-forward deploy/soniq-worker 9091:9091
+curl -i http://localhost:9091/metrics
 ```
 
 Worker logs:

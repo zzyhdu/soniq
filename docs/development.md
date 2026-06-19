@@ -255,6 +255,7 @@ Default runtime configuration:
 - `TEMPORAL_ADDRESS=localhost:7233`
 - `TEMPORAL_NAMESPACE=default`
 - `TEMPORAL_TASK_QUEUE=soniq-audio-pipeline`
+- `WORKER_METRICS_ADDRESS=:9091`
 - `PURGE_ARTIFACT_CLEANUP_INTERVAL_SECONDS=300`
 - `PURGE_ARTIFACT_CLEANUP_BATCH_SIZE=25`
 - `STORAGE_PROVIDER=s3_compatible`
@@ -318,6 +319,18 @@ low-cardinality `route`, `method`, and `status` labels. Route labels use chi
 route templates such as `/workspaces/{workspace_id}/recordings/{recording_id}`,
 not concrete workspace or recording IDs.
 
+The worker exposes Prometheus metrics on a separate HTTP endpoint:
+
+```bash
+curl -i http://localhost:9091/metrics
+```
+
+Current worker metrics include Temporal activity counts and durations,
+recording terminal status update counts, and purge artifact cleanup
+claimed/deleted/failed counters and run duration. Worker metrics use fixed
+labels such as `activity`, `result`, and `status`; they do not include
+recording, workspace, artifact, object key, or user identifiers.
+
 To run the optional local observability stack:
 
 ```bash
@@ -337,13 +350,15 @@ Local URLs:
 - OpenTelemetry OTLP gRPC: `localhost:4317`
 - OpenTelemetry OTLP HTTP: `http://localhost:4318`
 
-Prometheus scrapes the local API at `host.docker.internal:8080/metrics`, so run
-`make api` on the default `API_ADDRESS=:8080` before expecting the `soniq-api`
-Prometheus target to be up. Grafana is provisioned with Prometheus and Jaeger
-datasources and a minimal `Soniq API Overview` dashboard for request rate, 5xx
-ratio, and p95 latency. The OpenTelemetry Collector is available for future
-OTLP metrics and traces; the current API HTTP metrics still use the direct
-Prometheus scrape path.
+Prometheus scrapes the local API at `host.docker.internal:8080/metrics` and the
+local worker at `host.docker.internal:9091/metrics`. Run `make api` and
+`make worker` on their default ports before expecting the `soniq-api` and
+`soniq-worker` Prometheus targets to be up. Grafana is provisioned with
+Prometheus and Jaeger datasources and a minimal `Soniq Overview` dashboard for
+API request rate/error/latency, worker activity rate, recording terminal status
+updates, and purge cleanup health. The OpenTelemetry Collector is available
+for future OTLP metrics and traces; the current API and worker metrics still
+use the direct Prometheus scrape path.
 
 Useful commands:
 
@@ -840,6 +855,7 @@ The current backend reads environment variables directly. Important local settin
 | `TEMPORAL_ADDRESS` | `localhost:7233` | Temporal server address used by `make api` and `make worker`. |
 | `TEMPORAL_NAMESPACE` | `default` | Temporal namespace used by `make api` and `make worker`. |
 | `TEMPORAL_TASK_QUEUE` | `soniq-audio-pipeline` | Task queue used when the API starts workflows and the worker polls work. |
+| `WORKER_METRICS_ADDRESS` | `:9091` | Worker Prometheus metrics listen address. Set empty to disable the worker metrics endpoint. |
 | `WORKER_MAX_CONCURRENT_WORKFLOW_TASKS` | `20` | Maximum concurrent Temporal workflow task executions per worker process. Must be greater than 1. |
 | `WORKER_MAX_CONCURRENT_ACTIVITIES` | `4` | Maximum concurrent Temporal activity executions per worker process. This bounds audio processing and external model calls per worker. |
 | `WORKER_MAX_CONCURRENT_LOCAL_ACTIVITIES` | `4` | Maximum concurrent Temporal local activity executions per worker process. |

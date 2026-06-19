@@ -54,6 +54,7 @@ Soniq migrations 只作用于 Soniq application Postgres 数据库，不能指�
 | `TEMPORAL_ADDRESS` | yes | Temporal frontend host 和 port。 |
 | `TEMPORAL_NAMESPACE` | yes | API 和 worker 使用的 Temporal namespace。 |
 | `TEMPORAL_TASK_QUEUE` | yes | API 和 worker 必须一致。 |
+| `WORKER_METRICS_ADDRESS` | worker required | worker Prometheus metrics 监听地址，通常是 `:9091`。只有明确禁用 metrics 时才设为空。 |
 | `WORKER_MAX_CONCURRENT_WORKFLOW_TASKS` | worker required | 单个 worker 进程最多同时执行多少 Temporal workflow tasks。必须大于 1。 |
 | `WORKER_MAX_CONCURRENT_ACTIVITIES` | worker required | 单个 worker 进程最多同时执行多少 Temporal activities。用于限制每个 worker pod 内的音频处理和外部 model 调用并发。 |
 | `WORKER_MAX_CONCURRENT_LOCAL_ACTIVITIES` | worker required | 单个 worker 进程最多同时执行多少 Temporal local activities。 |
@@ -128,15 +129,26 @@ Kubernetes 或任何 load balancer 都应该用 `/readyz` 判断 API 是否 read
 
 ## Metrics
 
-`GET /metrics` 暴露 Prometheus text-format API metrics。当前第一批支持的 metrics 是：
+API 的 `GET /metrics` 暴露 Prometheus text-format API metrics：
 
 - `soniq_http_requests_total{route,method,status}`
 - `soniq_http_request_duration_seconds{route,method}`
 
-`route` label 使用 router template，而不是真实请求 path。不要把 `user_id`、
-`workspace_id`、`recording_id`、object key、email、文件名，或者其他高基数字段放进
-Prometheus labels。worker、Temporal SDK 和业务操作 metrics 已计划，但不属于这次
-API metrics 的第一步。
+worker 会在 `WORKER_METRICS_ADDRESS` 上暴露自己的 `/metrics`。当前 worker metrics 包括：
+
+- `soniq_worker_activities_total{activity,result}`
+- `soniq_worker_activity_duration_seconds{activity}`
+- `soniq_recording_terminal_status_updates_total{status}`
+- `soniq_purge_artifacts_claimed_total`
+- `soniq_purge_artifacts_deleted_total`
+- `soniq_purge_artifacts_failed_total`
+- `soniq_purge_cleanup_run_duration_seconds{result}`
+
+API 的 `route` label 使用 router template，而不是真实请求 path。不要把 `user_id`、
+`workspace_id`、`recording_id`、artifact ID、object key、email、文件名，或者其他高基数字段放进
+Prometheus labels。`soniq_recording_terminal_status_updates_total` 统计的是已经写入
+数据库的 `completed` / `failed` 终态更新，不是完整 Temporal workflow outcome counter。
+Temporal SDK metrics 后续单独接入。
 
 仓库还包含一个可选的本地 observability stack：
 
@@ -152,7 +164,12 @@ API metrics 的第一步。
 make observability-up
 ```
 
-Prometheus 会抓取本地 API 的 `host.docker.internal:8080/metrics`。Grafana 地址是
+Prometheus 会抓取本地 API 的 `host.docker.internal:8080/metrics`，以及本地 worker 的
+`host.docker.internal:9091/metrics`。Grafana 地址是
 `http://localhost:3001`，本地默认账号密码是 `admin` / `soniq_admin`；Jaeger 地址是
 `http://localhost:16686`。这些默认值只用于本地开发，不应作为生产 credentials 或生产
 observability 部署方式。
+
+在 Kubernetes 里，worker 容器会暴露 TCP 9091 metrics 端口，但 baseline NetworkPolicy
+默认不允许任何入站访问 worker pod。生产环境接 Prometheus 时，应只允许 Prometheus 或监控
+namespace 访问这个端口，而不是把 9091 对整个集群开放。

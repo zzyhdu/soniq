@@ -19,6 +19,7 @@ func clearConfigEnv(t *testing.T) {
 		"TEMPORAL_ADDRESS",
 		"TEMPORAL_NAMESPACE",
 		"TEMPORAL_TASK_QUEUE",
+		"WORKER_METRICS_ADDRESS",
 		"WORKER_MAX_CONCURRENT_WORKFLOW_TASKS",
 		"WORKER_MAX_CONCURRENT_ACTIVITIES",
 		"WORKER_MAX_CONCURRENT_LOCAL_ACTIVITIES",
@@ -98,6 +99,9 @@ func TestLoadFromEnvUsesDevelopmentDefaults(t *testing.T) {
 	}
 	if cfg.TemporalTaskQueue != "soniq-audio-pipeline" {
 		t.Fatalf("TemporalTaskQueue = %q, want soniq-audio-pipeline", cfg.TemporalTaskQueue)
+	}
+	if cfg.WorkerMetricsAddress != ":9091" {
+		t.Fatalf("WorkerMetricsAddress = %q, want :9091", cfg.WorkerMetricsAddress)
 	}
 	if cfg.WorkerMaxConcurrentWorkflowTasks != 20 {
 		t.Fatalf("WorkerMaxConcurrentWorkflowTasks = %d, want 20", cfg.WorkerMaxConcurrentWorkflowTasks)

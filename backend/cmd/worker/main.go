@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -27,6 +30,7 @@ import (
 )
 
 const workerStopTimeout = 25 * time.Second
+const workerMetricsShutdownTimeout = 5 * time.Second
 
 func main() {
 	showVersion := flag.Bool("version", false, "print build version and exit")
@@ -61,6 +65,7 @@ func main() {
 		slog.Int64("worker_max_concurrent_activities", cfg.WorkerMaxConcurrentActivities),
 		slog.Int64("worker_max_concurrent_local_activities", cfg.WorkerMaxConcurrentLocalActivities),
 		slog.Float64("worker_task_queue_activities_per_second", cfg.WorkerTaskQueueActivitiesPerSecond),
+		slog.String("worker_metrics_address", cfg.WorkerMetricsAddress),
 		slog.String("version", version.Version),
 		slog.String("commit", version.Commit),
 	)
@@ -99,16 +104,24 @@ func run(ctx context.Context, cfg config.Config) error {
 		return err
 	}
 
+	metrics := observability.NewMetrics()
+	_, stopMetricsServer, err := startWorkerMetricsServer(ctx, cfg.WorkerMetricsAddress, metrics, slog.Default())
+	if err != nil {
+		return err
+	}
+	defer stopMetricsServer()
+
 	worker := temporalworker.New(temporalClient, cfg.TemporalTaskQueue, workerOptionsForConfig(cfg))
 	objectStore, err := buildObjectStore(ctx, cfg)
 	if err != nil {
 		return err
 	}
-	registerRecordingProcessing(worker, recordingStore, objectStore, activities.FFProbeRunner{}, activities.FFmpegNormalizeRunner{}, transcriptionProvider, summaryProvider)
+	registerRecordingProcessing(worker, recordingStore, objectStore, activities.FFProbeRunner{}, activities.FFmpegNormalizeRunner{}, transcriptionProvider, summaryProvider, metrics)
 	cleanupRunner := cleanup.NewRecordingPurgeArtifactCleaner(recordingStore, objectStore, cleanup.RecordingPurgeArtifactCleanerOptions{
 		Interval:  time.Duration(cfg.PurgeArtifactCleanupIntervalSeconds) * time.Second,
 		BatchSize: int(cfg.PurgeArtifactCleanupBatchSize),
 		Logger:    slog.Default(),
+		Metrics:   metrics,
 	})
 	return runTemporalWorkerWithCleanup(ctx, worker, cleanupRunner)
 }
@@ -163,7 +176,7 @@ type recordingProcessingRegistry interface {
 	RegisterActivityWithOptions(interface{}, activity.RegisterOptions)
 }
 
-func registerRecordingProcessing(registry recordingProcessingRegistry, store activities.NormalizingPipelineStore, objectStore storage.ObjectStore, probeRunner activities.AudioProbeRunner, normalizeRunner activities.AudioNormalizeRunner, transcriptionProvider activities.TranscriptionProvider, summaryProvider activities.SummaryProvider) {
+func registerRecordingProcessing(registry recordingProcessingRegistry, store activities.NormalizingPipelineStore, objectStore storage.ObjectStore, probeRunner activities.AudioProbeRunner, normalizeRunner activities.AudioNormalizeRunner, transcriptionProvider activities.TranscriptionProvider, summaryProvider activities.SummaryProvider, metrics *observability.Metrics) {
 	activitySet := activities.NewRecordingProcessingActivitiesWithNormalizedAudio(
 		store,
 		objectStore,
@@ -174,17 +187,108 @@ func registerRecordingProcessing(registry recordingProcessingRegistry, store act
 	)
 
 	registry.RegisterWorkflow(workflows.RecordingProcessingWorkflow)
-	registry.RegisterActivityWithOptions(activitySet.ValidateRecording, activity.RegisterOptions{Name: activities.ValidateRecordingActivityName})
-	registry.RegisterActivityWithOptions(activitySet.MarkRecordingProcessing, activity.RegisterOptions{Name: activities.MarkRecordingProcessingActivityName})
-	registry.RegisterActivityWithOptions(activitySet.PrepareRecordingAudio, activity.RegisterOptions{Name: activities.PrepareRecordingAudioActivityName})
-	registry.RegisterActivityWithOptions(activitySet.MarkRecordingTranscribing, activity.RegisterOptions{Name: activities.MarkRecordingTranscribingActivityName})
-	registry.RegisterActivityWithOptions(activitySet.TranscribeRecordingAudio, activity.RegisterOptions{Name: activities.TranscribeRecordingAudioActivityName})
-	registry.RegisterActivityWithOptions(activitySet.MarkRecordingSummarizing, activity.RegisterOptions{Name: activities.MarkRecordingSummarizingActivityName})
-	registry.RegisterActivityWithOptions(activitySet.SummarizeRecording, activity.RegisterOptions{Name: activities.SummarizeRecordingActivityName})
-	registry.RegisterActivityWithOptions(activitySet.GenerateMindMap, activity.RegisterOptions{Name: activities.GenerateMindMapActivityName})
-	registry.RegisterActivityWithOptions(activitySet.DeleteOriginalRecordingAudio, activity.RegisterOptions{Name: activities.DeleteOriginalRecordingAudioActivityName})
-	registry.RegisterActivityWithOptions(activitySet.CompleteRecordingProcessing, activity.RegisterOptions{Name: activities.CompleteRecordingProcessingActivityName})
-	registry.RegisterActivityWithOptions(activitySet.FailRecordingProcessing, activity.RegisterOptions{Name: activities.FailRecordingProcessingActivityName})
+	registry.RegisterActivityWithOptions(recordActivity(metrics, activities.ValidateRecordingActivityName, activitySet.ValidateRecording), activity.RegisterOptions{Name: activities.ValidateRecordingActivityName})
+	registry.RegisterActivityWithOptions(recordActivity(metrics, activities.MarkRecordingProcessingActivityName, activitySet.MarkRecordingProcessing), activity.RegisterOptions{Name: activities.MarkRecordingProcessingActivityName})
+	registry.RegisterActivityWithOptions(recordActivity(metrics, activities.PrepareRecordingAudioActivityName, activitySet.PrepareRecordingAudio), activity.RegisterOptions{Name: activities.PrepareRecordingAudioActivityName})
+	registry.RegisterActivityWithOptions(recordActivity(metrics, activities.MarkRecordingTranscribingActivityName, activitySet.MarkRecordingTranscribing), activity.RegisterOptions{Name: activities.MarkRecordingTranscribingActivityName})
+	registry.RegisterActivityWithOptions(recordActivity(metrics, activities.TranscribeRecordingAudioActivityName, activitySet.TranscribeRecordingAudio), activity.RegisterOptions{Name: activities.TranscribeRecordingAudioActivityName})
+	registry.RegisterActivityWithOptions(recordActivity(metrics, activities.MarkRecordingSummarizingActivityName, activitySet.MarkRecordingSummarizing), activity.RegisterOptions{Name: activities.MarkRecordingSummarizingActivityName})
+	registry.RegisterActivityWithOptions(recordActivity(metrics, activities.SummarizeRecordingActivityName, activitySet.SummarizeRecording), activity.RegisterOptions{Name: activities.SummarizeRecordingActivityName})
+	registry.RegisterActivityWithOptions(recordActivity(metrics, activities.GenerateMindMapActivityName, activitySet.GenerateMindMap), activity.RegisterOptions{Name: activities.GenerateMindMapActivityName})
+	registry.RegisterActivityWithOptions(recordActivity(metrics, activities.DeleteOriginalRecordingAudioActivityName, activitySet.DeleteOriginalRecordingAudio), activity.RegisterOptions{Name: activities.DeleteOriginalRecordingAudioActivityName})
+	registry.RegisterActivityWithOptions(recordCompletionActivity(metrics, activities.CompleteRecordingProcessingActivityName, activitySet.CompleteRecordingProcessing), activity.RegisterOptions{Name: activities.CompleteRecordingProcessingActivityName})
+	registry.RegisterActivityWithOptions(recordFailureActivity(metrics, activities.FailRecordingProcessingActivityName, activitySet.FailRecordingProcessing), activity.RegisterOptions{Name: activities.FailRecordingProcessingActivityName})
+}
+
+func recordActivity[Input any](metrics *observability.Metrics, activityName string, fn func(context.Context, Input) error) func(context.Context, Input) error {
+	return func(ctx context.Context, input Input) error {
+		startedAt := time.Now()
+		err := fn(ctx, input)
+		metrics.ObserveWorkerActivity(activityName, resultForError(err), time.Since(startedAt))
+		return err
+	}
+}
+
+func recordCompletionActivity(metrics *observability.Metrics, activityName string, fn func(context.Context, activities.RecordingReference) (activities.RecordingProcessingResult, error)) func(context.Context, activities.RecordingReference) (activities.RecordingProcessingResult, error) {
+	return func(ctx context.Context, input activities.RecordingReference) (activities.RecordingProcessingResult, error) {
+		startedAt := time.Now()
+		result, err := fn(ctx, input)
+		metrics.ObserveWorkerActivity(activityName, resultForError(err), time.Since(startedAt))
+		if err == nil {
+			metrics.ObserveRecordingTerminalStatus(observability.MetricsRecordingStatusCompleted)
+		}
+		return result, err
+	}
+}
+
+func recordFailureActivity(metrics *observability.Metrics, activityName string, fn func(context.Context, activities.RecordingFailure) error) func(context.Context, activities.RecordingFailure) error {
+	return func(ctx context.Context, input activities.RecordingFailure) error {
+		startedAt := time.Now()
+		err := fn(ctx, input)
+		metrics.ObserveWorkerActivity(activityName, resultForError(err), time.Since(startedAt))
+		if err == nil {
+			metrics.ObserveRecordingTerminalStatus(observability.MetricsRecordingStatusFailed)
+		}
+		return err
+	}
+}
+
+func resultForError(err error) string {
+	if err != nil {
+		return observability.MetricsResultError
+	}
+	return observability.MetricsResultSuccess
+}
+
+func startWorkerMetricsServer(ctx context.Context, address string, metrics *observability.Metrics, logger *slog.Logger) (string, func(), error) {
+	address = strings.TrimSpace(address)
+	if address == "" {
+		return "", func() {}, nil
+	}
+	if metrics == nil {
+		metrics = observability.NewMetrics()
+	}
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	listener, err := net.Listen("tcp", address)
+	if err != nil {
+		return "", nil, fmt.Errorf("listen worker metrics: %w", err)
+	}
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", metrics.Handler())
+	server := &http.Server{
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		logger.InfoContext(ctx, "worker metrics server started",
+			slog.String("event", "worker_metrics_server_started"),
+			slog.String("address", listener.Addr().String()),
+		)
+		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.ErrorContext(ctx, "worker metrics server stopped with error",
+				slog.String("event", "worker_metrics_server_failed"),
+				slog.Any("error", err),
+			)
+		}
+	}()
+
+	stop := func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), workerMetricsShutdownTimeout)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.WarnContext(ctx, "worker metrics server shutdown failed",
+				slog.String("event", "worker_metrics_server_shutdown_failed"),
+				slog.Any("error", err),
+			)
+		}
+		<-done
+	}
+	return listener.Addr().String(), stop, nil
 }
 
 func transcriptionProviderForConfig(cfg config.Config) (activities.TranscriptionProvider, error) {

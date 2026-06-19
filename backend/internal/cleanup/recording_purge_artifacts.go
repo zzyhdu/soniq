@@ -17,11 +17,20 @@ type RecordingPurgeArtifactStore interface {
 	MarkPurgeArtifactFailed(input recordings.MarkPurgeArtifactFailedInput) (bool, error)
 }
 
+// RecordingPurgeArtifactMetrics records low-cardinality cleanup metrics.
+type RecordingPurgeArtifactMetrics interface {
+	ObservePurgeArtifactsClaimed(count int)
+	ObservePurgeArtifactDeleted()
+	ObservePurgeArtifactFailed()
+	ObservePurgeCleanupRun(result string, duration time.Duration)
+}
+
 // RecordingPurgeArtifactCleanerOptions configures the cleanup loop.
 type RecordingPurgeArtifactCleanerOptions struct {
 	Interval  time.Duration
 	BatchSize int
 	Logger    *slog.Logger
+	Metrics   RecordingPurgeArtifactMetrics
 }
 
 // RecordingPurgeArtifactCleaner deletes object-storage artifacts left by permanent recording purge.
@@ -31,6 +40,7 @@ type RecordingPurgeArtifactCleaner struct {
 	interval    time.Duration
 	batchSize   int
 	logger      *slog.Logger
+	metrics     RecordingPurgeArtifactMetrics
 }
 
 // NewRecordingPurgeArtifactCleaner creates a purge artifact cleanup runner.
@@ -53,6 +63,7 @@ func NewRecordingPurgeArtifactCleaner(store RecordingPurgeArtifactStore, objectS
 		interval:    interval,
 		batchSize:   batchSize,
 		logger:      logger,
+		metrics:     options.Metrics,
 	}
 }
 
@@ -82,7 +93,15 @@ func (c *RecordingPurgeArtifactCleaner) Run(ctx context.Context) {
 }
 
 // RunOnce claims one batch and attempts cleanup.
-func (c *RecordingPurgeArtifactCleaner) RunOnce(ctx context.Context) error {
+func (c *RecordingPurgeArtifactCleaner) RunOnce(ctx context.Context) (err error) {
+	startedAt := time.Now()
+	defer func() {
+		result := "success"
+		if err != nil {
+			result = "error"
+		}
+		c.observePurgeCleanupRun(result, time.Since(startedAt))
+	}()
 	if c == nil || c.store == nil {
 		return errors.New("purge artifact store is required")
 	}
@@ -94,6 +113,7 @@ func (c *RecordingPurgeArtifactCleaner) RunOnce(ctx context.Context) error {
 		return err
 	}
 	if len(artifacts) > 0 {
+		c.observePurgeArtifactsClaimed(len(artifacts))
 		c.logger.InfoContext(ctx, "claimed recording purge artifacts",
 			slog.String("event", "purge_artifact_cleanup_claimed"),
 			slog.Int("artifact_count", len(artifacts)),
@@ -103,6 +123,7 @@ func (c *RecordingPurgeArtifactCleaner) RunOnce(ctx context.Context) error {
 	var runErr error
 	for _, artifact := range artifacts {
 		if err := c.objectStore.DeleteObject(ctx, artifact.ObjectKey); err != nil {
+			c.observePurgeArtifactFailed()
 			nextAttemptAt := time.Now().UTC().Add(purgeArtifactRetryDelay(artifact.AttemptCount + 1))
 			_, markErr := c.store.MarkPurgeArtifactFailed(recordings.MarkPurgeArtifactFailedInput{
 				ID:            artifact.ID,
@@ -131,6 +152,7 @@ func (c *RecordingPurgeArtifactCleaner) RunOnce(ctx context.Context) error {
 			runErr = errors.Join(runErr, err)
 			continue
 		}
+		c.observePurgeArtifactDeleted()
 		c.logger.InfoContext(ctx, "recording purge artifact deleted",
 			append(purgeArtifactLogAttrs("purge_artifact_cleanup_deleted", artifact),
 				slog.Int("attempt_count", artifact.AttemptCount),
@@ -138,6 +160,30 @@ func (c *RecordingPurgeArtifactCleaner) RunOnce(ctx context.Context) error {
 		)
 	}
 	return runErr
+}
+
+func (c *RecordingPurgeArtifactCleaner) observePurgeArtifactsClaimed(count int) {
+	if c != nil && c.metrics != nil {
+		c.metrics.ObservePurgeArtifactsClaimed(count)
+	}
+}
+
+func (c *RecordingPurgeArtifactCleaner) observePurgeArtifactDeleted() {
+	if c != nil && c.metrics != nil {
+		c.metrics.ObservePurgeArtifactDeleted()
+	}
+}
+
+func (c *RecordingPurgeArtifactCleaner) observePurgeArtifactFailed() {
+	if c != nil && c.metrics != nil {
+		c.metrics.ObservePurgeArtifactFailed()
+	}
+}
+
+func (c *RecordingPurgeArtifactCleaner) observePurgeCleanupRun(result string, duration time.Duration) {
+	if c != nil && c.metrics != nil {
+		c.metrics.ObservePurgeCleanupRun(result, duration)
+	}
 }
 
 func purgeArtifactLogAttrs(event string, artifact recordings.RecordingPurgeArtifact) []any {

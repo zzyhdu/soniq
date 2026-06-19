@@ -16,7 +16,16 @@ spec:
   policyTypes:
     - Ingress
     - Egress
+  {{- with .Values.networkPolicy.worker.metricsIngress.from }}
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: {{ $.Values.worker.metricsPort }}
+      from:
+        {{- toYaml . | nindent 8 }}
+  {{- else }}
   ingress: []
+  {{- end }}
   egress:
     {{- include "soniq.networkPolicyEgress" . | nindent 4 }}
     {{- with .Values.networkPolicy.worker.extraEgress }}

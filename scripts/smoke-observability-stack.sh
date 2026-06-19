@@ -32,6 +32,8 @@ config = Path("deploy/observability/prometheus/prometheus.yml").read_text(encodi
 required = [
     "job_name: soniq-api",
     "host.docker.internal:8080",
+    "job_name: soniq-worker",
+    "host.docker.internal:9091",
     "job_name: otel-collector",
     "otel-collector:8888",
     "otel-collector:8889",
