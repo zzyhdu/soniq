@@ -12,6 +12,9 @@ type Config struct {
 	PublicURL                                    string
 	LogFormat                                    string
 	LogLevel                                     string
+	OTelTracesEnabled                            bool
+	OTelExporterOTLPEndpoint                     string
+	OTelServiceName                              string
 	AuthSessionTTLHours                          int64
 	AuthCookieSecure                             bool
 	APIAddress                                   string
@@ -57,6 +60,9 @@ func LoadFromEnv() Config {
 		PublicURL:                           envString("APP_PUBLIC_URL", "http://localhost:8080"),
 		LogFormat:                           envString("LOG_FORMAT", "text"),
 		LogLevel:                            envString("LOG_LEVEL", "info"),
+		OTelTracesEnabled:                   envBool("OTEL_TRACES_ENABLED", false),
+		OTelExporterOTLPEndpoint:            envString("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318"),
+		OTelServiceName:                     envString("OTEL_SERVICE_NAME", ""),
 		AuthSessionTTLHours:                 envInt64("AUTH_SESSION_TTL_HOURS", 24*30),
 		AuthCookieSecure:                    envBool("AUTH_COOKIE_SECURE", false),
 		APIAddress:                          envString("API_ADDRESS", ":8080"),

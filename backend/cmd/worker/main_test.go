@@ -18,6 +18,9 @@ import (
 	"github.com/zzyhdu/soniq/backend/internal/recordings"
 	"github.com/zzyhdu/soniq/backend/internal/storage"
 	"github.com/zzyhdu/soniq/backend/internal/workflows"
+	"go.opentelemetry.io/otel/attribute"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.temporal.io/sdk/activity"
 )
 
@@ -123,7 +126,10 @@ func TestTemporalClientOptionsForConfigIncludesSDKMetricsHandler(t *testing.T) {
 	cfg.TemporalTaskQueue = "soniq-audio-pipeline"
 	metrics := observability.NewMetrics()
 
-	options := temporalClientOptionsForConfig(cfg, metrics)
+	options, err := temporalClientOptionsForConfig(cfg, metrics, nil)
+	if err != nil {
+		t.Fatalf("temporalClientOptionsForConfig() error = %v, want nil", err)
+	}
 
 	if options.HostPort != cfg.TemporalAddress {
 		t.Fatalf("HostPort = %q, want %q", options.HostPort, cfg.TemporalAddress)
@@ -149,6 +155,29 @@ func TestTemporalClientOptionsForConfigIncludesSDKMetricsHandler(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("metrics output missing %q:\n%s", want, body)
 		}
+	}
+}
+
+func TestTemporalClientOptionsForConfigAddsTracingInterceptorWhenEnabled(t *testing.T) {
+	cfg := config.LoadFromEnv()
+	cfg.TemporalAddress = "temporal.example.test:7233"
+	cfg.TemporalNamespace = "default"
+	tracing, err := observability.NewTracing(context.Background(), observability.TracingConfig{
+		Enabled:     true,
+		ServiceName: "soniq-worker",
+		Environment: "test",
+	})
+	if err != nil {
+		t.Fatalf("NewTracing() error = %v, want nil", err)
+	}
+	defer tracing.Shutdown(context.Background()) //nolint:errcheck
+
+	options, err := temporalClientOptionsForConfig(cfg, nil, tracing)
+	if err != nil {
+		t.Fatalf("temporalClientOptionsForConfig() error = %v, want nil", err)
+	}
+	if got, want := len(options.Interceptors), 1; got != want {
+		t.Fatalf("Interceptors = %d, want %d", got, want)
 	}
 }
 
@@ -218,6 +247,33 @@ func TestRegisterRecordingProcessingRecordsActivityMetrics(t *testing.T) {
 	if strings.Contains(body, "rec_1") || strings.Contains(body, "rec_2") || strings.Contains(body, "wsp_default") {
 		t.Fatalf("metrics output leaked high-cardinality IDs:\n%s", body)
 	}
+}
+
+func TestRecordActivityAnnotatesCurrentSpan(t *testing.T) {
+	spanRecorder := tracetest.NewSpanRecorder()
+	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
+	defer tracerProvider.Shutdown(context.Background()) //nolint:errcheck
+	ctx, span := tracerProvider.Tracer("test").Start(context.Background(), "RunActivity:ValidateRecordingActivity")
+	wrapped := recordActivity(nil, activities.ValidateRecordingActivityName, func(context.Context, activities.RecordingProcessingInput) error {
+		return nil
+	})
+
+	if err := wrapped(ctx, activities.RecordingProcessingInput{
+		WorkspaceID: "wsp_1",
+		RecordingID: "rec_1",
+	}); err != nil {
+		t.Fatalf("wrapped activity error = %v, want nil", err)
+	}
+	span.End()
+
+	spans := spanRecorder.Ended()
+	if got, want := len(spans), 1; got != want {
+		t.Fatalf("ended spans = %d, want %d", got, want)
+	}
+	attrs := spans[0].Attributes()
+	assertTraceAttribute(t, attrs, "activity", activities.ValidateRecordingActivityName)
+	assertTraceAttribute(t, attrs, "workspace_id", "wsp_1")
+	assertTraceAttribute(t, attrs, "recording_id", "rec_1")
 }
 
 func TestRegisterRecordingProcessingDoesNotRecordFailedOutcomeWhenFailureStatusWriteFails(t *testing.T) {
@@ -435,6 +491,19 @@ func workerMetricsBody(t *testing.T, metrics *observability.Metrics) string {
 		t.Fatalf("metrics status = %d, want 200", response.Code)
 	}
 	return response.Body.String()
+}
+
+func assertTraceAttribute(t *testing.T, attrs []attribute.KeyValue, key string, want string) {
+	t.Helper()
+	for _, attr := range attrs {
+		if string(attr.Key) == key {
+			if got := attr.Value.AsString(); got != want {
+				t.Fatalf("%s = %q, want %q", key, got, want)
+			}
+			return
+		}
+	}
+	t.Fatalf("attribute %q missing from %#v", key, attrs)
 }
 
 type temporalWorkerRunnerSpy struct {

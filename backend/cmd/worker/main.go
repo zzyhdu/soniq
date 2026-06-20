@@ -24,6 +24,8 @@ import (
 	"github.com/zzyhdu/soniq/backend/internal/storage"
 	"github.com/zzyhdu/soniq/backend/internal/version"
 	"github.com/zzyhdu/soniq/backend/internal/workflows"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	temporalworker "go.temporal.io/sdk/worker"
@@ -31,6 +33,7 @@ import (
 
 const workerStopTimeout = 25 * time.Second
 const workerMetricsShutdownTimeout = 5 * time.Second
+const tracingShutdownTimeout = 5 * time.Second
 
 func main() {
 	showVersion := flag.Bool("version", false, "print build version and exit")
@@ -81,7 +84,17 @@ func main() {
 
 func run(ctx context.Context, cfg config.Config) error {
 	metrics := observability.NewMetrics()
-	temporalClient, err := client.DialContext(ctx, temporalClientOptionsForConfig(cfg, metrics))
+	tracing, err := observability.NewTracing(ctx, tracingConfigForProcess(cfg, "soniq-worker"))
+	if err != nil {
+		return err
+	}
+	defer shutdownTracing(tracing)
+
+	temporalClientOptions, err := temporalClientOptionsForConfig(cfg, metrics, tracing)
+	if err != nil {
+		return err
+	}
+	temporalClient, err := client.DialContext(ctx, temporalClientOptions)
 	if err != nil {
 		return err
 	}
@@ -119,11 +132,12 @@ func run(ctx context.Context, cfg config.Config) error {
 		BatchSize: int(cfg.PurgeArtifactCleanupBatchSize),
 		Logger:    slog.Default(),
 		Metrics:   metrics,
+		Tracer:    tracing.Tracer("soniq-worker/purge-cleanup"),
 	})
 	return runTemporalWorkerWithCleanup(ctx, worker, cleanupRunner)
 }
 
-func temporalClientOptionsForConfig(cfg config.Config, metrics *observability.Metrics) client.Options {
+func temporalClientOptionsForConfig(cfg config.Config, metrics *observability.Metrics, tracing *observability.Tracing) (client.Options, error) {
 	options := client.Options{
 		HostPort:  cfg.TemporalAddress,
 		Namespace: cfg.TemporalNamespace,
@@ -131,7 +145,37 @@ func temporalClientOptionsForConfig(cfg config.Config, metrics *observability.Me
 	if metrics != nil {
 		options.MetricsHandler = metrics.TemporalSDKMetricsHandler()
 	}
-	return options
+	if tracing != nil {
+		interceptor, err := tracing.TemporalInterceptor()
+		if err != nil {
+			return client.Options{}, err
+		}
+		if interceptor != nil {
+			options.Interceptors = append(options.Interceptors, interceptor)
+		}
+	}
+	return options, nil
+}
+
+func tracingConfigForProcess(cfg config.Config, defaultServiceName string) observability.TracingConfig {
+	serviceName := strings.TrimSpace(cfg.OTelServiceName)
+	if serviceName == "" {
+		serviceName = defaultServiceName
+	}
+	return observability.TracingConfig{
+		Enabled:      cfg.OTelTracesEnabled,
+		ServiceName:  serviceName,
+		Environment:  cfg.AppEnv,
+		OTLPEndpoint: cfg.OTelExporterOTLPEndpoint,
+	}
+}
+
+func shutdownTracing(tracing *observability.Tracing) {
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), tracingShutdownTimeout)
+	defer cancel()
+	if err := tracing.Shutdown(shutdownCtx); err != nil {
+		slog.Warn("tracing shutdown failed", slog.String("event", "tracing_shutdown_failed"), slog.Any("error", err))
+	}
 }
 
 func workerOptionsForConfig(cfg config.Config) temporalworker.Options {
@@ -210,6 +254,7 @@ func registerRecordingProcessing(registry recordingProcessingRegistry, store act
 
 func recordActivity[Input any](metrics *observability.Metrics, activityName string, fn func(context.Context, Input) error) func(context.Context, Input) error {
 	return func(ctx context.Context, input Input) error {
+		annotateActivitySpan(ctx, activityName, input)
 		startedAt := time.Now()
 		err := fn(ctx, input)
 		metrics.ObserveWorkerActivity(activityName, resultForError(err), time.Since(startedAt))
@@ -219,6 +264,7 @@ func recordActivity[Input any](metrics *observability.Metrics, activityName stri
 
 func recordCompletionActivity(metrics *observability.Metrics, activityName string, fn func(context.Context, activities.RecordingReference) (activities.RecordingProcessingResult, error)) func(context.Context, activities.RecordingReference) (activities.RecordingProcessingResult, error) {
 	return func(ctx context.Context, input activities.RecordingReference) (activities.RecordingProcessingResult, error) {
+		annotateActivitySpan(ctx, activityName, input)
 		startedAt := time.Now()
 		result, err := fn(ctx, input)
 		metrics.ObserveWorkerActivity(activityName, resultForError(err), time.Since(startedAt))
@@ -231,6 +277,7 @@ func recordCompletionActivity(metrics *observability.Metrics, activityName strin
 
 func recordFailureActivity(metrics *observability.Metrics, activityName string, fn func(context.Context, activities.RecordingFailure) error) func(context.Context, activities.RecordingFailure) error {
 	return func(ctx context.Context, input activities.RecordingFailure) error {
+		annotateActivitySpan(ctx, activityName, input)
 		startedAt := time.Now()
 		err := fn(ctx, input)
 		metrics.ObserveWorkerActivity(activityName, resultForError(err), time.Since(startedAt))
@@ -239,6 +286,34 @@ func recordFailureActivity(metrics *observability.Metrics, activityName string, 
 		}
 		return err
 	}
+}
+
+func annotateActivitySpan(ctx context.Context, activityName string, input any) {
+	span := trace.SpanFromContext(ctx)
+	if !span.SpanContext().IsValid() {
+		return
+	}
+	attrs := []attribute.KeyValue{attribute.String("activity", activityName)}
+	switch value := input.(type) {
+	case activities.RecordingProcessingInput:
+		attrs = append(attrs,
+			attribute.String("workspace_id", value.WorkspaceID),
+			attribute.String("recording_id", value.RecordingID),
+		)
+	case activities.RecordingReference:
+		attrs = append(attrs,
+			attribute.String("workspace_id", value.WorkspaceID),
+			attribute.String("recording_id", value.RecordingID),
+		)
+	case activities.RecordingFailure:
+		attrs = append(attrs,
+			attribute.String("workspace_id", value.WorkspaceID),
+			attribute.String("recording_id", value.RecordingID),
+		)
+	case string:
+		attrs = append(attrs, attribute.String("recording_id", value))
+	}
+	span.SetAttributes(attrs...)
 }
 
 func resultForError(err error) string {

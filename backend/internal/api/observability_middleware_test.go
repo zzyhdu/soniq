@@ -11,6 +11,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/zzyhdu/soniq/backend/internal/observability"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 func TestRequestLoggingMiddlewarePropagatesRequestIDAndWritesAccessLog(t *testing.T) {
@@ -97,6 +101,30 @@ func TestRequestLoggingMiddlewareLogsOnlyFiveHundredErrorsAsAPIErrors(t *testing
 	assertLogField(t, apiErrors[0], "error", "database unavailable")
 }
 
+func TestRequestLoggingMiddlewareKeepsAPIErrorDetailsThroughTracingMiddleware(t *testing.T) {
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	spanRecorder := tracetest.NewSpanRecorder()
+	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
+	defer tracerProvider.Shutdown(t.Context()) //nolint:errcheck
+	router := chi.NewRouter()
+	router.Use(requestLoggingMiddleware(logger, nil))
+	router.Use(requestTracingMiddleware(HTTPTracingConfig{
+		Tracer:     tracerProvider.Tracer("test"),
+		Propagator: propagation.TraceContext{},
+	}))
+	router.Get("/server-error", func(w http.ResponseWriter, r *http.Request) {
+		writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "database unavailable")
+	})
+
+	router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/server-error", nil))
+
+	entry := findLogEvent(t, decodeJSONLogEntries(t, logs.String()), "api_error")
+	assertLogNumber(t, entry, "status", http.StatusInternalServerError)
+	assertLogField(t, entry, "error_code", string(errorCodeInternalError))
+	assertLogField(t, entry, "error", "database unavailable")
+}
+
 func TestRequestLoggingMiddlewareRecordsHTTPMetricsWithRouteTemplate(t *testing.T) {
 	metrics := observability.NewMetrics()
 	router := chi.NewRouter()
@@ -125,6 +153,44 @@ func TestRequestLoggingMiddlewareRecordsHTTPMetricsWithRouteTemplate(t *testing.
 	}
 }
 
+func TestRequestTracingMiddlewareRecordsRouteAndContextAttributes(t *testing.T) {
+	spanRecorder := tracetest.NewSpanRecorder()
+	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
+	defer tracerProvider.Shutdown(t.Context()) //nolint:errcheck
+	router := chi.NewRouter()
+	router.Use(requestLoggingMiddleware(slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)), nil))
+	router.Use(requestTracingMiddleware(HTTPTracingConfig{
+		Tracer:     tracerProvider.Tracer("test"),
+		Propagator: propagation.TraceContext{},
+	}))
+	router.Get("/workspaces/{workspace_id}/recordings/{recording_id}", func(w http.ResponseWriter, r *http.Request) {
+		setRequestLogWorkspaceID(r.Context(), "wsp_1")
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/workspaces/wsp_1/recordings/rec_1?token=secret", nil)
+	request.Header.Set(observability.RequestIDHeader, "req_trace")
+	router.ServeHTTP(httptest.NewRecorder(), request)
+
+	spans := spanRecorder.Ended()
+	if got, want := len(spans), 1; got != want {
+		t.Fatalf("ended spans = %d, want %d", got, want)
+	}
+	span := spans[0]
+	if span.Name() != "GET /workspaces/{workspace_id}/recordings/{recording_id}" {
+		t.Fatalf("span name = %q, want templated route", span.Name())
+	}
+	attrs := span.Attributes()
+	assertTraceAttributeString(t, attrs, "request_id", "req_trace")
+	assertTraceAttributeString(t, attrs, "http.route", "/workspaces/{workspace_id}/recordings/{recording_id}")
+	assertTraceAttributeString(t, attrs, "workspace_id", "wsp_1")
+	assertTraceAttributeString(t, attrs, "recording_id", "rec_1")
+	assertTraceAttributeInt(t, attrs, "http.response.status_code", http.StatusNoContent)
+	if containsTraceAttributeValue(attrs, "token=secret") {
+		t.Fatalf("trace attributes leaked query secret: %#v", attrs)
+	}
+}
+
 func decodeJSONLogEntries(t *testing.T, output string) []map[string]any {
 	t.Helper()
 	lines := strings.Split(strings.TrimSpace(output), "\n")
@@ -140,6 +206,41 @@ func decodeJSONLogEntries(t *testing.T, output string) []map[string]any {
 		entries = append(entries, entry)
 	}
 	return entries
+}
+
+func assertTraceAttributeString(t *testing.T, attrs []attribute.KeyValue, key string, want string) {
+	t.Helper()
+	for _, attr := range attrs {
+		if string(attr.Key) == key {
+			if got := attr.Value.AsString(); got != want {
+				t.Fatalf("trace attribute %s = %q, want %q", key, got, want)
+			}
+			return
+		}
+	}
+	t.Fatalf("trace attribute %q missing from %#v", key, attrs)
+}
+
+func assertTraceAttributeInt(t *testing.T, attrs []attribute.KeyValue, key string, want int) {
+	t.Helper()
+	for _, attr := range attrs {
+		if string(attr.Key) == key {
+			if got := int(attr.Value.AsInt64()); got != want {
+				t.Fatalf("trace attribute %s = %d, want %d", key, got, want)
+			}
+			return
+		}
+	}
+	t.Fatalf("trace attribute %q missing from %#v", key, attrs)
+}
+
+func containsTraceAttributeValue(attrs []attribute.KeyValue, value string) bool {
+	for _, attr := range attrs {
+		if strings.Contains(attr.Value.Emit(), value) {
+			return true
+		}
+	}
+	return false
 }
 
 func findLogEvent(t *testing.T, entries []map[string]any, event string) map[string]any {

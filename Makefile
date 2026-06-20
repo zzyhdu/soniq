@@ -30,6 +30,8 @@ CONFIG_ENV_KEYS := \
 	COMPOSE_FILE \
 	LOG_FORMAT \
 	LOG_LEVEL \
+	OTEL_TRACES_ENABLED \
+	OTEL_EXPORTER_OTLP_ENDPOINT \
 	AUTH_SESSION_TTL_HOURS \
 	AUTH_COOKIE_SECURE \
 	API_ADDRESS \
@@ -101,6 +103,8 @@ env-check:
 	@echo "compose_file=$(COMPOSE_FILE)"
 	@echo "log_format=$(LOG_FORMAT)"
 	@echo "log_level=$(LOG_LEVEL)"
+	@echo "otel_traces_enabled=$(OTEL_TRACES_ENABLED)"
+	@echo "otel_exporter_otlp_endpoint=$(OTEL_EXPORTER_OTLP_ENDPOINT)"
 	@echo "auth_session_ttl_hours=$(AUTH_SESSION_TTL_HOURS)"
 	@echo "auth_cookie_secure=$(AUTH_COOKIE_SECURE)"
 	@echo "postgres_user=$(POSTGRES_USER)"

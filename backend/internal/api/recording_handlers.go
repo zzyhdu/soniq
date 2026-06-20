@@ -16,7 +16,10 @@ import (
 	"github.com/zzyhdu/soniq/backend/internal/storage"
 )
 
-const maxUploadRequestBytes = 100 << 20 // 100 MiB
+const (
+	maxUploadRequestBytes           = 100 << 20 // 100 MiB
+	recordingProcessingStartTimeout = 5 * time.Second
+)
 
 func createRecordingHandler(store RecordingStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -189,7 +192,9 @@ func uploadRecordingHandler(store RecordingStore, processor RecordingProcessor, 
 			writeAPIError(w, http.StatusBadRequest, errorCodeValidationFailed, err.Error())
 			return
 		}
-		processingEnqueued := processor.Enqueue(recording) == nil
+		enqueueCtx, cancelEnqueue := recordingProcessingStartContext(r)
+		processingEnqueued := processor.Enqueue(enqueueCtx, recording) == nil
+		cancelEnqueue()
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
@@ -538,8 +543,11 @@ func retryRecordingHandler(store RecordingStore, processor RecordingProcessor) h
 			writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "reset recording retry")
 			return
 		}
+		enqueueCtx, cancelEnqueue := recordingProcessingStartContext(r)
+		err = processor.Enqueue(enqueueCtx, resetRecording)
+		cancelEnqueue()
 		processingEnqueued := true
-		if err := processor.Enqueue(resetRecording); err != nil {
+		if err != nil {
 			processingEnqueued = false
 			failedRecording, failErr := store.UpdateStatus(recordings.UpdateRecordingStatusInput{
 				WorkspaceID:   workspace.ID,
@@ -560,4 +568,11 @@ func retryRecordingHandler(store RecordingStore, processor RecordingProcessor) h
 			ProcessingEnqueued: processingEnqueued,
 		})
 	}
+}
+
+func recordingProcessingStartContext(r *http.Request) (context.Context, context.CancelFunc) {
+	if r == nil {
+		return context.WithTimeout(context.Background(), recordingProcessingStartTimeout)
+	}
+	return context.WithTimeout(context.WithoutCancel(r.Context()), recordingProcessingStartTimeout)
 }

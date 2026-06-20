@@ -474,7 +474,10 @@ make observability-smoke
   worker poll、activity/workflow task latency、SDK request latency 和 worker task slot
   metrics。
 - 已新增 `make observability-up/down/ps/logs/smoke`。
-- alert rules 和 tracing 代码接入仍是后续工作。
+- 已接入 OpenTelemetry tracing：API HTTP request、Temporal workflow start、
+  workflow/activity execution，以及 purge artifact cleanup run/delete spans 会导出到
+  OTLP HTTP collector。
+- alert rules、provider-level spans 和 DB transaction spans 仍是后续工作。
 
 ## Phase 4 — OpenTelemetry tracing
 
@@ -523,15 +526,32 @@ Temporal Go SDK tracing 接入应优先使用官方推荐方式。
 配置：
 
 ```txt
+OTEL_TRACES_ENABLED=true
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
-OTEL_SERVICE_NAME=soniq-api / soniq-worker
 ```
+
+默认不在共享 `.env` / ConfigMap 里设置 `OTEL_SERVICE_NAME`。API 和 worker 会分别使用
+`soniq-api` / `soniq-worker`；只有部署包装器需要自定义 service name 时，才应该按进程单独
+设置。
 
 ### Phase 4 验收标准
 
 - 一次 upload 请求能关联到 Temporal workflow start。
 - 一个 worker activity failure 能在 trace 中看到上下文。
 - purge cleanup failure 能通过 trace 找到 object delete 失败点。
+
+### Phase 4 当前状态
+
+- API/worker 默认不导出 traces，避免普通本地开发依赖 collector。
+- 设置 `OTEL_TRACES_ENABLED=true` 后，API 和 worker 使用 OTLP HTTP exporter。
+- API HTTP span 会记录 `request_id`、route template、status、workspace_id、
+  recording_id。
+- API Temporal client 使用 Temporal Go SDK 官方 OpenTelemetry interceptor，上传请求中的
+  trace context 会通过 `Enqueue(ctx, recording)` 传给 `StartWorkflow`。
+- Worker Temporal client 使用同一个官方 interceptor，workflow/activity spans 会自动生成；
+  activity wrapper 会补充 `workspace_id` 和 `recording_id`。
+- Purge cleanup 会记录 cleanup run 和 object delete spans；失败 span 会标记 error，但不会
+  记录 object key，避免泄露文件名。
 
 ## Phase 5 — Sentry / error tracking
 

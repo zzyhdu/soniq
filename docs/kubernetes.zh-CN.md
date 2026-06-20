@@ -340,8 +340,8 @@ raw manifests 和 Helm chart 会为 API、worker、migration pods 创建 Network
 这些策略只有在 Kubernetes 集群的 CNI plugin 支持并执行 NetworkPolicy 时才会真正生效。
 
 基础策略会允许 API 的 TCP 8080 入站，拒绝 worker 和 migration 入站流量，并允许 DNS 以及
-TCP 80、443、9000、5432、7233 出站。这些端口覆盖默认 HTTP/HTTPS、
-MinIO/S3-compatible、Postgres 和 Temporal 路径。worker 容器仍然暴露 metrics 端口，但生产
+TCP 80、443、9000、5432、7233、4318 出站。这些端口覆盖默认 HTTP/HTTPS、
+MinIO/S3-compatible、Postgres、Temporal 和 OTLP HTTP trace export 路径。worker 容器仍然暴露 metrics 端口，但生产
 部署应该通过 Helm `networkPolicy.worker.metricsIngress.from` 显式配置 Prometheus 或监控
 namespace 才能访问 TCP 9091。如果生产依赖使用不同端口，或者需要按目标地址做更严格
 allowlist，需要在安装前覆盖 Helm `networkPolicy` values。

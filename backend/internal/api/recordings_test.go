@@ -31,9 +31,13 @@ const (
 )
 
 type recordingProcessorSpy struct {
-	enqueued []domain.Recording
-	err      error
+	enqueued    []domain.Recording
+	contexts    []context.Context
+	contextErrs []error
+	err         error
 }
+
+type recordingRequestContextKey struct{}
 
 type fakeRecordingStore struct {
 	created              []recordings.CreateRecordingInput
@@ -425,7 +429,9 @@ func (s getErrRecordingStore) MarkPurgeArtifactFailed(recordings.MarkPurgeArtifa
 	return false, s.err
 }
 
-func (s *recordingProcessorSpy) Enqueue(recording domain.Recording) error {
+func (s *recordingProcessorSpy) Enqueue(ctx context.Context, recording domain.Recording) error {
+	s.contexts = append(s.contexts, ctx)
+	s.contextErrs = append(s.contextErrs, ctx.Err())
 	s.enqueued = append(s.enqueued, recording)
 	return s.err
 }
@@ -783,6 +789,39 @@ func TestUploadRecordingStoresAudioCreatesRecordingAndEnqueues(t *testing.T) {
 	}
 	if body.Recording.AudioObjectKey != created.AudioObjectKey || body.Recording.AudioContentType != "audio/wav" || body.Recording.AudioSizeBytes != int64(len("audio-bytes")) {
 		t.Fatalf("response audio metadata = %+v, want created audio metadata %+v", body.Recording, created)
+	}
+}
+
+func TestUploadRecordingEnqueueContextKeepsValuesButIgnoresClientCancellation(t *testing.T) {
+	store := newFakeRecordingStore()
+	objectStore := &objectStoreSpy{}
+	processor := &recordingProcessorSpy{}
+	router := NewRouterWithStorage(store, processor, objectStore)
+
+	request := newMultipartUploadRequest(t, "/workspaces/wsp_default/recordings/upload", map[string]string{
+		"title":         "Weekly sync",
+		"workflow_type": "meeting",
+		"language":      "en",
+	}, "audio", "weekly.wav", "audio/wav", "audio-bytes")
+	ctx, cancel := context.WithCancel(context.WithValue(request.Context(), recordingRequestContextKey{}, "trace-context"))
+	cancel()
+	request = request.WithContext(ctx)
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusCreated, response.Body.String())
+	}
+	if got, want := len(processor.contexts), 1; got != want {
+		t.Fatalf("enqueue contexts = %d, want %d", got, want)
+	}
+	enqueueCtx := processor.contexts[0]
+	if err := processor.contextErrs[0]; err != nil {
+		t.Fatalf("enqueue context was already canceled during Enqueue: %v", err)
+	}
+	if got := enqueueCtx.Value(recordingRequestContextKey{}); got != "trace-context" {
+		t.Fatalf("enqueue context value = %v, want trace-context", got)
 	}
 }
 

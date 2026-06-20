@@ -361,9 +361,21 @@ local worker at `host.docker.internal:9091/metrics`. Run `make api` and
 Prometheus and Jaeger datasources and a minimal `Soniq Overview` dashboard for
 API request rate/error/latency, worker activity rate, recording terminal status
 updates, purge cleanup health, and Temporal worker poll/latency/task-slot
-metrics. The OpenTelemetry Collector is available for future OTLP metrics and
-traces; the current API and worker metrics still use the direct Prometheus
+metrics. The current API and worker metrics still use the direct Prometheus
 scrape path.
+
+OpenTelemetry tracing is opt-in. To send API, Temporal workflow/activity, and
+purge cleanup traces to the local collector and view them in Jaeger, start API
+and worker with:
+
+```bash
+OTEL_TRACES_ENABLED=true OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 make api
+OTEL_TRACES_ENABLED=true OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 make worker
+```
+
+Do not set `OTEL_SERVICE_NAME` in the shared `.env` file. Leaving it unset lets
+the binaries use `soniq-api` and `soniq-worker`; set it only as a per-process
+override when a deployment wrapper needs a custom service name.
 
 Useful commands:
 

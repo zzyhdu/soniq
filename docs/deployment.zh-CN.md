@@ -158,7 +158,7 @@ Temporal SDK metrics 由 worker 暴露，只保留 `namespace`、`task_queue`、
 - `compose.observability.yml`
 - Prometheus：存储和查询 metrics。
 - Grafana：展示 dashboard。
-- OpenTelemetry Collector：接收后续 OTLP metrics 和 traces。
+- OpenTelemetry Collector：接收 OTLP traces，以及后续 OTLP metrics。
 - Jaeger：存储和查看 traces。
 
 启动命令：
@@ -172,6 +172,11 @@ Prometheus 会抓取本地 API 的 `host.docker.internal:8080/metrics`，以及�
 `http://localhost:3001`，本地默认账号密码是 `admin` / `soniq_admin`；Jaeger 地址是
 `http://localhost:16686`。这些默认值只用于本地开发，不应作为生产 credentials 或生产
 observability 部署方式。
+
+Tracing 默认关闭。需要导出 API、Temporal workflow/activity 和 purge cleanup traces 时，
+设置 `OTEL_TRACES_ENABLED=true`，并把 `OTEL_EXPORTER_OTLP_ENDPOINT` 指向 collector
+的 OTLP HTTP endpoint。本地通常是 `http://localhost:4318`，Kubernetes 集群内通常是
+`http://otel-collector:4318`。
 
 在 Kubernetes 里，worker 容器会暴露 TCP 9091 metrics 端口，但 baseline NetworkPolicy
 默认不允许任何入站访问 worker pod。生产环境接 Prometheus 时，应只允许 Prometheus 或监控

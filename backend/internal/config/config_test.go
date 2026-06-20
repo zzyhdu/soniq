@@ -12,6 +12,9 @@ func clearConfigEnv(t *testing.T) {
 		"APP_PUBLIC_URL",
 		"LOG_FORMAT",
 		"LOG_LEVEL",
+		"OTEL_TRACES_ENABLED",
+		"OTEL_EXPORTER_OTLP_ENDPOINT",
+		"OTEL_SERVICE_NAME",
 		"AUTH_SESSION_TTL_HOURS",
 		"AUTH_COOKIE_SECURE",
 		"API_ADDRESS",
@@ -78,6 +81,15 @@ func TestLoadFromEnvUsesDevelopmentDefaults(t *testing.T) {
 	}
 	if cfg.LogLevel != "info" {
 		t.Fatalf("LogLevel = %q, want info", cfg.LogLevel)
+	}
+	if cfg.OTelTracesEnabled {
+		t.Fatal("OTelTracesEnabled = true, want false")
+	}
+	if cfg.OTelExporterOTLPEndpoint != "http://localhost:4318" {
+		t.Fatalf("OTelExporterOTLPEndpoint = %q, want local collector endpoint", cfg.OTelExporterOTLPEndpoint)
+	}
+	if cfg.OTelServiceName != "" {
+		t.Fatalf("OTelServiceName = %q, want empty process-specific default", cfg.OTelServiceName)
 	}
 	if cfg.AuthSessionTTLHours != 720 {
 		t.Fatalf("AuthSessionTTLHours = %d, want 720", cfg.AuthSessionTTLHours)
@@ -191,6 +203,9 @@ func TestLoadFromEnvAppliesEnvironmentOverrides(t *testing.T) {
 	t.Setenv("APP_PUBLIC_URL", "http://127.0.0.1:9090")
 	t.Setenv("LOG_FORMAT", "json")
 	t.Setenv("LOG_LEVEL", "debug")
+	t.Setenv("OTEL_TRACES_ENABLED", "true")
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel.example.test:4318")
+	t.Setenv("OTEL_SERVICE_NAME", "custom-service")
 	t.Setenv("AUTH_SESSION_TTL_HOURS", "168")
 	t.Setenv("AUTH_COOKIE_SECURE", "true")
 	t.Setenv("API_ADDRESS", ":9090")
@@ -240,6 +255,15 @@ func TestLoadFromEnvAppliesEnvironmentOverrides(t *testing.T) {
 	}
 	if cfg.LogLevel != "debug" {
 		t.Fatalf("LogLevel = %q, want debug", cfg.LogLevel)
+	}
+	if !cfg.OTelTracesEnabled {
+		t.Fatal("OTelTracesEnabled = false, want true")
+	}
+	if cfg.OTelExporterOTLPEndpoint != "http://otel.example.test:4318" {
+		t.Fatalf("OTelExporterOTLPEndpoint = %q, want override", cfg.OTelExporterOTLPEndpoint)
+	}
+	if cfg.OTelServiceName != "custom-service" {
+		t.Fatalf("OTelServiceName = %q, want override", cfg.OTelServiceName)
 	}
 	if cfg.AuthSessionTTLHours != 168 {
 		t.Fatalf("AuthSessionTTLHours = %d, want 168", cfg.AuthSessionTTLHours)

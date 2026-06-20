@@ -27,6 +27,28 @@ PY
 echo "[observability-smoke] validating Temporal SDK dashboard metric contract"
 (cd backend && go test ./internal/observability -run TestSoniqOverviewDashboardUsesTemporalSDKMetricNames -count=1)
 
+echo "[observability-smoke] validating tracing instrumentation tests"
+(cd backend && go test ./internal/observability ./internal/api ./internal/cleanup ./cmd/worker -run 'Test.*Tracing|Test.*Trace|Test.*Traces' -count=1)
+
+echo "[observability-smoke] validating OpenTelemetry collector trace pipeline"
+python3 - <<'PY'
+from pathlib import Path
+
+config = Path("deploy/observability/otel-collector/config.yaml").read_text(encoding="utf-8")
+required = [
+    "receivers:",
+    "otlp:",
+    "exporters:",
+    "otlp/jaeger:",
+    "pipelines:",
+    "traces:",
+    "jaeger:4317",
+]
+missing = [item for item in required if item not in config]
+if missing:
+    raise SystemExit(f"otel collector config missing expected entries: {', '.join(missing)}")
+PY
+
 echo "[observability-smoke] validating Prometheus config shape"
 python3 - <<'PY'
 from pathlib import Path

@@ -32,6 +32,7 @@ const (
 	requiredSchemaMigrationVersion = 6
 	readinessCheckTimeout          = 2 * time.Second
 	apiShutdownTimeout             = 25 * time.Second
+	tracingShutdownTimeout         = 5 * time.Second
 )
 
 func main() {
@@ -136,7 +137,7 @@ type temporalWorkflowClient interface {
 	Close()
 }
 
-type temporalClientFactory func(context.Context, config.Config) (temporalWorkflowClient, error)
+type temporalClientFactory func(context.Context, config.Config, *observability.Tracing) (temporalWorkflowClient, error)
 
 type appStoreClient interface {
 	RecordingStore() api.RecordingStore
@@ -156,13 +157,19 @@ type appAuthStore interface {
 type appStoreFactory func(context.Context, string) (appStoreClient, error)
 
 func buildHandler(ctx context.Context, cfg config.Config, temporalFactory temporalClientFactory, storeFactory appStoreFactory) (http.Handler, func(), error) {
-	temporalClient, err := temporalFactory(ctx, cfg)
+	tracing, err := observability.NewTracing(ctx, tracingConfigForProcess(cfg, "soniq-api"))
 	if err != nil {
+		return nil, func() {}, err
+	}
+	temporalClient, err := temporalFactory(ctx, cfg, tracing)
+	if err != nil {
+		shutdownTracing(tracing)
 		return nil, func() {}, err
 	}
 	appStore, err := storeFactory(ctx, cfg.PostgresDSN)
 	if err != nil {
 		temporalClient.Close()
+		shutdownTracing(tracing)
 		return nil, func() {}, err
 	}
 
@@ -174,12 +181,14 @@ func buildHandler(ctx context.Context, cfg config.Config, temporalFactory tempor
 	if err != nil {
 		appStore.Close()
 		temporalClient.Close()
+		shutdownTracing(tracing)
 		return nil, func() {}, err
 	}
 	authResolver, passwordAuthConfig, err := buildAuthDependencies(cfg, appStore)
 	if err != nil {
 		appStore.Close()
 		temporalClient.Close()
+		shutdownTracing(tracing)
 		return nil, func() {}, err
 	}
 	readinessChecker := apiReadinessChecker{
@@ -189,13 +198,40 @@ func buildHandler(ctx context.Context, cfg config.Config, temporalFactory tempor
 		storageProvider:                cfg.StorageProvider,
 		requiredSchemaMigrationVersion: requiredSchemaMigrationVersion,
 	}
-	handler := api.NewRouterWithStorageIdentityPasswordAuthAndReadiness(appStore.RecordingStore(), appStore.WorkspaceStore(), authResolver, processor, objectStore, passwordAuthConfig, readinessChecker)
+	handler := api.NewRouterWithStorageIdentityPasswordAuthReadinessAndOptions(appStore.RecordingStore(), appStore.WorkspaceStore(), authResolver, processor, objectStore, passwordAuthConfig, readinessChecker, api.RouterOptions{
+		HTTPTracing: api.HTTPTracingConfig{
+			Tracer:     tracing.Tracer("soniq-api/http"),
+			Propagator: tracing.Propagator(),
+		},
+	})
 	cleanup := func() {
 		appStore.Close()
 		temporalClient.Close()
+		shutdownTracing(tracing)
 	}
 
 	return handler, cleanup, nil
+}
+
+func tracingConfigForProcess(cfg config.Config, defaultServiceName string) observability.TracingConfig {
+	serviceName := strings.TrimSpace(cfg.OTelServiceName)
+	if serviceName == "" {
+		serviceName = defaultServiceName
+	}
+	return observability.TracingConfig{
+		Enabled:      cfg.OTelTracesEnabled,
+		ServiceName:  serviceName,
+		Environment:  cfg.AppEnv,
+		OTLPEndpoint: cfg.OTelExporterOTLPEndpoint,
+	}
+}
+
+func shutdownTracing(tracing *observability.Tracing) {
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), tracingShutdownTimeout)
+	defer cancel()
+	if err := tracing.Shutdown(shutdownCtx); err != nil {
+		slog.Warn("tracing shutdown failed", slog.String("event", "tracing_shutdown_failed"), slog.Any("error", err))
+	}
 }
 
 type apiReadinessChecker struct {
@@ -302,11 +338,21 @@ func buildObjectStore(ctx context.Context, cfg config.Config) (storage.ObjectSto
 	})
 }
 
-func dialTemporalClient(ctx context.Context, cfg config.Config) (temporalWorkflowClient, error) {
-	return client.DialContext(ctx, client.Options{
+func dialTemporalClient(ctx context.Context, cfg config.Config, tracing *observability.Tracing) (temporalWorkflowClient, error) {
+	options := client.Options{
 		HostPort:  cfg.TemporalAddress,
 		Namespace: cfg.TemporalNamespace,
-	})
+	}
+	if tracing != nil {
+		interceptor, err := tracing.TemporalInterceptor()
+		if err != nil {
+			return nil, err
+		}
+		if interceptor != nil {
+			options.Interceptors = append(options.Interceptors, interceptor)
+		}
+	}
+	return client.DialContext(ctx, options)
 }
 
 func openPostgresAppStore(ctx context.Context, dsn string) (appStoreClient, error) {

@@ -37,16 +37,19 @@ func NewTemporalRecordingProcessor(starter WorkflowStarter, config TemporalRecor
 }
 
 // Enqueue starts RecordingProcessingWorkflow asynchronously for recording.
-func (p TemporalRecordingProcessor) Enqueue(recording domain.Recording) error {
+func (p TemporalRecordingProcessor) Enqueue(ctx context.Context, recording domain.Recording) error {
 	if strings.TrimSpace(p.config.TaskQueue) == "" {
 		return errors.New("temporal task queue is required")
 	}
 	if p.starter == nil {
 		return errors.New("temporal workflow starter is required")
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	_, err := p.starter.ExecuteWorkflow(
-		context.Background(),
+		ctx,
 		client.StartWorkflowOptions{
 			ID:                    "recording-processing-" + recording.ID,
 			TaskQueue:             p.config.TaskQueue,

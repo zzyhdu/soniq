@@ -21,6 +21,7 @@ import (
 	"github.com/zzyhdu/soniq/backend/internal/auth"
 	"github.com/zzyhdu/soniq/backend/internal/config"
 	"github.com/zzyhdu/soniq/backend/internal/domain"
+	"github.com/zzyhdu/soniq/backend/internal/observability"
 	"github.com/zzyhdu/soniq/backend/internal/recordings"
 	"github.com/zzyhdu/soniq/backend/internal/workflows"
 	"go.temporal.io/sdk/client"
@@ -107,7 +108,7 @@ func TestBuildHandlerCreatesRecordingSessionWithoutStartingWorkflow(t *testing.T
 		TemporalTaskQueue: "soniq-audio-pipeline",
 	}, "http://127.0.0.1:1")
 
-	handler, cleanup, err := buildHandler(context.Background(), cfg, func(ctx context.Context, cfg config.Config) (temporalWorkflowClient, error) {
+	handler, cleanup, err := buildHandler(context.Background(), cfg, func(ctx context.Context, cfg config.Config, tracing *observability.Tracing) (temporalWorkflowClient, error) {
 		if cfg.TemporalAddress != "temporal.example:7233" {
 			t.Fatalf("TemporalAddress = %q, want temporal.example:7233", cfg.TemporalAddress)
 		}
@@ -179,7 +180,7 @@ func TestBuildHandlerWiresUploadEndpointToS3CompatibleObjectStorage(t *testing.T
 		TemporalTaskQueue: "soniq-audio-pipeline",
 	}, s3Server.URL)
 
-	handler, cleanup, err := buildHandler(context.Background(), cfg, func(context.Context, config.Config) (temporalWorkflowClient, error) {
+	handler, cleanup, err := buildHandler(context.Background(), cfg, func(context.Context, config.Config, *observability.Tracing) (temporalWorkflowClient, error) {
 		return temporalClient, nil
 	}, storeFactory.Open)
 	if err != nil {
@@ -265,7 +266,7 @@ func TestBuildHandlerCleanupClosesTemporalClient(t *testing.T) {
 	store := newBuildHandlerRecordingStoreSpy()
 	storeFactory := &appStoreFactorySpy{store: store}
 
-	_, cleanup, err := buildHandler(context.Background(), withTestS3Config(config.Config{TemporalTaskQueue: "soniq-audio-pipeline", PostgresDSN: "postgres://custom_user:***@db:5432/custom?sslmode=disable"}, "http://127.0.0.1:1"), func(context.Context, config.Config) (temporalWorkflowClient, error) {
+	_, cleanup, err := buildHandler(context.Background(), withTestS3Config(config.Config{TemporalTaskQueue: "soniq-audio-pipeline", PostgresDSN: "postgres://custom_user:***@db:5432/custom?sslmode=disable"}, "http://127.0.0.1:1"), func(context.Context, config.Config, *observability.Tracing) (temporalWorkflowClient, error) {
 		return temporalClient, nil
 	}, storeFactory.Open)
 	if err != nil {
@@ -295,7 +296,7 @@ func TestBuildHandlerLoginSessionCanReadMe(t *testing.T) {
 		TemporalTaskQueue:   "soniq-audio-pipeline",
 	}, "http://127.0.0.1:1")
 
-	handler, cleanup, err := buildHandler(context.Background(), cfg, func(context.Context, config.Config) (temporalWorkflowClient, error) {
+	handler, cleanup, err := buildHandler(context.Background(), cfg, func(context.Context, config.Config, *observability.Tracing) (temporalWorkflowClient, error) {
 		return temporalClient, nil
 	}, storeFactory.Open)
 	if err != nil {
@@ -326,7 +327,7 @@ func TestBuildHandlerReadyzChecksRuntimeDependencies(t *testing.T) {
 		TemporalTaskQueue: "soniq-audio-pipeline",
 	}, s3Server.URL)
 
-	handler, cleanup, err := buildHandler(context.Background(), cfg, func(context.Context, config.Config) (temporalWorkflowClient, error) {
+	handler, cleanup, err := buildHandler(context.Background(), cfg, func(context.Context, config.Config, *observability.Tracing) (temporalWorkflowClient, error) {
 		return temporalClient, nil
 	}, storeFactory.Open)
 	if err != nil {
@@ -387,7 +388,7 @@ func TestBuildHandlerReadyzChecksS3CompatibleStorage(t *testing.T) {
 		S3ForcePathStyle:  true,
 	}
 
-	handler, cleanup, err := buildHandler(context.Background(), cfg, func(context.Context, config.Config) (temporalWorkflowClient, error) {
+	handler, cleanup, err := buildHandler(context.Background(), cfg, func(context.Context, config.Config, *observability.Tracing) (temporalWorkflowClient, error) {
 		return temporalClient, nil
 	}, storeFactory.Open)
 	if err != nil {
@@ -422,7 +423,7 @@ func TestBuildHandlerReadyzReportsOutdatedMigrations(t *testing.T) {
 		TemporalTaskQueue: "soniq-audio-pipeline",
 	}, s3Server.URL)
 
-	handler, cleanup, err := buildHandler(context.Background(), cfg, func(context.Context, config.Config) (temporalWorkflowClient, error) {
+	handler, cleanup, err := buildHandler(context.Background(), cfg, func(context.Context, config.Config, *observability.Tracing) (temporalWorkflowClient, error) {
 		return temporalClient, nil
 	}, storeFactory.Open)
 	if err != nil {

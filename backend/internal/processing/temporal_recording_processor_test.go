@@ -29,7 +29,8 @@ func TestTemporalRecordingProcessorStartsRecordingWorkflow(t *testing.T) {
 		UpdatedAt:    time.Now(),
 	}
 
-	if err := processor.Enqueue(recording); err != nil {
+	ctx := context.WithValue(context.Background(), testContextKey{}, "trace-context")
+	if err := processor.Enqueue(ctx, recording); err != nil {
 		t.Fatalf("Enqueue returned error: %v", err)
 	}
 
@@ -37,6 +38,9 @@ func TestTemporalRecordingProcessorStartsRecordingWorkflow(t *testing.T) {
 		t.Fatalf("ExecuteWorkflow calls = %d, want %d", got, want)
 	}
 	call := starter.calls[0]
+	if call.ctx != ctx {
+		t.Fatal("ExecuteWorkflow context was not passed through from Enqueue")
+	}
 	if call.options.ID != "recording-processing-rec_123" {
 		t.Fatalf("workflow ID = %q, want recording-processing-rec_123", call.options.ID)
 	}
@@ -77,7 +81,7 @@ func TestTemporalRecordingProcessorReturnsStartError(t *testing.T) {
 		TaskQueue: "soniq-audio-pipeline",
 	})
 
-	err := processor.Enqueue(domain.Recording{
+	err := processor.Enqueue(context.Background(), domain.Recording{
 		ID:           "rec_123",
 		WorkflowType: domain.WorkflowTypeMeeting,
 		Language:     "en",
@@ -92,7 +96,7 @@ func TestTemporalRecordingProcessorRejectsEmptyTaskQueue(t *testing.T) {
 	starter := &workflowStarterSpy{}
 	processor := NewTemporalRecordingProcessor(starter, TemporalRecordingProcessorConfig{})
 
-	err := processor.Enqueue(domain.Recording{
+	err := processor.Enqueue(context.Background(), domain.Recording{
 		ID:           "rec_123",
 		WorkflowType: domain.WorkflowTypeMeeting,
 		Language:     "en",
@@ -105,6 +109,8 @@ func TestTemporalRecordingProcessorRejectsEmptyTaskQueue(t *testing.T) {
 		t.Fatalf("ExecuteWorkflow calls = %d, want %d", got, want)
 	}
 }
+
+type testContextKey struct{}
 
 func sameFunction(a, b interface{}) bool {
 	return reflect.ValueOf(a).Pointer() == reflect.ValueOf(b).Pointer()

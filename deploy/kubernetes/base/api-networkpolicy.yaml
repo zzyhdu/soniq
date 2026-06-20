@@ -36,3 +36,5 @@ spec:
           port: 5432
         - protocol: TCP
           port: 7233
+        - protocol: TCP
+          port: 4318

@@ -11,6 +11,8 @@ data:
   APP_PUBLIC_URL: https://soniq.example.com
   LOG_FORMAT: json
   LOG_LEVEL: info
+  OTEL_TRACES_ENABLED: "false"
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
   AUTH_SESSION_TTL_HOURS: "720"
   AUTH_COOKIE_SECURE: "true"
   API_ADDRESS: :8080

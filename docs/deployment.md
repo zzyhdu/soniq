@@ -185,7 +185,7 @@ The repository includes an optional local observability stack in
 
 - Prometheus for metrics storage and queries.
 - Grafana for dashboards.
-- OpenTelemetry Collector for future OTLP metrics and traces.
+- OpenTelemetry Collector for OTLP traces and future OTLP metrics.
 - Jaeger for trace storage and inspection.
 
 Start it with:
@@ -200,6 +200,11 @@ Grafana is available at `http://localhost:3001` with local-only default
 credentials `admin` / `soniq_admin`, and Jaeger is available at
 `http://localhost:16686`. These defaults are for local development and should
 not be used as production credentials or a production observability deployment.
+
+Tracing is disabled by default. Set `OTEL_TRACES_ENABLED=true` and
+`OTEL_EXPORTER_OTLP_ENDPOINT` to the collector OTLP HTTP endpoint, such as
+`http://localhost:4318` locally or `http://otel-collector:4318` in-cluster, to
+export API, Temporal workflow/activity, and purge cleanup traces.
 
 ## Shutdown Behavior
 
@@ -283,8 +288,8 @@ it. Soniq's baseline policies select API, worker, and migration pods:
   exposed by the container on TCP 9091, but production deployments should allow
   ingress only from Prometheus or the chosen monitoring namespace.
 - API, worker, and migration pods allow outbound DNS plus TCP 80, 443, 9000,
-  5432, and 7233 for object storage, Postgres, Temporal, and external model
-  providers.
+  5432, 7233, and 4318 for object storage, Postgres, Temporal, OTLP HTTP trace
+  export, and external model providers.
 
 Production environments with dependencies on different ports or stricter IP
 boundaries should override the Helm `networkPolicy` values with cluster-specific

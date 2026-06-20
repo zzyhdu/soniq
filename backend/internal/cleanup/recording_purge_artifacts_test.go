@@ -13,6 +13,10 @@ import (
 
 	"github.com/zzyhdu/soniq/backend/internal/recordings"
 	"github.com/zzyhdu/soniq/backend/internal/storage"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 var errCleanupObjectDelete = errors.New("delete object failed")
@@ -244,6 +248,69 @@ func TestRecordingPurgeArtifactCleanerRunOnceWritesStructuredLogs(t *testing.T) 
 	}
 }
 
+func TestRecordingPurgeArtifactCleanerRunOnceTracesDeleteFailuresWithoutObjectKey(t *testing.T) {
+	artifact := recordings.RecordingPurgeArtifact{
+		ID:           "rpa_1",
+		RecordingID:  "rec_1",
+		WorkspaceID:  "wsp_1",
+		ObjectKey:    "workspaces/wsp_1/recordings/rec_1/private-audio.wav",
+		ArtifactKind: recordings.RecordingPurgeArtifactKindOriginalAudio,
+		AttemptCount: 1,
+	}
+	spanRecorder := tracetest.NewSpanRecorder()
+	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
+	defer tracerProvider.Shutdown(context.Background()) //nolint:errcheck
+	store := &purgeArtifactStoreSpy{claimed: []recordings.RecordingPurgeArtifact{artifact}}
+	objectStore := &purgeObjectStoreSpy{err: errCleanupObjectDelete}
+	cleaner := NewRecordingPurgeArtifactCleaner(store, objectStore, RecordingPurgeArtifactCleanerOptions{
+		BatchSize: 10,
+		Tracer:    tracerProvider.Tracer("test"),
+	})
+
+	err := cleaner.RunOnce(context.Background())
+	if err == nil {
+		t.Fatal("RunOnce returned nil error, want delete error")
+	}
+
+	spans := spanRecorder.Ended()
+	if got, want := len(spans), 2; got != want {
+		t.Fatalf("ended spans = %d, want %d", got, want)
+	}
+	deleteSpan := findCleanupSpan(t, spans, "purge_artifact.delete_object")
+	assertCleanupTraceAttribute(t, deleteSpan.Attributes(), "artifact_id", "rpa_1")
+	assertCleanupTraceAttribute(t, deleteSpan.Attributes(), "recording_id", "rec_1")
+	assertCleanupTraceAttribute(t, deleteSpan.Attributes(), "workspace_id", "wsp_1")
+	assertCleanupTraceAttribute(t, deleteSpan.Attributes(), "artifact_kind", recordings.RecordingPurgeArtifactKindOriginalAudio)
+	if deleteSpan.Status().Code != codes.Error {
+		t.Fatalf("delete span status = %v, want error", deleteSpan.Status())
+	}
+	for _, span := range spans {
+		if cleanupSpanAttributesContain(span.Attributes(), "private-audio.wav") {
+			t.Fatalf("span %q leaked object key in attributes: %#v", span.Name(), span.Attributes())
+		}
+	}
+}
+
+func TestRecordingPurgeArtifactCleanerRunOnceWithoutTracerDoesNotEndParentSpan(t *testing.T) {
+	spanRecorder := tracetest.NewSpanRecorder()
+	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
+	defer tracerProvider.Shutdown(context.Background()) //nolint:errcheck
+	ctx, parentSpan := tracerProvider.Tracer("test").Start(context.Background(), "parent")
+	cleaner := NewRecordingPurgeArtifactCleaner(&purgeArtifactStoreSpy{}, &purgeObjectStoreSpy{}, RecordingPurgeArtifactCleanerOptions{})
+
+	if err := cleaner.RunOnce(ctx); err != nil {
+		t.Fatalf("RunOnce returned error: %v", err)
+	}
+	if spans := spanRecorder.Ended(); len(spans) != 0 {
+		t.Fatalf("ended spans before parent End = %d, want 0", len(spans))
+	}
+
+	parentSpan.End()
+	if spans := spanRecorder.Ended(); len(spans) != 1 || spans[0].Name() != "parent" {
+		t.Fatalf("ended spans after parent End = %#v, want only parent span", spans)
+	}
+}
+
 func TestRecordingPurgeArtifactCleanerRunOnceReturnsClaimErrors(t *testing.T) {
 	store := &purgeArtifactStoreSpy{err: errors.New("claim failed")}
 	cleaner := NewRecordingPurgeArtifactCleaner(store, &purgeObjectStoreSpy{}, RecordingPurgeArtifactCleanerOptions{})
@@ -251,6 +318,39 @@ func TestRecordingPurgeArtifactCleanerRunOnceReturnsClaimErrors(t *testing.T) {
 	if err := cleaner.RunOnce(context.Background()); err == nil {
 		t.Fatal("RunOnce returned nil error, want claim error")
 	}
+}
+
+func findCleanupSpan(t *testing.T, spans []sdktrace.ReadOnlySpan, name string) sdktrace.ReadOnlySpan {
+	t.Helper()
+	for _, span := range spans {
+		if span.Name() == name {
+			return span
+		}
+	}
+	t.Fatalf("span %q not found", name)
+	return nil
+}
+
+func assertCleanupTraceAttribute(t *testing.T, attrs []attribute.KeyValue, key string, want string) {
+	t.Helper()
+	for _, attr := range attrs {
+		if string(attr.Key) == key {
+			if got := attr.Value.AsString(); got != want {
+				t.Fatalf("%s = %q, want %q", key, got, want)
+			}
+			return
+		}
+	}
+	t.Fatalf("attribute %q missing from %#v", key, attrs)
+}
+
+func cleanupSpanAttributesContain(attrs []attribute.KeyValue, value string) bool {
+	for _, attr := range attrs {
+		if strings.Contains(attr.Value.Emit(), value) {
+			return true
+		}
+	}
+	return false
 }
 
 func decodeCleanupLogEntries(t *testing.T, output string) []map[string]any {
