@@ -477,7 +477,10 @@ make observability-smoke
 - 已接入 OpenTelemetry tracing：API HTTP request、Temporal workflow start、
   workflow/activity execution，以及 purge artifact cleanup run/delete spans 会导出到
   OTLP HTTP collector。
-- alert rules、provider-level spans 和 DB transaction spans 仍是后续工作。
+- 已新增本地 Prometheus alert rules，覆盖 API/worker target down、API 5xx ratio、
+  API p95 latency、worker activity failure、recording failure、purge cleanup failure、
+  Temporal activity failure、Temporal worker task slot 耗尽和 observability target down。
+- Alertmanager 通知路由、provider-level spans 和 DB transaction spans 仍是后续工作。
 
 ## Phase 4 — OpenTelemetry tracing
 

@@ -173,6 +173,13 @@ Prometheus 会抓取本地 API 的 `host.docker.internal:8080/metrics`，以及�
 `http://localhost:16686`。这些默认值只用于本地开发，不应作为生产 credentials 或生产
 observability 部署方式。
 
+Prometheus 会加载 `deploy/observability/prometheus/rules/soniq-alerts.yml` 中的 Soniq
+alert rules。基础规则覆盖 API/worker scrape target 健康、API 5xx 比例、API p95 latency、
+worker activity failure、recording failure、purge cleanup failure、Temporal activity
+failure、Temporal worker task slot 耗尽，以及 observability target 健康。本地可以在
+Prometheus Alerts UI 查看规则状态；生产环境应把等价规则接入 Alertmanager 或选定的托管
+告警系统来负责通知路由。
+
 Tracing 默认关闭。需要导出 API、Temporal workflow/activity 和 purge cleanup traces 时，
 设置 `OTEL_TRACES_ENABLED=true`，并把 `OTEL_EXPORTER_OTLP_ENDPOINT` 指向 collector
 的 OTLP HTTP endpoint。本地通常是 `http://localhost:4318`，Kubernetes 集群内通常是

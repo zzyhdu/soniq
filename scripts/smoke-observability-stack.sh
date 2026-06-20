@@ -3,6 +3,7 @@ set -euo pipefail
 
 COMPOSE_FILE=${OBSERVABILITY_COMPOSE_FILE:-compose.observability.yml}
 COMPOSE_PROJECT=${OBSERVABILITY_COMPOSE_PROJECT:-soniq-observability}
+PROMETHEUS_IMAGE=${PROMETHEUS_IMAGE:-prom/prometheus:v3.11.2}
 
 echo "[observability-smoke] validating Docker Compose file"
 docker compose -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" config --quiet
@@ -62,10 +63,42 @@ required = [
     "job_name: otel-collector",
     "otel-collector:8888",
     "otel-collector:8889",
+    "rule_files:",
+    "/etc/prometheus/rules/*.yml",
 ]
 missing = [item for item in required if item not in config]
 if missing:
     raise SystemExit(f"prometheus config missing expected entries: {', '.join(missing)}")
+PY
+
+echo "[observability-smoke] validating Prometheus alert rules"
+docker run --rm --entrypoint promtool \
+    -v "$PWD/deploy/observability/prometheus:/etc/prometheus:ro" \
+    "$PROMETHEUS_IMAGE" \
+    check config /etc/prometheus/prometheus.yml
+
+python3 - <<'PY'
+from pathlib import Path
+
+rules = Path("deploy/observability/prometheus/rules/soniq-alerts.yml").read_text(encoding="utf-8")
+required_alerts = [
+    "SoniqAPITargetDown",
+    "SoniqAPIHigh5xxRate",
+    "SoniqAPIHighP95Latency",
+    "SoniqWorkerTargetDown",
+    "SoniqWorkerActivityFailures",
+    "SoniqRecordingFailuresObserved",
+    "SoniqPurgeArtifactCleanupFailures",
+    "SoniqPurgeCleanupRunFailures",
+    "SoniqTemporalActivityFailures",
+    "SoniqTemporalWorkerTaskSlotsExhausted",
+    "SoniqPrometheusTargetDown",
+]
+missing = [alert for alert in required_alerts if f"alert: {alert}" not in rules]
+if missing:
+    raise SystemExit(f"prometheus alert rules missing expected alerts: {', '.join(missing)}")
+if rules.count("alert: ") != len(required_alerts):
+    raise SystemExit("prometheus alert rule count does not match expected contract")
 PY
 
 echo "[observability-smoke] passed"

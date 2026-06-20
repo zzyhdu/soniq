@@ -1,0 +1,126 @@
+groups:
+  - name: soniq-api
+    rules:
+      - alert: SoniqAPITargetDown
+        expr: up{job="soniq-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: soniq-api
+        annotations:
+          summary: "Soniq API metrics target is down"
+          description: "Prometheus cannot scrape the Soniq API /metrics endpoint."
+
+      - alert: SoniqAPIHigh5xxRate
+        expr: |
+          sum(rate(soniq_http_requests_total{job="soniq-api",status=~"5.."}[5m]))
+            / clamp_min(sum(rate(soniq_http_requests_total{job="soniq-api"}[5m])), 0.001)
+            > 0.05
+        for: 10m
+        labels:
+          severity: warning
+          service: soniq-api
+        annotations:
+          summary: "Soniq API 5xx rate is high"
+          description: "More than 5% of API requests have returned 5xx responses for 10 minutes."
+
+      - alert: SoniqAPIHighP95Latency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(soniq_http_request_duration_seconds_bucket{job="soniq-api"}[5m]))
+          ) > 2
+        for: 10m
+        labels:
+          severity: warning
+          service: soniq-api
+        annotations:
+          summary: "Soniq API p95 latency is high"
+          description: "The API p95 latency has been above 2 seconds for 10 minutes."
+
+  - name: soniq-worker
+    rules:
+      - alert: SoniqWorkerTargetDown
+        expr: up{job="soniq-worker"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: soniq-worker
+        annotations:
+          summary: "Soniq worker metrics target is down"
+          description: "Prometheus cannot scrape the Soniq worker /metrics endpoint."
+
+      - alert: SoniqWorkerActivityFailures
+        expr: sum(rate(soniq_worker_activities_total{job="soniq-worker",result="error"}[5m])) > 0
+        for: 10m
+        labels:
+          severity: warning
+          service: soniq-worker
+        annotations:
+          summary: "Soniq worker activities are failing"
+          description: "At least one worker activity has been failing over the last 10 minutes."
+
+      - alert: SoniqRecordingFailuresObserved
+        expr: sum(increase(soniq_recording_terminal_status_updates_total{job="soniq-worker",status="failed"}[15m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+          service: soniq-worker
+        annotations:
+          summary: "Soniq recordings are reaching failed status"
+          description: "At least one recording entered failed terminal status in the last 15 minutes."
+
+      - alert: SoniqPurgeArtifactCleanupFailures
+        expr: sum(increase(soniq_purge_artifacts_failed_total{job="soniq-worker"}[15m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+          service: soniq-worker
+        annotations:
+          summary: "Soniq purge artifact cleanup is failing"
+          description: "At least one purge artifact cleanup attempt failed in the last 15 minutes."
+
+      - alert: SoniqPurgeCleanupRunFailures
+        expr: sum(increase(soniq_purge_cleanup_run_duration_seconds_count{job="soniq-worker",result="error"}[15m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+          service: soniq-worker
+        annotations:
+          summary: "Soniq purge cleanup runs are failing"
+          description: "At least one purge cleanup run failed in the last 15 minutes."
+
+      - alert: SoniqTemporalActivityFailures
+        expr: sum(rate(temporal_activity_execution_failed{job="soniq-worker"}[5m])) > 0
+        for: 10m
+        labels:
+          severity: warning
+          service: soniq-worker
+        annotations:
+          summary: "Temporal activities are failing"
+          description: "Temporal SDK metrics report activity execution failures from the Soniq worker."
+
+      - alert: SoniqTemporalWorkerTaskSlotsExhausted
+        expr: |
+          sum(temporal_worker_task_slots_available{job="soniq-worker"}) <= 0
+            and
+          sum(temporal_worker_task_slots_used{job="soniq-worker"}) > 0
+        for: 10m
+        labels:
+          severity: warning
+          service: soniq-worker
+        annotations:
+          summary: "Temporal worker task slots are exhausted"
+          description: "Temporal SDK metrics report no available worker task slots for 10 minutes."
+
+  - name: soniq-observability
+    rules:
+      - alert: SoniqPrometheusTargetDown
+        expr: up{job=~"prometheus|otel-collector|otel-collector-exported-metrics"} == 0
+        for: 2m
+        labels:
+          severity: warning
+          service: observability
+        annotations:
+          summary: "Soniq observability target is down"
+          description: "Prometheus cannot scrape one of the local observability targets."

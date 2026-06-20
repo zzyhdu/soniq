@@ -201,6 +201,15 @@ credentials `admin` / `soniq_admin`, and Jaeger is available at
 `http://localhost:16686`. These defaults are for local development and should
 not be used as production credentials or a production observability deployment.
 
+Prometheus loads Soniq alert rules from
+`deploy/observability/prometheus/rules/soniq-alerts.yml`. The baseline rules
+cover API and worker target health, API 5xx ratio, API p95 latency, worker
+activity failures, recording failures, purge cleanup failures, Temporal activity
+failures, Temporal worker task-slot exhaustion, and observability target health.
+They are visible in the Prometheus Alerts UI. Production deployments should wire
+equivalent rules to Alertmanager or the chosen managed alerting system for
+notification routing.
+
 Tracing is disabled by default. Set `OTEL_TRACES_ENABLED=true` and
 `OTEL_EXPORTER_OTLP_ENDPOINT` to the collector OTLP HTTP endpoint, such as
 `http://localhost:4318` locally or `http://otel-collector:4318` in-cluster, to

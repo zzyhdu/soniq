@@ -364,6 +364,16 @@ updates, purge cleanup health, and Temporal worker poll/latency/task-slot
 metrics. The current API and worker metrics still use the direct Prometheus
 scrape path.
 
+Prometheus also loads local Soniq alert rules from
+`deploy/observability/prometheus/rules/soniq-alerts.yml`. These cover API and
+worker scrape target health, API 5xx ratio, API p95 latency, worker activity
+failures, recording failures, purge cleanup failures, Temporal activity
+failures, Temporal worker task-slot exhaustion, and observability target health.
+View rule state in the Prometheus Alerts UI at `http://localhost:9090/alerts`.
+Notification routing through Alertmanager is not part of the local stack yet.
+The API and worker target-down alerts will fire when those local processes are
+not running.
+
 OpenTelemetry tracing is opt-in. To send API, Temporal workflow/activity, and
 purge cleanup traces to the local collector and view them in Jaeger, start API
 and worker with:
