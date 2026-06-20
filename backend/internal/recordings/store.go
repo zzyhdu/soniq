@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/zzyhdu/soniq/backend/internal/domain"
@@ -37,6 +38,13 @@ type ListRecordingsInput struct {
 type ListDeletedRecordingsInput struct {
 	WorkspaceID string
 	Limit       int
+}
+
+// UpdateRecordingInput contains editable recording metadata.
+type UpdateRecordingInput struct {
+	WorkspaceID string
+	ID          string
+	Title       string
 }
 
 // UpdateRecordingStatusInput contains the state transition to persist for a recording.
@@ -303,6 +311,19 @@ func validateRetryRecordingInput(input RetryRecordingInput) error {
 	}
 	if input.ID == "" {
 		return fmt.Errorf("recording id is required")
+	}
+	return nil
+}
+
+func validateUpdateRecordingInput(input UpdateRecordingInput) error {
+	if input.WorkspaceID == "" {
+		return fmt.Errorf("workspace id is required")
+	}
+	if input.ID == "" {
+		return fmt.Errorf("recording id is required")
+	}
+	if strings.TrimSpace(input.Title) == "" {
+		return fmt.Errorf("title is required")
 	}
 	return nil
 }

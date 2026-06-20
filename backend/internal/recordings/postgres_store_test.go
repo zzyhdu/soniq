@@ -521,6 +521,93 @@ func TestPostgresStoreListByWorkspaceClampsDefaultAndMaxLimit(t *testing.T) {
 	}
 }
 
+func TestPostgresStoreUpdateForWorkspaceRenamesRecording(t *testing.T) {
+	createdAt := time.Date(2026, 6, 6, 1, 2, 3, 0, time.UTC)
+	updatedAt := createdAt.Add(time.Minute)
+	db := newPostgresExecutorSpy(postgresRow(
+		"rec_pg",
+		"wsp_default",
+		"Customer interview",
+		domain.RecordingStatusCompleted,
+		domain.WorkflowTypeMeeting,
+		"en",
+		"recordings/rec_pg/original.wav",
+		"audio/wav",
+		int64(12345),
+		createdAt,
+		updatedAt,
+	))
+	store := NewPostgresStore(db)
+
+	recording, ok, err := store.UpdateForWorkspace(UpdateRecordingInput{
+		WorkspaceID: "wsp_default",
+		ID:          "rec_pg",
+		Title:       " Customer interview ",
+	})
+	if err != nil {
+		t.Fatalf("UpdateForWorkspace returned error: %v", err)
+	}
+	if !ok {
+		t.Fatal("UpdateForWorkspace ok = false, want true")
+	}
+	if recording.ID != "rec_pg" || recording.Title != "Customer interview" {
+		t.Fatalf("recording = %+v, want renamed rec_pg", recording)
+	}
+	query := strings.ToLower(db.calls[0].query)
+	if !strings.Contains(query, "update recordings") || !strings.Contains(query, "set title") || !strings.Contains(query, "workspace_id = $1") || !strings.Contains(query, "deleted_at is null") || !strings.Contains(query, "returning") {
+		t.Fatalf("query = %q, want workspace-scoped title update returning", db.calls[0].query)
+	}
+	if got, want := len(db.calls[0].args), 4; got != want {
+		t.Fatalf("update args = %d, want %d", got, want)
+	}
+	if got, want := db.calls[0].args[0], "wsp_default"; got != want {
+		t.Fatalf("workspace id arg = %q, want %q", got, want)
+	}
+	if got, want := db.calls[0].args[1], "rec_pg"; got != want {
+		t.Fatalf("id arg = %q, want %q", got, want)
+	}
+	if got, want := db.calls[0].args[2], "Customer interview"; got != want {
+		t.Fatalf("title arg = %q, want %q", got, want)
+	}
+	if _, ok := db.calls[0].args[3].(time.Time); !ok {
+		t.Fatalf("updated_at arg = %#v, want time.Time", db.calls[0].args[3])
+	}
+}
+
+func TestPostgresStoreUpdateForWorkspaceReturnsFalseForMissingRecording(t *testing.T) {
+	db := newPostgresExecutorSpy(postgresErrorRow(sql.ErrNoRows))
+	store := NewPostgresStore(db)
+
+	_, ok, err := store.UpdateForWorkspace(UpdateRecordingInput{
+		WorkspaceID: "wsp_default",
+		ID:          "rec_missing",
+		Title:       "Renamed",
+	})
+	if err != nil {
+		t.Fatalf("UpdateForWorkspace returned error: %v", err)
+	}
+	if ok {
+		t.Fatal("UpdateForWorkspace ok = true, want false")
+	}
+}
+
+func TestPostgresStoreUpdateForWorkspaceValidatesInput(t *testing.T) {
+	db := newPostgresExecutorSpy()
+	store := NewPostgresStore(db)
+
+	_, _, err := store.UpdateForWorkspace(UpdateRecordingInput{
+		WorkspaceID: "wsp_default",
+		ID:          "rec_pg",
+		Title:       "  ",
+	})
+	if err == nil {
+		t.Fatal("UpdateForWorkspace returned nil error, want validation error")
+	}
+	if got, want := len(db.calls), 0; got != want {
+		t.Fatalf("query calls = %d, want %d", got, want)
+	}
+}
+
 func TestPostgresStoreUpdateStatusUpdatesAndReturnsRecording(t *testing.T) {
 	createdAt := time.Date(2026, 6, 6, 1, 2, 3, 0, time.UTC)
 	updatedAt := createdAt.Add(time.Minute)

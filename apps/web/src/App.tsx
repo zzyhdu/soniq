@@ -17,12 +17,14 @@ import {
   ArrowLeft,
   BarChart3,
   Building2,
+  Check,
   Download,
   FolderOpen,
   HelpCircle,
   MessageSquare,
   MoreHorizontal,
   Mic,
+  Pencil,
   Plus,
   RefreshCw,
   RotateCcw,
@@ -48,6 +50,7 @@ import {
   useSignIn,
   useSignOut,
   useSignUp,
+  useUpdateRecording,
   useUploadRecording,
   useWorkspaces,
 } from '@/api/queries';
@@ -163,6 +166,7 @@ export function App() {
   const deletedRecordingsQuery = useDeletedRecordings(selectedWorkspaceId, isAuthenticated && activeView === 'trash');
   const deletedRecordings = deletedRecordingsQuery.data?.recordings ?? [];
   const uploadRecordingMutation = useUploadRecording(selectedWorkspaceId);
+  const updateRecordingMutation = useUpdateRecording(selectedWorkspaceId);
   const deleteRecordingMutation = useDeleteRecording(selectedWorkspaceId);
   const restoreRecordingMutation = useRestoreRecording(selectedWorkspaceId);
   const purgeRecordingMutation = usePurgeRecording(selectedWorkspaceId);
@@ -174,6 +178,7 @@ export function App() {
   const currentFailureReason = statusQuery.data?.failure_reason ?? selectedRecording?.failure_reason ?? null;
   const statusError = statusQuery.error instanceof Error ? statusQuery.error.message : null;
   const uploadError = uploadRecordingMutation.error instanceof Error ? uploadRecordingMutation.error.message : null;
+  const renameError = updateRecordingMutation.error instanceof Error ? updateRecordingMutation.error.message : null;
   const retryError = retryRecordingMutation.error instanceof Error ? retryRecordingMutation.error.message : null;
   const deleteError = deleteRecordingMutation.error instanceof Error ? deleteRecordingMutation.error.message : null;
   const restoreError = restoreRecordingMutation.error instanceof Error ? restoreRecordingMutation.error.message : null;
@@ -250,6 +255,14 @@ export function App() {
     setSelectedRecordingId(response.recording.id);
     setActiveView('recordings');
     pushAppRoute({ workspaceId: response.recording.workspace_id, recordingId: response.recording.id });
+  }
+
+  async function handleRenameRecording(recordingId: string, title: string) {
+    updateRecordingMutation.reset();
+    const recording = await updateRecordingMutation.mutateAsync({ recordingId, title });
+    setLatestProcessingRequest((current) => current?.recording.id === recording.id
+      ? { ...current, recording }
+      : current);
   }
 
   async function handleConfirmDeleteRecording() {
@@ -431,6 +444,9 @@ export function App() {
             onRetry={currentStatus === 'failed' ? handleRetryRecording : undefined}
             isRetrying={retryRecordingMutation.isPending}
             retryError={retryError}
+            onRename={handleRenameRecording}
+            isRenaming={updateRecordingMutation.isPending}
+            renameError={renameError}
             onDelete={handleRequestDeleteRecording}
             onUploadClick={() => setIsUploadOpen(true)}
             onBack={handleBackToLibrary}
@@ -810,6 +826,9 @@ type RecordingDetailPanelProps = {
   onRetry?: () => void;
   isRetrying: boolean;
   retryError: string | null;
+  onRename: (recordingId: string, title: string) => Promise<void>;
+  isRenaming: boolean;
+  renameError: string | null;
   onDelete: (recording: Recording) => void;
   onUploadClick: () => void;
   onBack: () => void;
@@ -828,11 +847,21 @@ function RecordingDetailPanel({
   onRetry,
   isRetrying,
   retryError,
+  onRename,
+  isRenaming,
+  renameError,
   onDelete,
   onUploadClick,
   onBack,
 }: RecordingDetailPanelProps) {
   const [activeTab, setActiveTab] = useState<RecordingResultsTab>('summary');
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(recording?.title ?? '');
+
+  useEffect(() => {
+    setIsEditingTitle(false);
+    setTitleDraft(recording?.title ?? '');
+  }, [recording?.id, recording?.title]);
 
   if (workspaceId === null) {
     return (
@@ -857,6 +886,24 @@ function RecordingDetailPanel({
   const status = currentStatus ?? recording.status;
   const isCompleted = status === 'completed';
   const canRetry = status === 'failed' && onRetry !== undefined;
+  const trimmedTitle = titleDraft.trim();
+  const canSaveTitle = trimmedTitle.length > 0 && trimmedTitle !== recording.title && !isRenaming;
+
+  async function handleSaveTitle() {
+    if (recording === undefined || trimmedTitle.length === 0) {
+      return;
+    }
+    if (trimmedTitle === recording.title) {
+      setIsEditingTitle(false);
+      return;
+    }
+    try {
+      await onRename(recording.id, trimmedTitle);
+      setIsEditingTitle(false);
+    } catch {
+      // Keep the editor open so the user can adjust the title or retry.
+    }
+  }
 
   return (
     <section className="flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-[#f7f9fb]" aria-label="Recording detail">
@@ -867,10 +914,70 @@ function RecordingDetailPanel({
               <ArrowLeft className="size-4" aria-hidden="true" />
             </Button>
             <div className="min-w-0 space-y-2">
-              <div className="flex min-w-0 items-center gap-3">
-                <h2 className="min-w-0 truncate text-[24px] font-semibold leading-8 text-[#091426]">{recording.title}</h2>
-                <StatusTag status={status} />
-              </div>
+              {isEditingTitle ? (
+                <form
+                  className="flex min-w-0 flex-wrap items-center gap-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void handleSaveTitle();
+                  }}
+                >
+                  <input
+                    type="text"
+                    aria-label="Recording title"
+                    value={titleDraft}
+                    autoFocus
+                    onChange={(event) => setTitleDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Escape') {
+                        setTitleDraft(recording.title);
+                        setIsEditingTitle(false);
+                      }
+                    }}
+                    className="min-w-[240px] flex-1 rounded border border-[#c5c6cd] bg-white px-3 py-1.5 text-[20px] font-semibold leading-7 text-[#091426] outline-none focus:border-transparent focus:ring-2 focus:ring-[#3b82f6]"
+                  />
+                  <Button
+                    type="submit"
+                    variant="ghost"
+                    size="icon"
+                    className="size-8 rounded text-[#166534] hover:bg-[#dcfce7]"
+                    disabled={!canSaveTitle}
+                    aria-label="Save recording title"
+                  >
+                    <Check className="size-4" aria-hidden="true" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-8 rounded text-[#45474c] hover:bg-[#f2f4f6]"
+                    disabled={isRenaming}
+                    aria-label="Cancel title edit"
+                    onClick={() => {
+                      setTitleDraft(recording.title);
+                      setIsEditingTitle(false);
+                    }}
+                  >
+                    <X className="size-4" aria-hidden="true" />
+                  </Button>
+                  <StatusTag status={status} />
+                </form>
+              ) : (
+                <div className="flex min-w-0 items-center gap-2">
+                  <h2 className="min-w-0 truncate text-[24px] font-semibold leading-8 text-[#091426]">{recording.title}</h2>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-8 shrink-0 rounded text-[#45474c] hover:bg-[#f2f4f6]"
+                    aria-label="Edit recording title"
+                    onClick={() => setIsEditingTitle(true)}
+                  >
+                    <Pencil className="size-4" aria-hidden="true" />
+                  </Button>
+                  <StatusTag status={status} />
+                </div>
+              )}
               <div className="flex flex-wrap items-center gap-2 text-[13px] leading-[18px] text-[#45474c]">
                 <span>{formatDateTime(recording.updated_at)}</span>
                 <span className="text-[#75777d]" aria-hidden="true">•</span>
@@ -878,6 +985,9 @@ function RecordingDetailPanel({
                 <span className="text-[#75777d]" aria-hidden="true">•</span>
                 <span>Workspace: {workspaceName ?? recording.workspace_id}</span>
               </div>
+              {isEditingTitle && renameError !== null && (
+                <p className="text-[13px] leading-[18px] text-[#ba1a1a]" role="alert">{renameError}</p>
+              )}
             </div>
           </div>
 

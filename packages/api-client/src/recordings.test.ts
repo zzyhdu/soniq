@@ -12,6 +12,7 @@ import {
   purgeRecording,
   restoreRecording,
   retryRecording,
+  updateRecording,
   uploadRecording,
 } from './recordings';
 
@@ -118,6 +119,26 @@ describe('recording writes', () => {
         'X-CSRF-Token': 'csrf-token',
       },
       body: JSON.stringify({ workflow_type: 'meeting', title: 'Weekly standup', language: 'en' }),
+    });
+  });
+
+  it('updates recording metadata by encoded id', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(recordingFixture({ id: 'rec/with space', title: 'Customer interview' })),
+    );
+
+    const result = await updateRecording(
+      'wsp/default',
+      'rec/with space',
+      { title: 'Customer interview' },
+      { fetch: fetchMock },
+    );
+
+    expect(result.title).toBe('Customer interview');
+    expect(fetchMock).toHaveBeenCalledWith('/workspaces/wsp%2Fdefault/recordings/rec%2Fwith%20space', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Customer interview' }),
     });
   });
 });

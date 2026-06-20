@@ -20,6 +20,7 @@ type RecordingStore interface {
 	Create(recordings.CreateRecordingInput) (domain.Recording, error)
 	GetForWorkspace(input recordings.GetRecordingInput) (domain.Recording, bool, error)
 	ListByWorkspace(input recordings.ListRecordingsInput) ([]domain.Recording, error)
+	UpdateForWorkspace(input recordings.UpdateRecordingInput) (domain.Recording, bool, error)
 	GetTranscript(recordingID string) (recordings.RecordingTranscript, bool, error)
 	ListTranscriptSegments(recordingID string) ([]recordings.RecordingTranscriptSegment, error)
 	GetSummary(recordingID string) (recordings.RecordingSummary, bool, error)
@@ -64,6 +65,10 @@ func (unconfiguredRecordingStore) GetForWorkspace(recordings.GetRecordingInput) 
 
 func (unconfiguredRecordingStore) ListByWorkspace(recordings.ListRecordingsInput) ([]domain.Recording, error) {
 	return nil, errRecordingStoreNotConfigured
+}
+
+func (unconfiguredRecordingStore) UpdateForWorkspace(recordings.UpdateRecordingInput) (domain.Recording, bool, error) {
+	return domain.Recording{}, false, errRecordingStoreNotConfigured
 }
 
 func (unconfiguredRecordingStore) GetTranscript(string) (recordings.RecordingTranscript, bool, error) {
@@ -253,6 +258,7 @@ func newRouterWithDependencies(store RecordingStore, workspaceStore WorkspaceSto
 			router.MethodFunc(http.MethodPost, "/recordings/upload", uploadRecordingHandler(store, processor, objectStore))
 			router.MethodFunc(http.MethodGet, "/recordings/trash", listDeletedRecordingsHandler(store))
 			router.MethodFunc(http.MethodGet, "/recordings/{recording_id}", getRecordingHandler(store))
+			router.MethodFunc(http.MethodPatch, "/recordings/{recording_id}", updateRecordingHandler(store))
 			router.MethodFunc(http.MethodDelete, "/recordings/{recording_id}", deleteRecordingHandler(store))
 			router.MethodFunc(http.MethodGet, "/recordings/{recording_id}/status", getRecordingStatusHandler(store))
 			router.MethodFunc(http.MethodGet, "/recordings/{recording_id}/details", getRecordingDetailsHandler(store))

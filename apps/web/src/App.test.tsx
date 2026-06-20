@@ -149,6 +149,32 @@ describe('App workspace recording flow', () => {
     expect(screen.getByText('Full transcript text.')).toBeInTheDocument();
   });
 
+  it('renames the selected recording inline', async () => {
+    const requests = mockAppFetch();
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(await screen.findByRole('button', { name: /Weekly sync/i }));
+    expect(await screen.findByText('Weekly sync summary')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /edit recording title/i }));
+    const titleInput = screen.getByRole('textbox', { name: /^Recording title$/i });
+    await user.clear(titleInput);
+    await user.type(titleInput, 'Customer interview');
+    await user.click(screen.getByRole('button', { name: /save recording title/i }));
+
+    await waitFor(() => {
+      expect(requests.some((request) => (
+        request.method === 'PATCH' &&
+        request.url === '/workspaces/wsp_default/recordings/rec_done' &&
+        request.body === JSON.stringify({ title: 'Customer interview' })
+      ))).toBe(true);
+    });
+    expect(await screen.findByRole('heading', { name: /Customer interview/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Customer interview/i })).toBeInTheDocument();
+  });
+
   it('soft deletes the selected recording after confirmation', async () => {
     const requests = mockAppFetch();
     const user = userEvent.setup();
@@ -370,6 +396,7 @@ describe('App workspace recording flow', () => {
 type CapturedRequest = {
   url: string;
   method: string;
+  body?: BodyInit | null;
 };
 
 function mockAppFetch(options: {
@@ -384,11 +411,12 @@ function mockAppFetch(options: {
   let authenticated = true;
   const deletedRecordingIds = new Set<string>();
   const purgedRecordingIds = new Set<string>();
+  let recordingTitle = 'Weekly sync';
 
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const url = requestUrl(input);
     const method = init?.method ?? 'GET';
-    requests.push({ url, method });
+    requests.push({ url, method, body: init?.body });
 
     if (url === '/me') {
       if (!authenticated) {
@@ -463,7 +491,7 @@ function mockAppFetch(options: {
               updated_at: '2026-06-11T00:00:00Z',
             }),
           ] : []),
-          recordingFixture({ id: 'rec_done', title: 'Weekly sync', status: 'completed' }),
+          recordingFixture({ id: 'rec_done', title: recordingTitle, status: 'completed' }),
         ].filter((recording) => !deletedRecordingIds.has(recording.id) && !purgedRecordingIds.has(recording.id)),
       });
     }
@@ -473,7 +501,7 @@ function mockAppFetch(options: {
         recordings: [
           recordingFixture({
             id: 'rec_done',
-            title: 'Weekly sync',
+            title: recordingTitle,
             status: 'completed',
             deleted_at: '2026-06-11T00:05:00Z',
             deleted_by_user_id: 'usr_dev',
@@ -549,7 +577,15 @@ function mockAppFetch(options: {
           statusText: 'Unauthorized',
         });
       }
-      return jsonResponse(recordingDetails());
+      return jsonResponse(recordingDetails({
+        recording: recordingFixture({ id: 'rec_done', title: recordingTitle, status: 'completed' }),
+      }));
+    }
+
+    if (url === '/workspaces/wsp_default/recordings/rec_done' && method === 'PATCH') {
+      const body = typeof init?.body === 'string' ? JSON.parse(init.body) as { title?: string } : {};
+      recordingTitle = body.title ?? recordingTitle;
+      return jsonResponse(recordingFixture({ id: 'rec_done', title: recordingTitle, status: 'completed' }));
     }
 
     if (url === '/workspaces/wsp_default/recordings/rec_done' && method === 'DELETE') {
@@ -565,7 +601,7 @@ function mockAppFetch(options: {
         });
       }
       deletedRecordingIds.delete('rec_done');
-      return jsonResponse(recordingFixture({ id: 'rec_done', title: 'Weekly sync', status: 'completed' }));
+      return jsonResponse(recordingFixture({ id: 'rec_done', title: recordingTitle, status: 'completed' }));
     }
 
     if (url === '/workspaces/wsp_default/recordings/rec_done/purge' && method === 'DELETE') {

@@ -339,6 +339,40 @@ paths:
           $ref: '#/components/responses/Error'
         default:
           $ref: '#/components/responses/Error'
+    patch:
+      summary: Update recording metadata
+      description: Updates editable metadata for an active recording.
+      operationId: updateRecording
+      security:
+        - CookieAuth: []
+          CSRFToken: []
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
+        - $ref: '#/components/parameters/RecordingID'
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRecordingRequest'
+      responses:
+        '200':
+          description: Recording updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Recording'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
     delete:
       summary: Soft delete recording
       description: Moves an active recording to Trash by setting deletion metadata. Generated results and audio artifacts are not physically purged by this operation.
@@ -657,6 +691,13 @@ components:
         language:
           type: string
           example: en
+    UpdateRecordingRequest:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+          minLength: 1
     ListRecordingsResponse:
       type: object
       required: [recordings]

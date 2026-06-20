@@ -3,6 +3,7 @@ import {
   type Recording,
   type RecordingDetails,
   type RecordingMindMapNode,
+  type RecordingSummary,
   type RecordingTranscriptSegment,
 } from '@soniq/api-client';
 import { Copy, Download } from 'lucide-react';
@@ -121,19 +122,18 @@ function SummaryTab({ details }: { details: RecordingDetails }) {
     return <p className="text-muted-foreground text-sm">No summary available yet.</p>;
   }
 
+  const summaryText = summaryMarkdown(details.recording, summary);
+
   return (
     <div className="mx-auto max-w-3xl rounded border border-[#c5c6cd] bg-white shadow-sm">
       <div className="flex items-center justify-end border-b border-[#c5c6cd] bg-[#f7f9fb] p-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-8 rounded px-2 text-[13px] font-normal text-[#45474c] hover:bg-[#f2f4f6] hover:text-[#191c1e]"
-          onClick={() => void copyText([summary.title, summary.overview, summary.content_markdown].filter(Boolean).join('\n\n'))}
-        >
-          <Copy className="size-4" aria-hidden="true" />
-          Copy
-        </Button>
+        <ResultActions
+          copyLabel="Copy summary"
+          exportLabel="Export Markdown"
+          filename={`${fileSafeName(details.recording.title)}-summary.md`}
+          content={summaryText}
+          compact
+        />
       </div>
       <div className="flex flex-col gap-6 p-4 text-[14px] leading-6 text-[#191c1e] md:p-8">
         <section>
@@ -428,6 +428,14 @@ function transcriptMarkdown(recording: Recording, segments: RecordingTranscriptS
     '',
     ...segments.map((segment) => `- [${formatTimeRange(segment)}] ${segment.speaker_label}: ${segment.text}`),
   ].join('\n');
+}
+
+function summaryMarkdown(recording: Recording, summary: RecordingSummary) {
+  return [
+    `# ${summary.title || recording.title}`,
+    summary.overview,
+    summary.content_markdown,
+  ].filter((section) => section.length > 0).join('\n\n');
 }
 
 function plainTranscript(segments: RecordingTranscriptSegment[], fallbackText: string) {

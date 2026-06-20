@@ -167,6 +167,23 @@ func (s *fakeRecordingStore) ListByWorkspace(input recordings.ListRecordingsInpu
 	return result, nil
 }
 
+func (s *fakeRecordingStore) UpdateForWorkspace(input recordings.UpdateRecordingInput) (domain.Recording, bool, error) {
+	if s.updateErr != nil {
+		return domain.Recording{}, false, s.updateErr
+	}
+	if strings.TrimSpace(input.Title) == "" {
+		return domain.Recording{}, false, errors.New("title is required")
+	}
+	recording, ok := s.stored[input.ID]
+	if !ok || recording.WorkspaceID != input.WorkspaceID || recording.DeletedAt != nil {
+		return domain.Recording{}, false, nil
+	}
+	recording.Title = strings.TrimSpace(input.Title)
+	recording.UpdatedAt = time.Now().UTC()
+	s.stored[input.ID] = recording
+	return recording, true, nil
+}
+
 func (s *fakeRecordingStore) UpdateStatus(input recordings.UpdateRecordingStatusInput) (domain.Recording, error) {
 	if s.updateErr != nil {
 		return domain.Recording{}, s.updateErr
@@ -379,6 +396,10 @@ func (s getErrRecordingStore) GetForWorkspace(recordings.GetRecordingInput) (dom
 
 func (s getErrRecordingStore) ListByWorkspace(recordings.ListRecordingsInput) ([]domain.Recording, error) {
 	return nil, s.err
+}
+
+func (s getErrRecordingStore) UpdateForWorkspace(recordings.UpdateRecordingInput) (domain.Recording, bool, error) {
+	return domain.Recording{}, false, s.err
 }
 
 func (s getErrRecordingStore) GetTranscript(string) (recordings.RecordingTranscript, bool, error) {
@@ -1034,6 +1055,84 @@ func TestGetRecordingReturnsExistingRecording(t *testing.T) {
 	}
 	if body != created {
 		t.Fatalf("body = %+v, want %+v", body, created)
+	}
+}
+
+func TestUpdateRecordingRenamesExistingRecording(t *testing.T) {
+	store := newFakeRecordingStore()
+	created, err := store.Create(recordings.CreateRecordingInput{
+		WorkspaceID:  testWorkspaceID,
+		Title:        "Weekly sync",
+		WorkflowType: domain.WorkflowTypeMeeting,
+		Language:     "en",
+	})
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+	router := NewRouterWithStore(store)
+	request := httptest.NewRequest(http.MethodPatch, "/workspaces/wsp_default/recordings/"+created.ID, strings.NewReader(`{"title":" Customer interview "}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusOK, response.Body.String())
+	}
+	var body recordingResponse
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body.ID != created.ID || body.Title != "Customer interview" {
+		t.Fatalf("updated recording = %+v, want renamed %s", body, created.ID)
+	}
+	stored := store.stored[created.ID]
+	if stored.Title != "Customer interview" {
+		t.Fatalf("stored title = %q, want Customer interview", stored.Title)
+	}
+}
+
+func TestUpdateRecordingRejectsBlankTitle(t *testing.T) {
+	store := newFakeRecordingStore()
+	created, err := store.Create(recordings.CreateRecordingInput{
+		WorkspaceID:  testWorkspaceID,
+		Title:        "Weekly sync",
+		WorkflowType: domain.WorkflowTypeMeeting,
+		Language:     "en",
+	})
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+	router := NewRouterWithStore(store)
+	request := httptest.NewRequest(http.MethodPatch, "/workspaces/wsp_default/recordings/"+created.ID, strings.NewReader(`{"title":"   "}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusBadRequest, response.Body.String())
+	}
+	if store.stored[created.ID].Title != "Weekly sync" {
+		t.Fatalf("stored title = %q, want unchanged Weekly sync", store.stored[created.ID].Title)
+	}
+}
+
+func TestUpdateRecordingReturnsNotFoundForMissingOrCrossWorkspaceRecording(t *testing.T) {
+	store := newFakeRecordingStore()
+	store.put(domain.Recording{ID: "rec_other", WorkspaceID: "wsp_other", Title: "Other", Status: domain.RecordingStatusCompleted, WorkflowType: domain.WorkflowTypeMeeting})
+	router := NewRouterWithStore(store)
+
+	for _, id := range []string{"rec_missing", "rec_other"} {
+		request := httptest.NewRequest(http.MethodPatch, "/workspaces/wsp_default/recordings/"+id, strings.NewReader(`{"title":"Renamed"}`))
+		request.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+
+		router.ServeHTTP(response, request)
+
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("update %s status code = %d, want %d", id, response.Code, http.StatusNotFound)
+		}
 	}
 }
 

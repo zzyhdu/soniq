@@ -243,6 +243,52 @@ func getRecordingHandler(store RecordingStore) http.HandlerFunc {
 	}
 }
 
+func updateRecordingHandler(store RecordingStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch {
+			writeMethodNotAllowed(w, http.MethodPatch)
+			return
+		}
+		workspace, ok := workspaceFromRequest(w, r)
+		if !ok {
+			return
+		}
+		id, ok := recordingIDFromRequest(w, r)
+		if !ok {
+			return
+		}
+
+		var request struct {
+			Title *string `json:"title"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			writeAPIError(w, http.StatusBadRequest, errorCodeValidationFailed, "invalid json")
+			return
+		}
+		if request.Title == nil || strings.TrimSpace(*request.Title) == "" {
+			writeAPIError(w, http.StatusBadRequest, errorCodeValidationFailed, "title is required")
+			return
+		}
+
+		recording, found, err := store.UpdateForWorkspace(recordings.UpdateRecordingInput{
+			WorkspaceID: workspace.ID,
+			ID:          id,
+			Title:       *request.Title,
+		})
+		if err != nil {
+			writeAPIError(w, http.StatusInternalServerError, errorCodeInternalError, "update recording")
+			return
+		}
+		if !found {
+			writeAPIError(w, http.StatusNotFound, errorCodeNotFound, "not found")
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(toRecordingResponse(recording))
+	}
+}
+
 func deleteRecordingHandler(store RecordingStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodDelete {

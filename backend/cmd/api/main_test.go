@@ -653,6 +653,19 @@ func (s *buildHandlerRecordingStoreSpy) ListByWorkspace(input recordings.ListRec
 	return result, nil
 }
 
+func (s *buildHandlerRecordingStoreSpy) UpdateForWorkspace(input recordings.UpdateRecordingInput) (domain.Recording, bool, error) {
+	if strings.TrimSpace(input.Title) == "" {
+		return domain.Recording{}, false, errors.New("title is required")
+	}
+	recording, ok := s.stored[input.ID]
+	if !ok || recording.WorkspaceID != input.WorkspaceID || recording.DeletedAt != nil {
+		return domain.Recording{}, false, nil
+	}
+	recording.Title = strings.TrimSpace(input.Title)
+	s.stored[input.ID] = recording
+	return recording, true, nil
+}
+
 func (s *buildHandlerRecordingStoreSpy) GetTranscript(string) (recordings.RecordingTranscript, bool, error) {
 	return recordings.RecordingTranscript{}, false, nil
 }

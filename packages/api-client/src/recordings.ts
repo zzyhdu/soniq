@@ -36,6 +36,10 @@ export type CreateRecordingInput = {
   language?: string;
 };
 
+export type UpdateRecordingInput = {
+  title: string;
+};
+
 export type ListRecordingsInput = {
   limit?: number;
 };
@@ -211,6 +215,23 @@ export async function getRecording(
   return requestJSON<Recording>(
     recordingPath(workspaceId, recordingId),
     { method: 'GET' },
+    options,
+  );
+}
+
+export async function updateRecording(
+  workspaceId: string,
+  recordingId: string,
+  input: UpdateRecordingInput,
+  options: SoniqApiClientOptions = {},
+): Promise<Recording> {
+  return requestJSON<Recording>(
+    recordingPath(workspaceId, recordingId),
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    },
     options,
   );
 }

@@ -48,6 +48,8 @@ describe('RecordingResults', () => {
     expect(await screen.findByText('Weekly sync summary')).toBeInTheDocument();
     expect(screen.getByText('The meeting covered launch status.')).toBeInTheDocument();
     expect(screen.getByText(/Action item: finish the dashboard/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /copy summary/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /export markdown/i })).toBeInTheDocument();
 
     await user.click(screen.getByRole('tab', { name: /mind map/i }));
 

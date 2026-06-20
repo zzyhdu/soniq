@@ -15,10 +15,13 @@ import {
   SoniqApiError,
   type ListRecordingsResponse,
   type Recording,
+  type RecordingDetails,
   type RecordingStatus,
   type SignInInput,
   type SignUpInput,
+  type UpdateRecordingInput,
   type UploadRecordingInput,
+  updateRecording,
   uploadRecording,
 } from '@soniq/api-client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -85,6 +88,40 @@ export function useUploadRecording(workspaceId: string | null | undefined) {
         return;
       }
       await queryClient.invalidateQueries({ queryKey: ['workspaces', workspaceId, 'recordings'] });
+    },
+  });
+}
+
+export function useUpdateRecording(workspaceId: string | null | undefined) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: UpdateRecordingInput & { recordingId: string }) => updateRecording(
+      requireWorkspaceId(workspaceId),
+      requireRecordingId(input.recordingId),
+      { title: input.title },
+    ),
+    onSuccess: async (recording) => {
+      if (!hasWorkspaceId(workspaceId)) {
+        return;
+      }
+      queryClient.setQueryData<ListRecordingsResponse>(
+        ['workspaces', workspaceId, 'recordings'],
+        (current) => replaceRecordingInList(current, recording),
+      );
+      queryClient.setQueryData<RecordingDetails>(
+        ['workspaces', workspaceId, 'recordings', recording.id, 'details'],
+        (current) => current === undefined
+          ? current
+          : {
+              ...current,
+              recording,
+            },
+      );
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['workspaces', workspaceId, 'recordings'], exact: true }),
+        queryClient.invalidateQueries({ queryKey: ['workspaces', workspaceId, 'recordings', recording.id, 'details'], exact: true }),
+      ]);
     },
   });
 }
@@ -279,6 +316,20 @@ function addRecordingToList(
       recording,
       ...current.recordings.filter((item) => item.id !== recording.id),
     ],
+  };
+}
+
+function replaceRecordingInList(
+  current: ListRecordingsResponse | undefined,
+  recording: Recording,
+): ListRecordingsResponse | undefined {
+  if (current === undefined) {
+    return current;
+  }
+
+  return {
+    ...current,
+    recordings: current.recordings.map((item) => item.id === recording.id ? recording : item),
   };
 }
 

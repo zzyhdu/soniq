@@ -172,6 +172,40 @@ LIMIT $2`,
 	return recordings, nil
 }
 
+// UpdateForWorkspace updates editable recording metadata within a workspace.
+func (s *PostgresStore) UpdateForWorkspace(input UpdateRecordingInput) (domain.Recording, bool, error) {
+	if err := validateUpdateRecordingInput(input); err != nil {
+		return domain.Recording{}, false, err
+	}
+	if s == nil || s.db == nil {
+		return domain.Recording{}, false, fmt.Errorf("postgres recording store requires database executor")
+	}
+
+	updatedAt := time.Now().UTC()
+	var recording domain.Recording
+	row := s.db.QueryRow(
+		context.Background(),
+		`UPDATE recordings
+SET title = $3,
+    updated_at = $4
+WHERE workspace_id = $1
+  AND id = $2
+  AND deleted_at IS NULL
+RETURNING `+recordingColumns,
+		input.WorkspaceID,
+		input.ID,
+		strings.TrimSpace(input.Title),
+		updatedAt,
+	)
+	if err := scanRecording(row, &recording); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.Recording{}, false, nil
+		}
+		return domain.Recording{}, false, fmt.Errorf("update recording metadata: %w", err)
+	}
+	return recording, true, nil
+}
+
 // UpdateStatus persists a recording status transition and returns the updated row.
 func (s *PostgresStore) UpdateStatus(input UpdateRecordingStatusInput) (domain.Recording, error) {
 	if err := validateStatusUpdateInput(input); err != nil {
