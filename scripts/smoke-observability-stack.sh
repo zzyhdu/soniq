@@ -24,6 +24,9 @@ if not data["panels"]:
     raise SystemExit("dashboard must define at least one panel")
 PY
 
+echo "[observability-smoke] validating Temporal SDK dashboard metric contract"
+(cd backend && go test ./internal/observability -run TestSoniqOverviewDashboardUsesTemporalSDKMetricNames -count=1)
+
 echo "[observability-smoke] validating Prometheus config shape"
 python3 - <<'PY'
 from pathlib import Path

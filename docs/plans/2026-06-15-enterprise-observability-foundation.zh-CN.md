@@ -470,8 +470,11 @@ make observability-smoke
   purge cleanup claimed/deleted/failed counters 和 cleanup run duration。
 - 本地 Prometheus 已 scrape `host.docker.internal:9091/metrics`，Grafana dashboard 已加入
   worker activity、recording terminal status 和 purge cleanup panels。
+- worker 已接入 Temporal Go SDK metrics handler，`/metrics` 会暴露 `temporal_` 前缀的
+  worker poll、activity/workflow task latency、SDK request latency 和 worker task slot
+  metrics。
 - 已新增 `make observability-up/down/ps/logs/smoke`。
-- Temporal SDK metrics、alert rules 和 tracing 代码接入仍是后续工作。
+- alert rules 和 tracing 代码接入仍是后续工作。
 
 ## Phase 4 — OpenTelemetry tracing
 

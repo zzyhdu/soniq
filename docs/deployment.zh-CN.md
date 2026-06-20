@@ -143,12 +143,15 @@ worker 会在 `WORKER_METRICS_ADDRESS` 上暴露自己的 `/metrics`。当前 wo
 - `soniq_purge_artifacts_deleted_total`
 - `soniq_purge_artifacts_failed_total`
 - `soniq_purge_cleanup_run_duration_seconds{result}`
+- `temporal_*` Temporal Go SDK metrics，用于观察 worker poll、activity/workflow task
+  latency、SDK request latency 和 worker task slots。
 
 API 的 `route` label 使用 router template，而不是真实请求 path。不要把 `user_id`、
 `workspace_id`、`recording_id`、artifact ID、object key、email、文件名，或者其他高基数字段放进
 Prometheus labels。`soniq_recording_terminal_status_updates_total` 统计的是已经写入
 数据库的 `completed` / `failed` 终态更新，不是完整 Temporal workflow outcome counter。
-Temporal SDK metrics 后续单独接入。
+Temporal SDK metrics 由 worker 暴露，只保留 `namespace`、`task_queue`、`workflow_type`、
+`activity_type`、`poller_type`、`worker_type` 等低基数字段。
 
 仓库还包含一个可选的本地 observability stack：
 

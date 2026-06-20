@@ -32,6 +32,7 @@ type Metrics struct {
 	purgeArtifactsDeleted               prometheus.Counter
 	purgeArtifactsFailed                prometheus.Counter
 	purgeCleanupRunDuration             *prometheus.HistogramVec
+	temporalSDKMetrics                  *temporalSDKMetricsState
 }
 
 // NewMetrics builds a Soniq metrics registry with process collectors registered.
@@ -78,6 +79,7 @@ func NewMetrics() *Metrics {
 			Help:    "Purge artifact cleanup run duration for Soniq workers.",
 			Buckets: prometheus.DefBuckets,
 		}, []string{"result"}),
+		temporalSDKMetrics: newTemporalSDKMetricsState(registry),
 	}
 	registry.MustRegister(
 		metrics.httpRequestsTotal,

@@ -327,9 +327,13 @@ curl -i http://localhost:9091/metrics
 
 Current worker metrics include Temporal activity counts and durations,
 recording terminal status update counts, and purge artifact cleanup
-claimed/deleted/failed counters and run duration. Worker metrics use fixed
-labels such as `activity`, `result`, and `status`; they do not include
-recording, workspace, artifact, object key, or user identifiers.
+claimed/deleted/failed counters and run duration. The same endpoint also
+exports Temporal Go SDK metrics with the `temporal_` prefix, including worker
+poll counters, activity/workflow task latency histograms, and worker task slot
+gauges. Worker metrics use fixed low-cardinality labels such as `activity`,
+`result`, `status`, `namespace`, `task_queue`, `workflow_type`, and
+`activity_type`; they do not include recording, workspace, artifact, object
+key, or user identifiers.
 
 To run the optional local observability stack:
 
@@ -356,9 +360,10 @@ local worker at `host.docker.internal:9091/metrics`. Run `make api` and
 `soniq-worker` Prometheus targets to be up. Grafana is provisioned with
 Prometheus and Jaeger datasources and a minimal `Soniq Overview` dashboard for
 API request rate/error/latency, worker activity rate, recording terminal status
-updates, and purge cleanup health. The OpenTelemetry Collector is available
-for future OTLP metrics and traces; the current API and worker metrics still
-use the direct Prometheus scrape path.
+updates, purge cleanup health, and Temporal worker poll/latency/task-slot
+metrics. The OpenTelemetry Collector is available for future OTLP metrics and
+traces; the current API and worker metrics still use the direct Prometheus
+scrape path.
 
 Useful commands:
 

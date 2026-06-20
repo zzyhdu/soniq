@@ -80,10 +80,8 @@ func main() {
 }
 
 func run(ctx context.Context, cfg config.Config) error {
-	temporalClient, err := client.DialContext(ctx, client.Options{
-		HostPort:  cfg.TemporalAddress,
-		Namespace: cfg.TemporalNamespace,
-	})
+	metrics := observability.NewMetrics()
+	temporalClient, err := client.DialContext(ctx, temporalClientOptionsForConfig(cfg, metrics))
 	if err != nil {
 		return err
 	}
@@ -104,7 +102,6 @@ func run(ctx context.Context, cfg config.Config) error {
 		return err
 	}
 
-	metrics := observability.NewMetrics()
 	_, stopMetricsServer, err := startWorkerMetricsServer(ctx, cfg.WorkerMetricsAddress, metrics, slog.Default())
 	if err != nil {
 		return err
@@ -124,6 +121,17 @@ func run(ctx context.Context, cfg config.Config) error {
 		Metrics:   metrics,
 	})
 	return runTemporalWorkerWithCleanup(ctx, worker, cleanupRunner)
+}
+
+func temporalClientOptionsForConfig(cfg config.Config, metrics *observability.Metrics) client.Options {
+	options := client.Options{
+		HostPort:  cfg.TemporalAddress,
+		Namespace: cfg.TemporalNamespace,
+	}
+	if metrics != nil {
+		options.MetricsHandler = metrics.TemporalSDKMetricsHandler()
+	}
+	return options
 }
 
 func workerOptionsForConfig(cfg config.Config) temporalworker.Options {

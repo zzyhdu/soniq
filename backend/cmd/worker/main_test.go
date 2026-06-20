@@ -116,6 +116,42 @@ func TestWorkerOptionsForConfigMapsConcurrencyLimits(t *testing.T) {
 	}
 }
 
+func TestTemporalClientOptionsForConfigIncludesSDKMetricsHandler(t *testing.T) {
+	cfg := config.LoadFromEnv()
+	cfg.TemporalAddress = "temporal.example.test:7233"
+	cfg.TemporalNamespace = "default"
+	cfg.TemporalTaskQueue = "soniq-audio-pipeline"
+	metrics := observability.NewMetrics()
+
+	options := temporalClientOptionsForConfig(cfg, metrics)
+
+	if options.HostPort != cfg.TemporalAddress {
+		t.Fatalf("HostPort = %q, want %q", options.HostPort, cfg.TemporalAddress)
+	}
+	if options.Namespace != cfg.TemporalNamespace {
+		t.Fatalf("Namespace = %q, want %q", options.Namespace, cfg.TemporalNamespace)
+	}
+	if options.MetricsHandler == nil {
+		t.Fatal("MetricsHandler is nil, want Temporal SDK metrics handler")
+	}
+	options.MetricsHandler.WithTags(map[string]string{
+		"namespace":  cfg.TemporalNamespace,
+		"task_queue": cfg.TemporalTaskQueue,
+	}).Counter("temporal_worker_start").Inc(1)
+
+	body := workerMetricsBody(t, metrics)
+	for _, want := range []string{
+		`temporal_worker_start{`,
+		`namespace="default"`,
+		`task_queue="soniq-audio-pipeline"`,
+		`} 1`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("metrics output missing %q:\n%s", want, body)
+		}
+	}
+}
+
 func TestRegisterRecordingProcessingRegistersWorkflowAndActivities(t *testing.T) {
 	worker := &recordingWorkerSpy{}
 	store := &workerRecordingStoreSpy{}

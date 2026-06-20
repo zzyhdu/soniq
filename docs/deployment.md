@@ -168,13 +168,17 @@ Current worker metrics include:
 - `soniq_purge_artifacts_deleted_total`
 - `soniq_purge_artifacts_failed_total`
 - `soniq_purge_cleanup_run_duration_seconds{result}`
+- `temporal_*` Temporal Go SDK metrics for worker polling, activity/workflow
+  task latency, SDK request latency, and worker task slots.
 
 The API `route` label uses the router template, not the concrete path. Do not
 add `user_id`, `workspace_id`, `recording_id`, artifact IDs, object keys,
 emails, filenames, or other high-cardinality values as Prometheus labels.
 `soniq_recording_terminal_status_updates_total` records persisted terminal
 status updates such as `completed` and `failed`; it is not a full Temporal
-workflow outcome counter. Temporal SDK metrics are planned separately.
+workflow outcome counter. Temporal SDK metrics are exported by the worker with
+an allowlist of low-cardinality labels such as `namespace`, `task_queue`,
+`workflow_type`, `activity_type`, `poller_type`, and `worker_type`.
 
 The repository includes an optional local observability stack in
 `compose.observability.yml`:
